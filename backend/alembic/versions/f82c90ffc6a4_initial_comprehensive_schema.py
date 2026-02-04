@@ -127,20 +127,10 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('user_id', sa.Integer(), nullable=True),
     sa.Column('event_type', sa.String(length=50), nullable=False),
-    sa.Column('action', sa.String(length=50), nullable=False),
-    sa.Column('resource_type', sa.String(length=50), nullable=True),
-    sa.Column('resource_id', sa.Integer(), nullable=True),
     sa.Column('description', sa.Text(), nullable=True),
     sa.Column('ip_address', sa.String(length=45), nullable=True),
-    sa.Column('user_agent', sa.String(length=500), nullable=True),
-    sa.Column('request_method', sa.String(length=10), nullable=True),
-    sa.Column('request_path', sa.String(length=255), nullable=True),
-    sa.Column('request_id', sa.String(length=36), nullable=True),
     sa.Column('status', sa.String(length=20), nullable=True),
     sa.Column('error_message', sa.Text(), nullable=True),
-    sa.Column('old_value', sa.JSON(), nullable=True),
-    sa.Column('new_value', sa.JSON(), nullable=True),
-    sa.Column('extra_data', sa.JSON(), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=True),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')
@@ -148,7 +138,6 @@ def upgrade() -> None:
     op.create_index(op.f('ix_audit_logs_created_at'), 'audit_logs', ['created_at'], unique=False)
     op.create_index(op.f('ix_audit_logs_event_type'), 'audit_logs', ['event_type'], unique=False)
     op.create_index(op.f('ix_audit_logs_id'), 'audit_logs', ['id'], unique=False)
-    op.create_index(op.f('ix_audit_logs_request_id'), 'audit_logs', ['request_id'], unique=False)
     op.create_table('courses',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('code', sa.String(length=20), nullable=False),

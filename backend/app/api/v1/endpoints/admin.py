@@ -1,7 +1,7 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, and_
 from datetime import datetime, timedelta
 
 from app.api.deps import get_db, get_current_user, require_role
@@ -76,11 +76,7 @@ def update_user(
         audit = AuditLog(
             user_id=current_user.id,
             event_type="role_changed",
-            resource_type="user",
-            resource_id=user.id,
-            action="update",
-            description=f"User role changed from {old_role} to {user.role}",
-            metadata={"old_role": old_role.value, "new_role": user.role.value}
+            description=f"User role changed from {old_role} to {user.role}"
         )
         db.add(audit)
         db.commit()
@@ -107,9 +103,6 @@ def delete_user(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="user_deleted",
-        resource_type="user",
-        resource_id=user.id,
-        action="delete",
         description=f"User {user.email} deleted by admin"
     )
     db.add(audit)
@@ -140,9 +133,6 @@ def activate_user(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="user_activated",
-        resource_type="user",
-        resource_id=user.id,
-        action="update",
         description=f"User {user.email} activated"
     )
     db.add(audit)
@@ -173,9 +163,6 @@ def deactivate_user(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="user_deactivated",
-        resource_type="user",
-        resource_id=user.id,
-        action="update",
         description=f"User {user.email} deactivated"
     )
     db.add(audit)
@@ -205,9 +192,6 @@ def admin_reset_password(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="password_reset",
-        resource_type="user",
-        resource_id=user.id,
-        action="update",
         description=f"Password reset for user {user.email} by admin"
     )
     db.add(audit)
@@ -325,11 +309,7 @@ def add_programming_language(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="language_added",
-        resource_type="system",
-        resource_id=0,
-        action="create",
-        description=f"Programming language added: {language_name} (.{file_extension})",
-        metadata={"language": language_name, "extension": file_extension}
+        description=f"Programming language added: {language_name} (.{file_extension})"
     )
     db.add(audit)
     db.commit()

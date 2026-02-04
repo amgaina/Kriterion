@@ -118,8 +118,7 @@ def create_assignment(
         rubric_data = assignment_in.rubric
         rubric = Rubric(
             assignment_id=assignment.id,
-            total_points=rubric_data.total_points,
-            is_weighted=rubric_data.is_weighted
+            total_points=rubric_data.total_points
         )
         db.add(rubric)
         db.flush()
@@ -140,7 +139,6 @@ def create_assignment(
                     category_id=category.id,
                     name=item_data.name,
                     max_points=item_data.max_points,
-                    weight=item_data.weight,
                     description=item_data.description,
                     order=item_data.order
                 )
@@ -153,9 +151,6 @@ def create_assignment(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="assignment_created",
-        resource_type="assignment",
-        resource_id=assignment.id,
-        action="create",
         description=f"Assignment '{assignment.title}' created"
     )
     db.add(audit)
@@ -193,9 +188,6 @@ def update_assignment(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="assignment_updated",
-        resource_type="assignment",
-        resource_id=assignment.id,
-        action="update",
         description=f"Assignment '{assignment.title}' updated"
     )
     db.add(audit)
@@ -223,9 +215,6 @@ def delete_assignment(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="assignment_deleted",
-        resource_type="assignment",
-        resource_id=assignment.id,
-        action="delete",
         description=f"Assignment '{assignment.title}' deleted"
     )
     db.add(audit)
@@ -259,9 +248,6 @@ def publish_assignment(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="assignment_published",
-        resource_type="assignment",
-        resource_id=assignment.id,
-        action="update",
         description=f"Assignment '{assignment.title}' published"
     )
     db.add(audit)
@@ -293,9 +279,6 @@ def unpublish_assignment(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="assignment_unpublished",
-        resource_type="assignment",
-        resource_id=assignment.id,
-        action="update",
         description=f"Assignment '{assignment.title}' unpublished"
     )
     db.add(audit)

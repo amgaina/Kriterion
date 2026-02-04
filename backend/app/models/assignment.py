@@ -39,7 +39,9 @@ class Assignment(Base):
     language_id = Column(Integer, ForeignKey("languages.id"), nullable=False)
     starter_code = Column(Text, nullable=True)
     solution_code = Column(Text, nullable=True)  # Faculty reference solution
-    
+    starter_file_1_s3 = Column(String(500), nullable=True) 
+    starter_file_2_s3 = Column(String(500), nullable=True)
+    starter_file_3_s3 = Column(String(500), nullable=True)
     # Scoring
     max_score = Column(Float, default=100.0)
     passing_score = Column(Float, default=60.0)
@@ -56,10 +58,6 @@ class Assignment(Base):
     max_file_size_mb = Column(Integer, default=10)
     allowed_file_extensions = Column(JSON, nullable=True)  # [".py", ".java"]
     required_files = Column(JSON, nullable=True)  # ["main.py", "helper.py"]
-    
-    # Execution limits
-    time_limit_seconds = Column(Integer, default=30)
-    memory_limit_mb = Column(Integer, default=256)
     
     # Group settings
     allow_groups = Column(Boolean, default=False)

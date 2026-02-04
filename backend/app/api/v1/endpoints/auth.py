@@ -62,9 +62,6 @@ def register(
     audit = AuditLog(
         user_id=user.id,
         event_type="user_registration",
-        resource_type="user",
-        resource_id=user.id,
-        action="create",
         description=f"User {user.email} registered"
     )
     db.add(audit)
@@ -106,9 +103,6 @@ def login(
     audit = AuditLog(
         user_id=user.id,
         event_type="user_login",
-        resource_type="user",
-        resource_id=user.id,
-        action="view",
         description=f"User {user.email} logged in"
     )
     db.add(audit)

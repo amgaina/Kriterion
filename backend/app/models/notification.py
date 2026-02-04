@@ -13,10 +13,6 @@ class NotificationType(str, PyEnum):
     ASSIGNMENT_DUE = "assignment_due"
     ASSIGNMENT_GRADED = "assignment_graded"
     SUBMISSION_RECEIVED = "submission_received"
-    COURSE_ANNOUNCEMENT = "course_announcement"
-    ACHIEVEMENT_EARNED = "achievement_earned"
-    STREAK_REMINDER = "streak_reminder"
-    SYSTEM = "system"
 
 
 class Notification(Base):

@@ -1,47 +1,59 @@
 from typing import Optional
 from pydantic import BaseModel
+from datetime import datetime
 
 
-class TestCaseBase(BaseModel):
-    name: str
-    description: Optional[str] = None
-    input_data: Optional[str] = None
-    expected_output: Optional[str] = None
-    test_code: Optional[str] = None
-    points: float = 1.0
-    ignore_whitespace: bool = True
-    ignore_case: bool = False
-    order: int = 0
+class RubricBase(BaseModel):
+    total_points: float = 30.0
 
 
-class TestCaseCreate(TestCaseBase):
-    test_suite_id: int
+class RubricCreate(RubricBase):
+    assignment_id: int
 
 
-class TestCase(TestCaseBase):
+class Rubric(RubricBase):
     id: int
-    test_suite_id: int
+    assignment_id: int
+    created_at: datetime
+    updated_at: datetime
     
     class Config:
         from_attributes = True
 
 
-class TestSuiteBase(BaseModel):
+class RubricCategoryBase(BaseModel):
     name: str
     description: Optional[str] = None
-    test_type: str
-    visibility: str
-    timeout_seconds: int = 30
-    memory_limit_mb: int = 512
+    weight: float = 1.0
+    order: int = 0
 
 
-class TestSuiteCreate(TestSuiteBase):
-    assignment_id: int
+class RubricCategoryCreate(RubricCategoryBase):
+    rubric_id: int
 
 
-class TestSuite(TestSuiteBase):
+class RubricCategory(RubricCategoryBase):
     id: int
-    assignment_id: int
+    rubric_id: int
+    
+    class Config:
+        from_attributes = True
+
+
+class RubricItemBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    max_points: float = 5.0
+    order: int = 0
+
+
+class RubricItemCreate(RubricItemBase):
+    category_id: int
+
+
+class RubricItem(RubricItemBase):
+    id: int
+    category_id: int
     
     class Config:
         from_attributes = True

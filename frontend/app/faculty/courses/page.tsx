@@ -16,7 +16,6 @@
 
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { DashboardLayout } from '@/components/layouts/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
@@ -43,10 +42,6 @@ import {
     CheckCircle2,
     ChevronRight,
     GraduationCap,
-    MoreHorizontal,
-    Settings,
-    Trash2,
-    Edit,
     ArrowRight
 } from 'lucide-react';
 

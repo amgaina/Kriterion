@@ -83,9 +83,6 @@ def create_course(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="course_created",
-        resource_type="course",
-        resource_id=course.id,
-        action="create",
         description=f"Course {course.code} created"
     )
     db.add(audit)
@@ -219,9 +216,6 @@ def update_course(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="course_updated",
-        resource_type="course",
-        resource_id=course.id,
-        action="update",
         description=f"Course {course.code} updated"
     )
     db.add(audit)
@@ -284,9 +278,6 @@ def enroll_student(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="student_enrolled",
-        resource_type="enrollment",
-        resource_id=enrollment.id,
-        action="create",
         description=f"Student {student.email} enrolled in {course.code}"
     )
     db.add(audit)
@@ -359,9 +350,6 @@ def enroll_student_by_email(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="student_enrolled",
-        resource_type="enrollment",
-        resource_id=enrollment.id,
-        action="create",
         description=f"Student {student.email} enrolled in {course.code}"
     )
     db.add(audit)
@@ -443,9 +431,6 @@ def bulk_enroll_students(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="bulk_enrollment",
-        resource_type="course",
-        resource_id=course_id,
-        action="bulk_enroll",
         description=f"Bulk enrolled {enrolled} students in {course.code}"
     )
     db.add(audit)
@@ -536,9 +521,6 @@ def unenroll_student(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="student_unenrolled",
-        resource_type="enrollment",
-        resource_id=enrollment.id,
-        action="unenroll",
         description=f"Student {student.email if student else student_id} unenrolled from {course.code}"
     )
     db.add(audit)

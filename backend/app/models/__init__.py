@@ -48,15 +48,11 @@ from app.models.gamification import (
 from app.models.settings import (
     NotificationSettings,
     UserPreferences,
-    SystemSettings,
-    DEFAULT_SYSTEM_SETTINGS
 )
 
 # Audit & Security Models
 from app.models.audit_log import (
-    AuditLog,
-    LoginAttempt,
-    SecurityEvent
+    AuditLog
 )
 
 # Notification Model
@@ -101,13 +97,9 @@ __all__ = [
     # Settings
     "NotificationSettings",
     "UserPreferences",
-    "SystemSettings",
-    "DEFAULT_SYSTEM_SETTINGS",
     
     # Audit
     "AuditLog",
-    "LoginAttempt",
-    "SecurityEvent",
     
     # Notification
     "Notification", "NotificationType",

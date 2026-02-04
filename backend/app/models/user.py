@@ -3,7 +3,7 @@ User Model - Comprehensive user management for Admin, Faculty, and Students
 """
 from datetime import datetime
 from enum import Enum as PyEnum
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Enum, Text
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Enum
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -33,13 +33,6 @@ class User(Base):
     
     # Student specific
     student_id = Column(String(50), unique=True, nullable=True, index=True)
-    
-    # Profile info
-    phone = Column(String(20), nullable=True)
-    bio = Column(Text, nullable=True)
-    avatar_url = Column(String(500), nullable=True)
-    github_url = Column(String(255), nullable=True)
-    linkedin_url = Column(String(255), nullable=True)
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)

@@ -34,9 +34,6 @@ class Language(Base):
     default_timeout_seconds = Column(Integer, default=30)
     default_memory_mb = Column(Integer, default=256)
     
-    # Editor settings
-    monaco_language = Column(String(50), nullable=True)  # Monaco editor language ID
-    
     # Status
     is_active = Column(Boolean, default=True)
     
@@ -145,17 +142,4 @@ DEFAULT_LANGUAGES = [
         "monaco_language": "javascript",
         "is_active": True
     },
-    {
-        "name": "typescript",
-        "display_name": "TypeScript",
-        "version": "5.0",
-        "file_extension": ".ts",
-        "compile_command": "tsc {filename}",
-        "run_command": "node {output}",
-        "docker_image": "node:20-slim",
-        "default_timeout_seconds": 30,
-        "default_memory_mb": 256,
-        "monaco_language": "typescript",
-        "is_active": True
-    }
 ]

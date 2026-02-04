@@ -203,9 +203,6 @@ async def create_submission(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="submission_created",
-        resource_type="submission",
-        resource_id=submission.id,
-        action="create",
         description=f"Submission created for assignment {assignment.title}"
     )
     db.add(audit)
@@ -244,9 +241,6 @@ async def grade_submission(
         audit = AuditLog(
             user_id=current_user.id,
             event_type="submission_graded",
-            resource_type="submission",
-            resource_id=submission.id,
-            action="update",
             description=f"Submission graded: {result.get('status')}"
         )
         db.add(audit)
@@ -288,11 +282,7 @@ def override_score(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="score_overridden",
-        resource_type="submission",
-        resource_id=submission.id,
-        action="update",
-        description=f"Score overridden from {old_score} to {new_score}. Reason: {reason}",
-        metadata={"old_score": old_score, "new_score": new_score, "reason": reason}
+        description=f"Score overridden from {old_score} to {new_score}. Reason: {reason}"
     )
     db.add(audit)
     db.commit()
