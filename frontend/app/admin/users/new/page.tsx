@@ -59,6 +59,33 @@ export default function NewUserPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    if (formData.role === "STUDENT" && !formData.student_id.trim()) {
+      setError("Student ID is required for student accounts");
+      return;
+    }
+
+    const password = formData.password;
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters long");
+      return;
+    }
+    if (!/[A-Z]/.test(password)) {
+      setError("Password must contain at least one uppercase letter");
+      return;
+    }
+    if (!/[a-z]/.test(password)) {
+      setError("Password must contain at least one lowercase letter");
+      return;
+    }
+    if (!/[0-9]/.test(password)) {
+      setError("Password must contain at least one digit");
+      return;
+    }
+    if (!/[!@#$%^&*()_+\-=[\]{}|;:,.<>?]/.test(password)) {
+      setError("Password must contain at least one special character");
+      return;
+    }
+
     createMutation.mutate(formData);
   };
 

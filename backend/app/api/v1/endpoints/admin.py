@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 from app.api.deps import get_db, get_current_user, require_role
 from app.models import User, UserRole, AuditLog, Course, Assignment
-from app.schemas.user import User as UserSchema, UserUpdate, AdminUserCreate
+from app.schemas.user import User as UserSchema, UserUpdate, AdminUserCreate, AdminPasswordReset
 from app.schemas.audit_log import AuditLog as AuditLogSchema
 from app.core.security import get_password_hash
 from app.core.logging import logger
@@ -222,7 +222,7 @@ def deactivate_user(
 @router.post("/users/{user_id}/reset-password")
 def admin_reset_password(
     user_id: int,
-    new_password: str,
+    payload: AdminPasswordReset,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
@@ -231,7 +231,7 @@ def admin_reset_password(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    user.hashed_password = get_password_hash(new_password)
+    user.hashed_password = get_password_hash(payload.new_password)
     user.password_changed_at = datetime.utcnow()
     user.updated_at = datetime.utcnow()
     db.commit()
