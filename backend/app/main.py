@@ -6,9 +6,36 @@ import time
 import uuid
 
 from app.core.config import settings
-from app.core.database import engine, Base
+from app.core.database import engine, Base, SessionLocal
 from app.core.logging import logger, set_request_id
 from app.api.v1.api import api_router
+from app.models import Language, DEFAULT_LANGUAGES
+
+
+def seed_languages():
+    """Seed default programming languages to database"""
+    db = SessionLocal()
+    try:
+        for lang_data in DEFAULT_LANGUAGES:
+            # Check if language already exists
+            existing = db.query(Language).filter(Language.name == lang_data.get("name")).first()
+            if not existing:
+                # Filter to only include Language model fields
+                allowed_fields = {
+                    "name", "display_name", "version", "file_extension",
+                    "compile_command", "run_command", "docker_image",
+                    "default_timeout_seconds", "default_memory_mb", "is_active"
+                }
+                filtered_data = {k: v for k, v in lang_data.items() if k in allowed_fields}
+                lang = Language(**filtered_data)
+                db.add(lang)
+                logger.info(f"✅ Added language: {lang_data.get('display_name')}")
+        db.commit()
+    except Exception as e:
+        logger.error(f"Error seeding languages: {str(e)}")
+        db.rollback()
+    finally:
+        db.close()
 
 
 @asynccontextmanager
@@ -20,6 +47,10 @@ async def lifespan(app: FastAPI):
     
     # Create database tables
     Base.metadata.create_all(bind=engine)
+    
+    # Seed programming languages
+    logger.info("Ensuring programming languages are available...")
+    seed_languages()
     
     yield
     

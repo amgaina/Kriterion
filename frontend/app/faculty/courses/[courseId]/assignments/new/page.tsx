@@ -90,12 +90,19 @@ export default function NewAssignmentPage() {
 
             const dueDateISO = new Date(values.due_date).toISOString();
 
+            const selectedLanguage = languages.find(lang => String(lang.id) === String(values.language_id));
+            if (!selectedLanguage) {
+                setError("Please select a valid language.");
+                setLoading(false);
+                return;
+            }
+
             const payload = {
                 course_id: courseId,
                 title: values.title.trim(),
                 description: values.description.trim(),
                 instructions: values.instructions?.trim() || undefined,
-                language_id: values.language_id,
+                language_id: parseInt(String(values.language_id), 10),
                 starter_code: values.starter_code || undefined,
                 solution_code: values.solution_code || undefined,
                 max_score: values.max_score,
@@ -124,8 +131,20 @@ export default function NewAssignmentPage() {
             router.push(`/faculty/courses/${courseId}/assignments`);
         } catch (err: any) {
             console.error('Create assignment failed', err);
-            const msg = err?.response?.data?.detail || 'Failed to create assignment.';
-            setError(Array.isArray(msg) ? msg.join(', ') : msg);
+            const detail = err?.response?.data?.detail;
+            let msg = 'Failed to create assignment.';
+            
+            if (typeof detail === 'string') {
+                msg = detail;
+            } else if (Array.isArray(detail)) {
+                msg = detail.map((d: any) => d.msg || d).join(', ');
+            } else if (err?.message) {
+                msg = err.message;
+            }
+            
+            // Log full error for debugging
+            console.error('Full error:', err?.response?.data || err);
+            setError(msg);
         } finally {
             setLoading(false);
         }
@@ -406,4 +425,3 @@ export default function NewAssignmentPage() {
         </ProtectedRoute>
     );
 }
-

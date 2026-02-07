@@ -39,9 +39,7 @@ class Assignment(Base):
     language_id = Column(Integer, ForeignKey("languages.id"), nullable=False)
     starter_code = Column(Text, nullable=True)
     solution_code = Column(Text, nullable=True)  # Faculty reference solution
-    starter_file_1_s3 = Column(String(500), nullable=True) 
-    starter_file_2_s3 = Column(String(500), nullable=True)
-    starter_file_3_s3 = Column(String(500), nullable=True)
+    
     # Scoring
     max_score = Column(Float, default=100.0)
     passing_score = Column(Float, default=60.0)
@@ -73,10 +71,8 @@ class Assignment(Base):
     test_weight = Column(Float, default=70.0)  # Percentage from test cases
     rubric_weight = Column(Float, default=30.0)  # Percentage from manual rubric
     
-    # Status
-    status = Column(Enum(AssignmentStatus), default=AssignmentStatus.DRAFT)
+    # Status and publishing
     is_published = Column(Boolean, default=False)
-    published_at = Column(DateTime, nullable=True)
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)

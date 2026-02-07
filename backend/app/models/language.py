@@ -18,7 +18,7 @@ class Language(Base):
     # Basic info
     name = Column(String(50), unique=True, nullable=False)  # python, java, cpp
     display_name = Column(String(100), nullable=False)  # Python, Java, C++
-    version = Column(String(20), nullable=True)  # 3.11, 17, 11
+    #version = Column(String(20), nullable=True)  # 3.11, 17, 11
     
     # File info
     file_extension = Column(String(10), nullable=False)  # .py, .java, .cpp
