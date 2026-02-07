@@ -31,7 +31,7 @@ export default function NewUserPage() {
     });
 
     const createMutation = useMutation({
-        mutationFn: (data: typeof formData) => apiClient.register({
+        mutationFn: (data: typeof formData) => apiClient.createUser({
             email: data.email,
             password: data.password,
             full_name: data.full_name,

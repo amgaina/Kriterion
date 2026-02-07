@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 from app.api.deps import get_db, get_current_user, require_role
 from app.models import User, UserRole, AuditLog, Course, Assignment
-from app.schemas.user import User as UserSchema, UserUpdate
+from app.schemas.user import User as UserSchema, UserUpdate, UserCreate
 from app.schemas.audit_log import AuditLog as AuditLogSchema
 from app.core.security import get_password_hash
 from app.core.logging import logger
@@ -34,6 +34,58 @@ def list_users(
     
     users = query.offset(skip).limit(limit).all()
     return users
+
+
+@router.post("/users", response_model=UserSchema, status_code=status.HTTP_201_CREATED)
+def create_user(
+    user_in: UserCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN]))
+):
+    """Create a new user (admin only)"""
+    # Check if user already exists
+    existing_user = db.query(User).filter(User.email == user_in.email).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
+    
+    # Check student_id uniqueness if provided
+    if user_in.student_id:
+        existing_student = db.query(User).filter(User.student_id == user_in.student_id).first()
+        if existing_student:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Student ID already registered"
+            )
+    
+    # Create user
+    user = User(
+        email=user_in.email,
+        hashed_password=get_password_hash(user_in.password),
+        full_name=user_in.full_name,
+        role=user_in.role,
+        student_id=user_in.student_id,
+        is_active=True,
+        is_verified=True
+    )
+    
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    
+    # Audit log
+    audit = AuditLog(
+        user_id=current_user.id,
+        event_type="user_created",
+        description=f"User {user.email} created with role {user.role.value} by admin"
+    )
+    db.add(audit)
+    db.commit()
+    
+    logger.info(f"User {user.id} created by admin {current_user.id}")
+    return user
 
 
 @router.get("/users/{user_id}", response_model=UserSchema)
