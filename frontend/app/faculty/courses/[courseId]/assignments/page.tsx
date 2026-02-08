@@ -22,6 +22,7 @@ import {
     Loader2,
     Search,
     Eye,
+    Edit,
 } from 'lucide-react';
 
 interface Assignment {
@@ -119,13 +120,20 @@ export default function AssignmentsPage() {
         {
             key: 'actions',
             header: '',
-            className: 'w-16',
+            className: 'w-24',
             cell: (assignment: Assignment) => (
-                <Link href={`/faculty/courses/${courseId}/assignments/${assignment.id}`}>
-                    <Button variant="ghost" size="sm">
-                        <Eye className="w-4 h-4" />
-                    </Button>
-                </Link>
+                <div className="flex gap-2">
+                    <Link href={`/faculty/courses/${courseId}/assignments/${assignment.id}`}>
+                        <Button variant="ghost" size="sm">
+                            <Eye className="w-4 h-4" />
+                        </Button>
+                    </Link>
+                    <Link href={`/faculty/courses/${courseId}/assignments/${assignment.id}/edit`}>
+                        <Button variant="ghost" size="sm">
+                            <Edit className="w-4 h-4" />
+                        </Button>
+                    </Link>
+                </div>
             ),
         },
     ];

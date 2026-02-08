@@ -21,6 +21,7 @@ import {
     AlertCircle,
     Loader2,
     CheckCircle2,
+    Edit,
 } from 'lucide-react';
 
 interface Assignment {
@@ -115,11 +116,17 @@ export default function AssignmentDetailPage() {
             <DashboardLayout>
                 <div className="space-y-6">
                     {/* Header with Back Button */}
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center justify-between gap-4">
                         <Link href={`/faculty/courses/${courseId}/assignments`}>
                             <Button variant="ghost" size="sm">
                                 <ArrowLeft className="w-4 h-4 mr-2" />
                                 Back to Assignments
+                            </Button>
+                        </Link>
+                        <Link href={`/faculty/courses/${courseId}/assignments/${assignmentId}/edit`}>
+                            <Button size="sm">
+                                <Edit className="w-4 h-4 mr-2" />
+                                Edit
                             </Button>
                         </Link>
                     </div>

@@ -1,186 +1,83 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
+import Link from 'next/link';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import apiClient from '@/lib/api-client';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { DashboardLayout } from '@/components/layouts/DashboardLayout';
-import { useQuery } from '@tanstack/react-query';
-import apiClient from '@/lib/api-client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/select';
 import { Alert } from '@/components/ui/alert';
-import { DataTable } from '@/components/ui/data-table';
-import Link from 'next/link';
 import {
+    Calendar,
+    Clock,
+    Edit,
+    Trash2,
+    Loader2,
     Plus,
     FileText,
-    Calendar,
-    Loader2,
-    Search,
-    Eye,
 } from 'lucide-react';
 
 interface Assignment {
     id: number;
     course_id: number;
-    course_code?: string;
-    course_name?: string;
     title: string;
     description?: string;
-    difficulty?: string;
     due_date?: string;
     is_published: boolean;
-    max_score: number;
-    submission_count?: number;
+    course?: {
+        name: string;
+        code: string;
+        section?: string;
+    };
 }
 
 export default function FacultyAssignmentsPage() {
-    const [searchQuery, setSearchQuery] = useState('');
-    const [statusFilter, setStatusFilter] = useState<'all' | 'published' | 'draft'>('all');
+    const queryClient = useQueryClient();
+    const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
 
-    const { data: assignments = [], isLoading, error } = useQuery({
-        queryKey: ['faculty-assignments'],
-        queryFn: async () => {
-            // Fetch all courses first, then get assignments for each
-            const courses = await apiClient.getCourses();
-            const allAssignments: Assignment[] = [];
-            
-            for (const course of courses) {
-                const courseAssignments = await apiClient.getAssignments(course.id);
-                const enriched = courseAssignments.map((a: any) => ({
-                    ...a,
-                    course_code: course.code,
-                    course_name: course.name,
-                }));
-                allAssignments.push(...enriched);
-            }
-            
-            return allAssignments;
+    const { data: assignments, isLoading, error } = useQuery({
+        queryKey: ['assignments', 'faculty'],
+        queryFn: () => apiClient.getAssignments(),
+    });
+
+    const deleteMutation = useMutation({
+        mutationFn: (id: number) => apiClient.deleteAssignment(id),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['assignments', 'faculty'] });
+            setDeleteConfirm(null);
         },
     });
 
-    const filteredAssignments = useMemo(() => {
-        return assignments.filter((a: Assignment) => {
-            const matchesSearch = 
-                a.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                a.course_code?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                a.course_name?.toLowerCase().includes(searchQuery.toLowerCase());
-            
-            const matchesStatus = statusFilter === 'all' || 
-                (statusFilter === 'published' && a.is_published) ||
-                (statusFilter === 'draft' && !a.is_published);
-            
-            return matchesSearch && matchesStatus;
-        });
-    }, [assignments, searchQuery, statusFilter]);
+    const handleDelete = (id: number) => {
+        deleteMutation.mutate(id);
+    };
 
-    const columns = [
-        {
-            key: 'title',
-            header: 'Assignment',
-            cell: (assignment: Assignment) => (
-                <div>
-                    <p className="font-medium text-gray-900">{assignment.title}</p>
-                    <p className="text-sm text-gray-500">{assignment.course_code} — {assignment.course_name}</p>
-                </div>
-            ),
-        },
-        {
-            key: 'status',
-            header: 'Status',
-            cell: (assignment: Assignment) => (
-                <Badge variant={assignment.is_published ? 'success' : 'secondary'}>
-                    {assignment.is_published ? 'Published' : 'Draft'}
-                </Badge>
-            ),
-        },
-        {
-            key: 'difficulty',
-            header: 'Difficulty',
-            cell: (assignment: Assignment) => (
-                <Badge variant={
-                    assignment.difficulty === 'hard' ? 'danger' :
-                        assignment.difficulty === 'medium' ? 'warning' : 'default'
-                }>
-                    {assignment.difficulty?.charAt(0).toUpperCase() + assignment.difficulty?.slice(1) || 'N/A'}
-                </Badge>
-            ),
-        },
-        {
-            key: 'submissions',
-            header: 'Submissions',
-            cell: (assignment: Assignment) => (
-                <span className="text-sm font-medium">{assignment.submission_count ?? 0}</span>
-            ),
-        },
-        {
-            key: 'due_date',
-            header: 'Due Date',
-            cell: (assignment: Assignment) => (
-                <div className="flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-gray-400" />
-                    <span className="text-sm">
-                        {assignment.due_date
-                            ? new Date(assignment.due_date).toLocaleDateString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                                year: 'numeric',
-                            })
-                            : '-'}
-                    </span>
-                </div>
-            ),
-        },
-        {
-            key: 'actions',
-            header: '',
-            className: 'w-16',
-            cell: (assignment: Assignment) => (
-                <Link href={`/faculty/courses/${assignment.course_id}/assignments/${assignment.id}`}>
-                    <Button variant="ghost" size="sm">
-                        <Eye className="w-4 h-4" />
-                    </Button>
-                </Link>
-            ),
-        },
-    ];
+    const isOverdue = (dueDate: string | undefined) => {
+        if (!dueDate) return false;
+        return new Date(dueDate) < new Date();
+    };
 
-    if (isLoading) {
-        return (
-            <ProtectedRoute allowedRoles={["FACULTY"]}>
-                <DashboardLayout>
-                    <div className="flex items-center justify-center h-96">
-                        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-                    </div>
-                </DashboardLayout>
-            </ProtectedRoute>
-        );
-    }
-
-    if (error) {
-        return (
-            <ProtectedRoute allowedRoles={["FACULTY"]}>
-                <DashboardLayout>
-                    <Alert type="error">
-                        Failed to load assignments. Please try again.
-                    </Alert>
-                </DashboardLayout>
-            </ProtectedRoute>
-        );
-    }
+    const isDueSoon = (dueDate: string | undefined) => {
+        if (!dueDate) return false;
+        const now = new Date();
+        const due = new Date(dueDate);
+        const hoursUntilDue = (due.getTime() - now.getTime()) / (1000 * 60 * 60);
+        return hoursUntilDue <= 24 && hoursUntilDue > 0;
+    };
 
     return (
         <ProtectedRoute allowedRoles={["FACULTY"]}>
             <DashboardLayout>
                 <div className="space-y-6">
                     {/* Header */}
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div className="flex items-center justify-between">
                         <div>
-                            <h1 className="text-2xl font-bold text-gray-900">All Assignments</h1>
+                            <h1 className="text-3xl font-bold text-gray-900">Assignments</h1>
                             <p className="text-gray-500 mt-1">
-                                {filteredAssignments.length} assignment{filteredAssignments.length !== 1 ? 's' : ''}
+                                {!isLoading && assignments ? `${assignments.length} assignment${assignments.length !== 1 ? 's' : ''}` : ''}
                             </p>
                         </div>
                         <Link href="/faculty/courses">
@@ -191,70 +88,19 @@ export default function FacultyAssignmentsPage() {
                         </Link>
                     </div>
 
-                    {/* Stats Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <Card>
-                            <CardContent className="p-4">
-                                <p className="text-sm text-gray-500">Total</p>
-                                <p className="text-3xl font-bold text-gray-900">{assignments.length}</p>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="p-4">
-                                <p className="text-sm text-gray-500">Published</p>
-                                <p className="text-3xl font-bold text-green-600">
-                                    {assignments.filter((a: Assignment) => a.is_published).length}
-                                </p>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="p-4">
-                                <p className="text-sm text-gray-500">Drafts</p>
-                                <p className="text-3xl font-bold text-amber-600">
-                                    {assignments.filter((a: Assignment) => !a.is_published).length}
-                                </p>
-                            </CardContent>
-                        </Card>
-                    </div>
+                    {isLoading && (
+                        <div className="flex items-center justify-center h-96">
+                            <Loader2 className="w-8 h-8 animate-spin text-[#862733]" />
+                        </div>
+                    )}
 
-                    {/* Filters */}
-                    <Card>
-                        <CardContent className="p-4 space-y-4">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="relative">
-                                    <Search className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
-                                    <Input
-                                        type="text"
-                                        placeholder="Search assignments..."
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="pl-10"
-                                    />
-                                </div>
-                                <Select
-                                    value={statusFilter}
-                                    onChange={(e) => setStatusFilter(e.target.value as any)}
-                                    options={[
-                                        { value: 'all', label: 'All Status' },
-                                        { value: 'published', label: 'Published' },
-                                        { value: 'draft', label: 'Draft' },
-                                    ]}
-                                />
-                            </div>
-                        </CardContent>
-                    </Card>
+                    {error && (
+                        <Alert type="error">
+                            Failed to load assignments. Please try again.
+                        </Alert>
+                    )}
 
-                    {/* Assignments Table */}
-                    {filteredAssignments.length > 0 ? (
-                        <Card>
-                            <DataTable
-                                columns={columns}
-                                data={filteredAssignments}
-                                isLoading={isLoading}
-                                emptyMessage="No assignments found"
-                            />
-                        </Card>
-                    ) : (
+                    {!isLoading && assignments && assignments.length === 0 && (
                         <Card>
                             <CardContent className="p-12 text-center">
                                 <FileText className="w-12 h-12 text-gray-300 mx-auto mb-4" />
@@ -268,7 +114,156 @@ export default function FacultyAssignmentsPage() {
                             </CardContent>
                         </Card>
                     )}
+
+                    {!isLoading && assignments && assignments.length > 0 && (
+                        <div className="space-y-3">
+                            {assignments.map((assignment: Assignment) => (
+                                <Card key={assignment.id} className="hover:shadow-md transition-shadow">
+                                    <CardContent className="p-6">
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <h2 className="text-lg font-semibold text-gray-900">
+                                                        {assignment.title}
+                                                    </h2>
+                                                    <Badge variant={assignment.is_published ? 'success' : 'secondary'}>
+                                                        {assignment.is_published ? 'Published' : 'Draft'}
+                                                    </Badge>
+                                                </div>
+
+<div className="mb-3 p-2 bg-blue-50 rounded">
+                                    {assignment.course && (
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs font-semibold text-blue-600 uppercase">Class:</span>
+                                            <span className="font-semibold text-gray-900">{assignment.course.code}</span>
+                                            {assignment.course.name && (
+                                                <>
+                                                    <span className="text-gray-400">•</span>
+                                                    <span className="text-gray-700 text-sm">{assignment.course.name}</span>
+                                                </>
+                                            )}
+                                            {assignment.course.section && (
+                                                <>
+                                                    <span className="text-gray-400">•</span>
+                                                    <span className="text-gray-700 font-medium">Section {assignment.course.section}</span>
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {assignment.description && (
+                                    <p className="text-sm text-gray-600 mb-3 line-clamp-2">
+                                        {assignment.description}
+                                    </p>
+                                )}
+
+                                <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+
+                                                    {/* Due Date */}
+                                                    {assignment.due_date && (
+                                                        <div className="flex flex-col">
+                                                            <span className="text-xs text-gray-500 uppercase font-semibold">Due Date</span>
+                                                            <div className="flex items-center gap-1 mt-0.5">
+                                                                <Calendar className="w-4 h-4 text-gray-400" />
+                                                                <span className={
+                                                                    isOverdue(assignment.due_date)
+                                                                        ? 'text-red-600 font-medium'
+                                                                        : isDueSoon(assignment.due_date)
+                                                                            ? 'text-amber-600 font-medium'
+                                                                            : ''
+                                                                }>
+                                                                    {new Date(assignment.due_date).toLocaleDateString('en-US', {
+                                                                        month: 'short',
+                                                                        day: 'numeric',
+                                                                        year: 'numeric',
+                                                                    })}
+                                                                </span>
+                                                                <span className="text-gray-500 text-xs">
+                                                                    {new Date(assignment.due_date).toLocaleTimeString('en-US', {
+                                                                        hour: '2-digit',
+                                                                        minute: '2-digit',
+                                                                    })}
+                                                                </span>
+                                                                {isOverdue(assignment.due_date) && (
+                                                                    <Badge variant="danger" className="ml-2">Overdue</Badge>
+                                                                )}
+                                                                {isDueSoon(assignment.due_date) && (
+                                                                    <Badge variant="warning" className="ml-2">Due Soon</Badge>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Action Buttons */}
+                                            <div className="flex items-center gap-2">
+                                                <Link href={`/faculty/courses/${assignment.course_id}/assignments/${assignment.id}/edit`}>
+                                                    <Button variant="outline" size="sm">
+                                                        <Edit className="w-4 h-4" />
+                                                    </Button>
+                                                </Link>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setDeleteConfirm(assignment.id)}
+                                                    disabled={deleteMutation.isPending}
+                                                    className="text-red-600 hover:bg-red-50"
+                                                >
+                                                    {deleteMutation.isPending ? (
+                                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                                    ) : (
+                                                        <Trash2 className="w-4 h-4" />
+                                                    )}
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            ))}
+                        </div>
+                    )}
                 </div>
+
+                {/* Delete Confirmation Modal */}
+                {deleteConfirm && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+                        <Card className="w-96 shadow-xl">
+                            <CardHeader>
+                                <CardTitle className="text-red-600">Delete Assignment?</CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <p className="text-gray-600">
+                                    Are you sure you want to delete this assignment? This action cannot be undone.
+                                </p>
+                                <div className="flex gap-3 justify-end">
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => setDeleteConfirm(null)}
+                                        disabled={deleteMutation.isPending}
+                                    >
+                                        Cancel
+                                    </Button>
+                                    <Button
+                                        variant="danger"
+                                        onClick={() => handleDelete(deleteConfirm)}
+                                        disabled={deleteMutation.isPending}
+                                    >
+                                        {deleteMutation.isPending ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                                Deleting...
+                                            </>
+                                        ) : (
+                                            'Delete'
+                                        )}
+                                    </Button>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </div>
+                )}
             </DashboardLayout>
         </ProtectedRoute>
     );

@@ -141,6 +141,7 @@ class Assignment(AssignmentBase):
     language_id: int
     created_at: datetime
     updated_at: Optional[datetime] = None
+    course: Optional[Any] = None  # Will hold course data {id, code, name, section}
     
     class Config:
         from_attributes = True

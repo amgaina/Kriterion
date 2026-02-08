@@ -60,7 +60,52 @@ def list_assignments(
         query = query.filter(Assignment.course_id.in_(enrolled_course_ids))
     
     assignments = query.all()
-    return assignments
+    
+    # Build response with course info
+    result = []
+    for assignment in assignments:
+        course = db.query(Course).filter(Course.id == assignment.course_id).first()
+        assignment_dict = {
+            'id': assignment.id,
+            'course_id': assignment.course_id,
+            'title': assignment.title,
+            'description': assignment.description,
+            'instructions': assignment.instructions,
+            'due_date': assignment.due_date,
+            'max_score': assignment.max_score,
+            'passing_score': assignment.passing_score,
+            'difficulty': assignment.difficulty,
+            'test_weight': assignment.test_weight,
+            'rubric_weight': assignment.rubric_weight,
+            'allow_late': assignment.allow_late,
+            'late_penalty_per_day': assignment.late_penalty_per_day,
+            'max_late_days': assignment.max_late_days,
+            'max_attempts': assignment.max_attempts,
+            'max_file_size_mb': assignment.max_file_size_mb,
+            'allowed_file_extensions': assignment.allowed_file_extensions,
+            'required_files': assignment.required_files,
+            'allow_groups': assignment.allow_groups,
+            'max_group_size': assignment.max_group_size,
+            'enable_plagiarism_check': assignment.enable_plagiarism_check,
+            'plagiarism_threshold': assignment.plagiarism_threshold,
+            'enable_ai_detection': assignment.enable_ai_detection,
+            'ai_detection_threshold': assignment.ai_detection_threshold,
+            'starter_code': assignment.starter_code,
+            'solution_code': assignment.solution_code,
+            'is_published': assignment.is_published,
+            'language_id': assignment.language_id,
+            'created_at': assignment.created_at,
+            'updated_at': assignment.updated_at,
+            'course': {
+                'id': course.id,
+                'code': course.code,
+                'name': course.name,
+                'section': course.section,
+            } if course else None,
+        }
+        result.append(assignment_dict)
+    
+    return result
 
 
 @router.get("/{assignment_id}", response_model=AssignmentDetail)

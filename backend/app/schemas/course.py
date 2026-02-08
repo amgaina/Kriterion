@@ -40,6 +40,8 @@ class Course(CourseBase):
     default_late_penalty: float
     created_at: datetime
     updated_at: datetime
+    students_count: Optional[int] = None
+    assignments_count: Optional[int] = None
     
     class Config:
         from_attributes = True

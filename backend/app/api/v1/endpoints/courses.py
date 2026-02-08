@@ -147,7 +147,7 @@ def list_courses(
     return result
 
 
-@router.get("/{course_id}", response_model=CourseSchema)
+@router.get("/{course_id}")
 def get_course(
     course_id: int,
     current_user: User = Depends(get_current_user),
@@ -179,7 +179,35 @@ def get_course(
             detail="Not authorized to access this course"
         )
     
-    return course
+    # Calculate counts
+    students_count = db.query(Enrollment).filter(
+        Enrollment.course_id == course_id,
+        Enrollment.status == EnrollmentStatus.ACTIVE
+    ).count()
+    
+    assignments_count = db.query(Assignment).filter(
+        Assignment.course_id == course_id
+    ).count()
+    
+    # Build response dict
+    return {
+        'id': course.id,
+        'code': course.code,
+        'name': course.name,
+        'description': course.description,
+        'section': course.section,
+        'semester': course.semester,
+        'year': course.year,
+        'instructor_id': course.instructor_id,
+        'status': course.status.value if hasattr(course.status, 'value') else str(course.status),
+        'is_active': course.is_active,
+        'allow_late_submissions': course.allow_late_submissions,
+        'default_late_penalty': course.default_late_penalty,
+        'created_at': course.created_at,
+        'updated_at': course.updated_at,
+        'students_count': students_count,
+        'assignments_count': assignments_count,
+    }
 
 
 @router.patch("/{course_id}", response_model=CourseSchema)
