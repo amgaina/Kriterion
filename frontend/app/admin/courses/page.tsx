@@ -59,10 +59,12 @@ export default function CoursesPage() {
         code: '',
         description: '',
         instructor_id: '',
+        section: '',
         semester: 'Fall',
         year: new Date().getFullYear(),
         is_active: true,
     });
+
 
     const { data: courses = [], isLoading } = useQuery({
         queryKey: ['courses'],
@@ -89,6 +91,7 @@ export default function CoursesPage() {
                 code: '',
                 description: '',
                 instructor_id: '',
+                section: '',
                 semester: 'Fall',
                 year: new Date().getFullYear(),
                 is_active: true,
@@ -296,7 +299,7 @@ export default function CoursesPage() {
                     size="lg"
                 >
                     <div className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <Input
                                 label="Course Name"
                                 value={newCourse.name}
@@ -308,6 +311,12 @@ export default function CoursesPage() {
                                 value={newCourse.code}
                                 onChange={(e) => setNewCourse(prev => ({ ...prev, code: e.target.value }))}
                                 placeholder="CS101"
+                            />
+                            <Input
+                                label="Section"
+                                value={newCourse.section}
+                                onChange={(e) => setNewCourse(prev => ({ ...prev, section: e.target.value }))}
+                                placeholder="e.g., A, B, 001"
                             />
                         </div>
                         <Textarea

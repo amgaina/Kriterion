@@ -252,6 +252,40 @@ def update_course(
     return course
 
 
+@router.delete("/{course_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_course(
+    course_id: int,
+    current_user: User = Depends(require_roles(UserRole.FACULTY, UserRole.ADMIN)),
+    db: Session = Depends(get_db)
+):
+    """Delete a course (Admin or owning Faculty)"""
+    course = db.query(Course).filter(Course.id == course_id).first()
+    if not course:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Course not found"
+        )
+
+    # Only admin or the faculty who owns the course may delete
+    if current_user.role == UserRole.FACULTY and course.instructor_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to delete this course"
+        )
+
+    # Audit before deletion
+    audit = AuditLog(
+        user_id=current_user.id,
+        event_type="course_deleted",
+        description=f"Course {course.code} deleted"
+    )
+    db.add(audit)
+
+    # Remove course (cascades depend on DB schema)
+    db.delete(course)
+    db.commit()
+
+    return None
 @router.post("/{course_id}/enroll", response_model=EnrollmentSchema)
 def enroll_student(
     course_id: int,
