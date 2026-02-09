@@ -128,7 +128,7 @@ export default function LoginPage() {
                                     </svg>
                                 </span>
                                 <span>
-                                    Connecting to <span className="font-semibold text-gray-800">myULM</span>
+                                    Connecting to <span className="font-semibold text-gray-800">Kriterion</span>
                                 </span>
                             </div>
 

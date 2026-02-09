@@ -344,7 +344,7 @@ export default function CoursesPage() {
                             <Input
                                 label="Course Code"
                                 value={newCourse.code}
-                                onChange={(e) => setNewCourse(prev => ({ ...prev, code: e.target.value }))}
+                                onChange={(e) => setNewCourse(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
                                 placeholder="CS101"
                             />
                             <Input
@@ -435,7 +435,7 @@ export default function CoursesPage() {
                                     <Input
                                         label="Course Code"
                                         value={editFormData.code}
-                                        onChange={(e) => setEditFormData(prev => ({ ...prev, code: e.target.value }))}
+                                        onChange={(e) => setEditFormData(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
                                         placeholder="CS101"
                                     />
                                     <Input

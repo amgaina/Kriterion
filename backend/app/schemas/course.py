@@ -19,7 +19,9 @@ class CourseCreate(CourseBase):
 
 
 class CourseUpdate(BaseModel):
+    code: Optional[str] = None
     name: Optional[str] = None
+    instructor_id: Optional[int] = None
     description: Optional[str] = None
     section: Optional[str] = None
     semester: Optional[str] = None
