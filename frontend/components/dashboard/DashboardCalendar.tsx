@@ -6,10 +6,16 @@ import { Clock } from 'lucide-react';
 type DashboardCalendarProps = {
     // Array of date strings (e.g. ISO) representing days that have assignments/events
     highlightDates?: string[];
+    selectedDate?: Date | null;
+    onSelectDate?: (date: Date | null) => void;
 };
 
-export function DashboardCalendar({ highlightDates = [] }: DashboardCalendarProps) {
-    // Simple calendar data for current month (static UI, no real data yet)
+export function DashboardCalendar({
+    highlightDates = [],
+    selectedDate = null,
+    onSelectDate,
+}: DashboardCalendarProps) {
+    // Simple calendar data for current month
     const today = new Date();
     const currentMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
     const currentMonthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
@@ -66,15 +72,31 @@ export function DashboardCalendar({ highlightDates = [] }: DashboardCalendarProp
 
                         const dateObj = new Date(today.getFullYear(), today.getMonth(), day);
                         const hasEvent = highlightSet.has(dateObj.toDateString());
+                        const isSelected =
+                            !!selectedDate &&
+                            selectedDate.toDateString() === dateObj.toDateString();
+
+                        const baseClasses =
+                            'h-10 rounded-lg flex flex-col items-center justify-center cursor-pointer transition-colors';
+                        const visualClasses = isSelected
+                            ? 'bg-[#862733] text-white'
+                            : 'bg-gray-50 text-gray-900';
 
                         return (
                             <div
                                 key={index}
-                                className="h-10 rounded-lg flex flex-col items-center justify-center bg-gray-50 text-gray-900"
+                                className={`${baseClasses} ${visualClasses}`}
+                                onClick={() =>
+                                    onSelectDate?.(isSelected ? null : dateObj)
+                                }
                             >
                                 <span>{day}</span>
                                 {hasEvent && (
-                                    <span className="mt-0.5 w-1.5 h-1.5 rounded-full bg-[#862733]" />
+                                    <span
+                                        className={`mt-0.5 w-1.5 h-1.5 rounded-full ${
+                                            isSelected ? 'bg-white' : 'bg-[#862733]'
+                                        }`}
+                                    />
                                 )}
                             </div>
                         );

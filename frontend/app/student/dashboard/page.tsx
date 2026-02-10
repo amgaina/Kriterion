@@ -1,13 +1,13 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { DashboardLayout } from '@/components/layouts/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import Link from 'next/link';
-import { formatDistanceToNow, isPast, isWithinInterval, addDays } from 'date-fns';
+import { format, formatDistanceToNow, isPast, isWithinInterval, addDays } from 'date-fns';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -76,9 +76,23 @@ export default function StudentDashboardPage() {
     const displayAssignments = assignments.length > 0 ? assignments : mockUpcomingAssignments;
     const displayCourses = courses.length > 0 ? courses : mockCourses;
 
+    const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+
     const highlightDates = displayAssignments
         .map((assignment: any) => assignment.due_date)
         .filter((date: string | undefined | null) => Boolean(date));
+
+    const filteredAssignments = selectedDate
+        ? displayAssignments.filter((assignment: any) => {
+              const raw = assignment.due_date;
+              if (!raw) return false;
+              const due = new Date(raw);
+              if (isNaN(due.getTime())) return false;
+              return due.toDateString() === selectedDate.toDateString();
+          })
+        : displayAssignments;
+
+    const assignmentsToShow = (selectedDate ? filteredAssignments : displayAssignments).slice(0, 4);
 
     const getTimeRemaining = (dueDate: string) => {
         const due = new Date(dueDate);
@@ -153,7 +167,11 @@ export default function StudentDashboardPage() {
                                         <Clock className="w-5 h-5 text-[#862733]" />
                                         Upcoming Assignments
                                     </CardTitle>
-                                    <CardDescription>Assignments due soon</CardDescription>
+                                    <CardDescription>
+                                        {selectedDate
+                                            ? `Assignments due on ${format(selectedDate, 'MMM d, yyyy')}`
+                                            : 'Assignments due soon'}
+                                    </CardDescription>
                                 </div>
                                 <Link href="/student/assignments">
                                     <Button variant="ghost" size="sm">
@@ -167,7 +185,7 @@ export default function StudentDashboardPage() {
                                     <div className="text-center py-8 text-gray-500">Loading...</div>
                                 ) : (
                                     <div className="space-y-3">
-                                        {displayAssignments.slice(0, 4).map((assignment: any) => {
+                                        {assignmentsToShow.map((assignment: any) => {
                                             const timeInfo = getTimeRemaining(assignment.due_date);
                                             return (
                                                 <Link
@@ -187,7 +205,7 @@ export default function StudentDashboardPage() {
                                                 </Link>
                                             );
                                         })}
-                                        {displayAssignments.length === 0 && (
+                                        {(selectedDate ? filteredAssignments.length : displayAssignments.length) === 0 && (
                                             <div className="text-center py-8 text-gray-500">
                                                 <CheckCircle className="w-12 h-12 mx-auto mb-3 text-green-500" />
                                                 <p>All caught up! No pending assignments.</p>
@@ -200,7 +218,11 @@ export default function StudentDashboardPage() {
 
                         {/* Calendar + Recent Grades (stacked in right column) */}
                         <div className="space-y-4">
-                            <DashboardCalendar highlightDates={highlightDates} />
+                            <DashboardCalendar
+                                highlightDates={highlightDates}
+                                selectedDate={selectedDate}
+                                onSelectDate={setSelectedDate}
+                            />
 
                             {/* Recent Grades (moved below calendar) */}
                             <Card>
