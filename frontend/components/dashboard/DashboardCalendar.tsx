@@ -121,11 +121,20 @@ export function DashboardCalendar({
                             : 'bg-gray-50 text-gray-900';
 
                         return (
-                            <div
+                            <button
                                 key={index}
+                                type="button"
                                 className={`${baseClasses} ${visualClasses}`}
                                 onClick={() =>
                                     onSelectDate?.(isSelected ? null : dateObj)
+                                }
+                                title={
+                                    hasEvent
+                                        ? `Assignments due on ${format(
+                                              dateObj,
+                                              'MMM d, yyyy'
+                                          )}`
+                                        : undefined
                                 }
                             >
                                 <span>{day}</span>
@@ -136,9 +145,18 @@ export function DashboardCalendar({
                                         }`}
                                     />
                                 )}
-                            </div>
+                            </button>
                         );
                     })}
+                </div>
+                <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+                    <div className="flex items-center gap-1">
+                        <span className="inline-block w-2 h-2 rounded-full bg-[#862733]" />
+                        <span>Assignment due</span>
+                    </div>
+                    {selectedDate && (
+                        <span>{format(selectedDate, 'MMM d, yyyy')} selected</span>
+                    )}
                 </div>
             </CardContent>
         </Card>

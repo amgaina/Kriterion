@@ -252,8 +252,8 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
     return (
         <div className="min-h-screen bg-gray-50">
-            {/* Sidebar (hidden for students; top nav is used instead) */}
-            {user.role !== 'STUDENT' && (
+            {/* Sidebar (used only for admin; students and faculty use top nav only) */}
+            {user.role === 'ADMIN' && (
                 <>
                     {/* Mobile sidebar backdrop */}
                     {sidebarOpen && (
@@ -352,7 +352,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             )}
 
             {/* Main Content */}
-            <div className={user.role === 'STUDENT' ? '' : 'lg:pl-72'}>
+            <div className={user.role === 'ADMIN' ? 'lg:pl-72' : ''}>
                 {/* Top Header */}
                 <header className="sticky top-0 z-30 relative flex h-16 items-center gap-4 border-b border-gray-200 bg-white px-4 shadow-sm lg:px-6">
                     {user.role !== 'STUDENT' && (
