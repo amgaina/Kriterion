@@ -83,6 +83,26 @@ export default function StudentDashboardPage() {
         return { text: distance, urgent: isUrgent };
     };
 
+    // Simple calendar data for current month (static UI, no real data yet)
+    const today = new Date();
+    const currentMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    const currentMonthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    const startWeekday = currentMonthStart.getDay(); // 0 (Sun) - 6 (Sat)
+    const daysInMonth = currentMonthEnd.getDate();
+
+    const calendarDays: (number | null)[] = [];
+    for (let i = 0; i < startWeekday; i++) {
+        calendarDays.push(null);
+    }
+    for (let day = 1; day <= daysInMonth; day++) {
+        calendarDays.push(day);
+    }
+    while (calendarDays.length % 7 !== 0) {
+        calendarDays.push(null);
+    }
+
+    const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
     return (
         <ProtectedRoute allowedRoles={['STUDENT']}>
             <DashboardLayout>
@@ -193,41 +213,105 @@ export default function StudentDashboardPage() {
                             </CardContent>
                         </Card>
 
-                        {/* Recent Grades */}
-                        <Card>
-                            <CardHeader className="pb-2">
-                                <CardTitle className="flex items-center gap-2">
-                                    <Award className="w-5 h-5 text-[#862733]" />
-                                    Recent Grades
-                                </CardTitle>
-                                <CardDescription>Your latest results</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="space-y-4">
-                                    {mockRecentGrades.map((grade) => (
-                                        <div key={grade.id} className="p-3 bg-gray-50 rounded-lg">
-                                            <div className="flex items-center justify-between mb-2">
-                                                <p className="font-medium text-gray-900 text-sm truncate flex-1">{grade.title}</p>
-                                                <Badge variant={grade.score >= 90 ? 'success' : grade.score >= 70 ? 'warning' : 'danger'}>
-                                                    {grade.score}%
-                                                </Badge>
+                        {/* Calendar + Recent Grades (stacked in right column) */}
+                        <div className="space-y-4">
+                            {/* Static Calendar (UI only for now) */}
+                            <Card>
+                                <CardHeader className="pb-2">
+                                    <CardTitle className="flex items-center justify-between">
+                                        <span className="flex items-center gap-2">
+                                            <Clock className="w-5 h-5 text-[#862733]" />
+                                            Calendar
+                                        </span>
+                                        <span className="text-sm text-gray-500">
+                                            {format(today, 'MMMM yyyy')}
+                                        </span>
+                                    </CardTitle>
+                                    <CardDescription>Assignment schedule overview</CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="grid grid-cols-7 gap-2 text-xs text-gray-500 mb-2">
+                                        {weekdayLabels.map((day) => (
+                                            <div key={day} className="text-center font-medium">
+                                                {day}
                                             </div>
-                                            <p className="text-xs text-gray-500">{grade.course}</p>
-                                            <Progress
-                                                value={grade.score}
-                                                max={grade.max_score}
-                                                size="sm"
-                                                variant={grade.score >= 90 ? 'success' : grade.score >= 70 ? 'warning' : 'danger'}
-                                                className="mt-2"
-                                            />
-                                        </div>
-                                    ))}
-                                </div>
-                                <Link href="/student/grades">
-                                    <Button variant="outline" className="w-full mt-4">View All Grades</Button>
-                                </Link>
-                            </CardContent>
-                        </Card>
+                                        ))}
+                                    </div>
+                                    <div className="grid grid-cols-7 gap-2 text-sm">
+                                        {calendarDays.map((day, index) => (
+                                            <div
+                                                key={index}
+                                                className={`h-10 rounded-lg flex flex-col items-center justify-center ${
+                                                    day ? 'bg-gray-50 text-gray-900' : ''
+                                                }`}
+                                            >
+                                                {day && (
+                                                    <>
+                                                        <span>{day}</span>
+                                                        {/* Static dot for now; will later reflect real assignments */}
+                                                        <span className="mt-0.5 w-1.5 h-1.5 rounded-full bg-gray-300" />
+                                                    </>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            {/* Recent Grades (moved below calendar) */}
+                            <Card>
+                                <CardHeader className="pb-2">
+                                    <CardTitle className="flex items-center gap-2">
+                                        <Award className="w-5 h-5 text-[#862733]" />
+                                        Recent Grades
+                                    </CardTitle>
+                                    <CardDescription>Your latest results</CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="space-y-4">
+                                        {mockRecentGrades.map((grade) => (
+                                            <div key={grade.id} className="p-3 bg-gray-50 rounded-lg">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <p className="font-medium text-gray-900 text-sm truncate flex-1">
+                                                        {grade.title}
+                                                    </p>
+                                                    <Badge
+                                                        variant={
+                                                            grade.score >= 90
+                                                                ? 'success'
+                                                                : grade.score >= 70
+                                                                ? 'warning'
+                                                                : 'danger'
+                                                        }
+                                                    >
+                                                        {grade.score}%
+                                                    </Badge>
+                                                </div>
+                                                <p className="text-xs text-gray-500">{grade.course}</p>
+                                                <Progress
+                                                    value={grade.score}
+                                                    max={grade.max_score}
+                                                    size="sm"
+                                                    variant={
+                                                        grade.score >= 90
+                                                            ? 'success'
+                                                            : grade.score >= 70
+                                                            ? 'warning'
+                                                            : 'danger'
+                                                    }
+                                                    className="mt-2"
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <Link href="/student/grades">
+                                        <Button variant="outline" className="w-full mt-4">
+                                            View All Grades
+                                        </Button>
+                                    </Link>
+                                </CardContent>
+                            </Card>
+                        </div>
                     </div>
 
                     {/* My Courses */}
