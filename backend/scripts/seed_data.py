@@ -36,7 +36,7 @@ def seed_database():
         # ========== 1. Create Languages ==========
         print("\n📝 Creating programming languages...")
         allowed_lang_keys = {
-            "name", "display_name", "version", "file_extension",
+            "name", "display_name", "file_extension",
             "compile_command", "run_command", "docker_image",
             "default_timeout_seconds", "default_memory_mb", "is_active"
         }
