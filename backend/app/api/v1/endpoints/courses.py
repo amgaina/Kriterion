@@ -70,9 +70,20 @@ def create_course(
             detail="Course code already exists"
         )
     
+    # Ensure newly created courses are ACTIVE by default
+    course_data = course_in.dict()
+    course_data.setdefault('section', None)
+    
+    # Allow admins to assign instructor; faculty creates their own course
+    instructor_id = course_data.pop('instructor_id') if course_data.get('instructor_id') else None
+    if not instructor_id:
+        instructor_id = current_user.id
+    
     course = Course(
-        **course_in.dict(),
-        instructor_id=current_user.id
+        **course_data,
+        instructor_id=instructor_id,
+        status=CourseStatus.ACTIVE,
+        is_active=True,
     )
     
     db.add(course)
@@ -83,9 +94,6 @@ def create_course(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="course_created",
-        resource_type="course",
-        resource_id=course.id,
-        action="create",
         description=f"Course {course.code} created"
     )
     db.add(audit)
@@ -150,7 +158,7 @@ def list_courses(
     return result
 
 
-@router.get("/{course_id}", response_model=CourseSchema)
+@router.get("/{course_id}")
 def get_course(
     course_id: int,
     current_user: User = Depends(get_current_user),
@@ -182,7 +190,35 @@ def get_course(
             detail="Not authorized to access this course"
         )
     
-    return course
+    # Calculate counts
+    students_count = db.query(Enrollment).filter(
+        Enrollment.course_id == course_id,
+        Enrollment.status == EnrollmentStatus.ACTIVE
+    ).count()
+    
+    assignments_count = db.query(Assignment).filter(
+        Assignment.course_id == course_id
+    ).count()
+    
+    # Build response dict
+    return {
+        'id': course.id,
+        'code': course.code,
+        'name': course.name,
+        'description': course.description,
+        'section': course.section,
+        'semester': course.semester,
+        'year': course.year,
+        'instructor_id': course.instructor_id,
+        'status': course.status.value if hasattr(course.status, 'value') else str(course.status),
+        'is_active': course.is_active,
+        'allow_late_submissions': course.allow_late_submissions,
+        'default_late_penalty': course.default_late_penalty,
+        'created_at': course.created_at,
+        'updated_at': course.updated_at,
+        'students_count': students_count,
+        'assignments_count': assignments_count,
+    }
 
 
 @router.patch("/{course_id}", response_model=CourseSchema)
@@ -219,9 +255,6 @@ def update_course(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="course_updated",
-        resource_type="course",
-        resource_id=course.id,
-        action="update",
         description=f"Course {course.code} updated"
     )
     db.add(audit)
@@ -230,6 +263,40 @@ def update_course(
     return course
 
 
+@router.delete("/{course_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_course(
+    course_id: int,
+    current_user: User = Depends(require_roles(UserRole.FACULTY, UserRole.ADMIN)),
+    db: Session = Depends(get_db)
+):
+    """Delete a course (Admin or owning Faculty)"""
+    course = db.query(Course).filter(Course.id == course_id).first()
+    if not course:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Course not found"
+        )
+
+    # Only admin or the faculty who owns the course may delete
+    if current_user.role == UserRole.FACULTY and course.instructor_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to delete this course"
+        )
+
+    # Audit before deletion
+    audit = AuditLog(
+        user_id=current_user.id,
+        event_type="course_deleted",
+        description=f"Course {course.code} deleted"
+    )
+    db.add(audit)
+
+    # Remove course (cascades depend on DB schema)
+    db.delete(course)
+    db.commit()
+
+    return None
 @router.post("/{course_id}/enroll", response_model=EnrollmentSchema)
 def enroll_student(
     course_id: int,
@@ -284,9 +351,6 @@ def enroll_student(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="student_enrolled",
-        resource_type="enrollment",
-        resource_id=enrollment.id,
-        action="create",
         description=f"Student {student.email} enrolled in {course.code}"
     )
     db.add(audit)
@@ -359,9 +423,6 @@ def enroll_student_by_email(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="student_enrolled",
-        resource_type="enrollment",
-        resource_id=enrollment.id,
-        action="create",
         description=f"Student {student.email} enrolled in {course.code}"
     )
     db.add(audit)
@@ -443,9 +504,6 @@ def bulk_enroll_students(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="bulk_enrollment",
-        resource_type="course",
-        resource_id=course_id,
-        action="bulk_enroll",
         description=f"Bulk enrolled {enrolled} students in {course.code}"
     )
     db.add(audit)
@@ -536,9 +594,6 @@ def unenroll_student(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="student_unenrolled",
-        resource_type="enrollment",
-        resource_id=enrollment.id,
-        action="unenroll",
         description=f"Student {student.email if student else student_id} unenrolled from {course.code}"
     )
     db.add(audit)

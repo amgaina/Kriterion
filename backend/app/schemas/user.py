@@ -13,6 +13,8 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str = Field(..., min_length=8)
+    is_active: Optional[bool] = True
+    send_welcome_email: Optional[bool] = True
     
     @validator('password')
     def validate_password(cls, v):
@@ -20,6 +22,18 @@ class UserCreate(UserBase):
         is_valid, message = validate_password_strength(v)
         if not is_valid:
             raise ValueError(message)
+        return v
+
+
+class AdminUserCreate(UserCreate):
+    is_active: bool = True
+    is_verified: bool = True
+
+    @validator("student_id", always=True)
+    def validate_student_id_for_role(cls, v, values):
+        role = values.get("role")
+        if role == UserRole.STUDENT and not v:
+            raise ValueError("Student ID is required for student accounts")
         return v
 
 
@@ -35,6 +49,18 @@ class UserPasswordChange(BaseModel):
     new_password: str = Field(..., min_length=8)
     
     @validator('new_password')
+    def validate_password(cls, v):
+        from app.core.security import validate_password_strength
+        is_valid, message = validate_password_strength(v)
+        if not is_valid:
+            raise ValueError(message)
+        return v
+
+
+class AdminPasswordReset(BaseModel):
+    new_password: str = Field(..., min_length=8)
+
+    @validator("new_password")
     def validate_password(cls, v):
         from app.core.security import validate_password_strength
         is_valid, message = validate_password_strength(v)

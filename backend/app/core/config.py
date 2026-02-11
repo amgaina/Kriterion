@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     SUBMISSIONS_DIR: str = "/tmp/kriterion/submissions"
     TEMP_DIR: str = "/tmp/kriterion/temp"
     
+    # AWS S3
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    AWS_REGION: str = "us-east-1"
+    AWS_S3_BUCKET_NAME: str = "kriterion-submissions"
+    USE_S3_STORAGE: bool = True  # Set to False to use local storage
+    
     # Sandbox
     SANDBOX_TIMEOUT_SECONDS: int = 30
     SANDBOX_MEMORY_LIMIT_MB: int = 512

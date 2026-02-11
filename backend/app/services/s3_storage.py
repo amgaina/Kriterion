@@ -1,0 +1,224 @@
+"""
+AWS S3 Storage Service - Handle file uploads to S3
+"""
+import boto3
+from botocore.exceptions import ClientError
+from typing import Optional, BinaryIO
+import hashlib
+import os
+from datetime import datetime, timedelta
+from pathlib import Path
+
+from app.core.config import settings
+from app.core.logging import logger
+
+
+class S3StorageService:
+    """Service for managing file uploads to AWS S3"""
+    
+    def __init__(self):
+        """Initialize S3 client"""
+        self.s3_client = boto3.client(
+            's3',
+            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+            region_name=settings.AWS_REGION
+        )
+        self.bucket_name = settings.AWS_S3_BUCKET_NAME
+    
+    def upload_submission_file(
+        self,
+        file_content: BinaryIO,
+        filename: str,
+        submission_id: int,
+        student_id: int,
+        assignment_id: int
+    ) -> dict:
+        """
+        Upload a submission file to S3
+        
+        Args:
+            file_content: File binary content
+            filename: Original filename
+            submission_id: ID of the submission
+            student_id: ID of the student
+            assignment_id: ID of the assignment
+            
+        Returns:
+            dict with s3_url, s3_key, and file_hash
+        """
+        try:
+            # Generate unique S3 key
+            timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+            file_extension = Path(filename).suffix
+            s3_key = f"submissions/{assignment_id}/{student_id}/{submission_id}/{filename}"
+            
+            # Calculate file hash
+            file_content.seek(0)
+            file_hash = hashlib.sha256(file_content.read()).hexdigest()
+            file_content.seek(0)
+            
+            # Upload to S3
+            self.s3_client.upload_fileobj(
+                file_content,
+                self.bucket_name,
+                s3_key,
+                ExtraArgs={
+                    'ContentType': self._get_content_type(file_extension),
+                    'Metadata': {
+                        'submission_id': str(submission_id),
+                        'student_id': str(student_id),
+                        'assignment_id': str(assignment_id),
+                        'original_filename': filename,
+                        'file_hash': file_hash
+                    }
+                }
+            )
+            
+            # Generate S3 URL
+            s3_url = f"https://{self.bucket_name}.s3.{settings.AWS_REGION}.amazonaws.com/{s3_key}"
+            
+            logger.info(f"File uploaded to S3: {s3_key}")
+            
+            return {
+                's3_url': s3_url,
+                's3_key': s3_key,
+                'file_hash': file_hash
+            }
+            
+        except ClientError as e:
+            logger.error(f"S3 upload failed: {str(e)}")
+            raise Exception(f"Failed to upload file to S3: {str(e)}")
+    
+    def download_submission_file(self, s3_key: str, local_path: str) -> str:
+        """
+        Download a file from S3 to local path
+        
+        Args:
+            s3_key: S3 object key
+            local_path: Local file path to save
+            
+        Returns:
+            Local file path
+        """
+        try:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            
+            # Download file
+            self.s3_client.download_file(
+                self.bucket_name,
+                s3_key,
+                local_path
+            )
+            
+            logger.info(f"File downloaded from S3: {s3_key} to {local_path}")
+            return local_path
+            
+        except ClientError as e:
+            logger.error(f"S3 download failed: {str(e)}")
+            raise Exception(f"Failed to download file from S3: {str(e)}")
+    
+    def generate_presigned_url(self, s3_key: str, expiration: int = 3600) -> str:
+        """
+        Generate a presigned URL for temporary file access
+        
+        Args:
+            s3_key: S3 object key
+            expiration: URL expiration time in seconds (default 1 hour)
+            
+        Returns:
+            Presigned URL
+        """
+        try:
+            url = self.s3_client.generate_presigned_url(
+                'get_object',
+                Params={
+                    'Bucket': self.bucket_name,
+                    'Key': s3_key
+                },
+                ExpiresIn=expiration
+            )
+            return url
+            
+        except ClientError as e:
+            logger.error(f"Failed to generate presigned URL: {str(e)}")
+            raise Exception(f"Failed to generate presigned URL: {str(e)}")
+    
+    def delete_file(self, s3_key: str) -> bool:
+        """
+        Delete a file from S3
+        
+        Args:
+            s3_key: S3 object key
+            
+        Returns:
+            True if successful
+        """
+        try:
+            self.s3_client.delete_object(
+                Bucket=self.bucket_name,
+                Key=s3_key
+            )
+            logger.info(f"File deleted from S3: {s3_key}")
+            return True
+            
+        except ClientError as e:
+            logger.error(f"S3 delete failed: {str(e)}")
+            raise Exception(f"Failed to delete file from S3: {str(e)}")
+    
+    def list_submission_files(self, submission_id: int) -> list:
+        """
+        List all files for a submission
+        
+        Args:
+            submission_id: ID of the submission
+            
+        Returns:
+            List of file keys
+        """
+        try:
+            prefix = f"submissions/"
+            response = self.s3_client.list_objects_v2(
+                Bucket=self.bucket_name,
+                Prefix=prefix
+            )
+            
+            files = []
+            if 'Contents' in response:
+                for obj in response['Contents']:
+                    # Filter by submission_id in metadata
+                    head = self.s3_client.head_object(
+                        Bucket=self.bucket_name,
+                        Key=obj['Key']
+                    )
+                    if head.get('Metadata', {}).get('submission_id') == str(submission_id):
+                        files.append(obj['Key'])
+            
+            return files
+            
+        except ClientError as e:
+            logger.error(f"Failed to list S3 files: {str(e)}")
+            return []
+    
+    def _get_content_type(self, file_extension: str) -> str:
+        """Get content type based on file extension"""
+        content_types = {
+            '.py': 'text/x-python',
+            '.java': 'text/x-java',
+            '.js': 'application/javascript',
+            '.ts': 'application/typescript',
+            '.cpp': 'text/x-c++src',
+            '.c': 'text/x-csrc',
+            '.h': 'text/x-chdr',
+            '.hpp': 'text/x-c++hdr',
+            '.txt': 'text/plain',
+            '.md': 'text/markdown',
+            '.pdf': 'application/pdf',
+            '.zip': 'application/zip',
+        }
+        return content_types.get(file_extension.lower(), 'application/octet-stream')
+
+
+# Singleton instance
+s3_service = S3StorageService()

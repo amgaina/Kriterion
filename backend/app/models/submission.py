@@ -10,8 +10,7 @@ from app.core.database import Base
 
 class SubmissionStatus(str, PyEnum):
     PENDING = "pending"          # Just submitted, waiting to be processed
-    PROCESSING = "processing"    # Currently being graded
-    GRADED = "graded"           # Auto-grading complete
+    AUTOGRADED = "autograded"           # Auto-grading complete
     MANUAL_REVIEW = "manual_review"  # Needs manual review
     COMPLETED = "completed"      # Fully graded
     ERROR = "error"             # Error during processing
@@ -40,17 +39,12 @@ class Submission(Base):
     # Late submission
     submitted_at = Column(DateTime, default=datetime.utcnow)
     is_late = Column(Boolean, default=False)
-    late_days = Column(Integer, default=0)
     late_penalty_applied = Column(Float, default=0.0)  # Percentage deducted
     
     # Auto-grading results
     tests_passed = Column(Integer, default=0)
     tests_total = Column(Integer, default=0)
     test_score = Column(Float, nullable=True)  # Score from tests
-    
-    # Execution metrics
-    execution_time_ms = Column(Integer, nullable=True)
-    memory_used_mb = Column(Float, nullable=True)
     
     # Manual grading
     rubric_score = Column(Float, nullable=True)  # Score from rubric
@@ -62,7 +56,6 @@ class Submission(Base):
     
     # Manual override
     override_score = Column(Float, nullable=True)
-    override_reason = Column(Text, nullable=True)
     
     # Grading info
     graded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -70,7 +63,6 @@ class Submission(Base):
     
     # Feedback
     feedback = Column(Text, nullable=True)
-    feedback_private = Column(Text, nullable=True)  # Internal notes for faculty
     
     # Plagiarism Detection
     plagiarism_checked = Column(Boolean, default=False)
@@ -121,14 +113,9 @@ class SubmissionFile(Base):
     filename = Column(String(255), nullable=False)
     original_filename = Column(String(255), nullable=False)
     file_path = Column(String(500), nullable=False)  # Storage path
-    file_size_bytes = Column(Integer, nullable=False)
-    mime_type = Column(String(100), nullable=True)
-    
-    # Content (optional - for quick access without reading file)
-    content = Column(Text, nullable=True)
     
     # File hash for duplicate detection
-    file_hash = Column(String(64), nullable=True)  # SHA-256
+    file_hash = Column(String(64), nullable=True)
     
     # Metadata
     is_main_file = Column(Boolean, default=False)  # Entry point file
@@ -167,10 +154,6 @@ class TestResult(Base):
     error_message = Column(Text, nullable=True)
     error_type = Column(String(100), nullable=True)  # CompileError, RuntimeError, etc.
     stack_trace = Column(Text, nullable=True)
-    
-    # Execution metrics
-    execution_time_ms = Column(Integer, nullable=True)
-    memory_used_mb = Column(Float, nullable=True)
     
     # Status
     timed_out = Column(Boolean, default=False)

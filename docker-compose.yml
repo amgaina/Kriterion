@@ -29,6 +29,11 @@ services:
       - BACKEND_CORS_ORIGINS=["http://localhost:3000","http://frontend:3000"]
       - ENVIRONMENT=${ENVIRONMENT:-development}
       - DEBUG=${DEBUG:-true}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_S3_BUCKET_NAME=${AWS_S3_BUCKET_NAME:-kriterion-submissions}
+      - USE_S3_STORAGE=${USE_S3_STORAGE:-true}
     volumes:
       - ./backend:/app
       - uploads_data:/tmp/kriterion/uploads
@@ -37,7 +42,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app
 
   frontend:
     build:
@@ -49,6 +54,11 @@ services:
       - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
       - NEXT_PUBLIC_APP_NAME=Kriterion
       - NODE_ENV=development
+      # Enable file watching inside Docker on macOS
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+      - WATCHPACK_FORCE_POLLING=true
+      - WDS_SOCKET_PORT=3000
     ports:
       - "3000:3000"
     depends_on:

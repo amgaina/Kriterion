@@ -1,489 +1,655 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { DashboardLayout } from '@/components/layouts/DashboardLayout';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
-import { format } from 'date-fns';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { format, isPast } from 'date-fns';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
-import { Tabs } from '@/components/ui/tabs';
 import {
     FileCode,
     Clock,
-    CheckCircle,
-    AlertCircle,
+    CheckCircle2,
+    XCircle,
     Calendar,
     Play,
     Send,
     ArrowLeft,
-    BookOpen,
-    Code,
-    Terminal,
-    Download,
-    RotateCcw,
-    Eye,
+    Upload,
+    X,
+    Folder,
+    File,
+    AlertCircle,
     Loader2,
-    Info,
-    Award
+    Award,
+    Target,
+    Zap,
+    CheckCircle,
+    AlertTriangle,
+    Info
 } from 'lucide-react';
+
+interface TestResult {
+    id: number;
+    name: string;
+    passed: boolean;
+    score: number;
+    max_score: number;
+    output?: string;
+    error?: string;
+}
+
+interface UploadedFile {
+    name: string;
+    content: string;
+    size: number;
+}
 
 export default function AssignmentDetailPage() {
     const params = useParams();
     const router = useRouter();
     const queryClient = useQueryClient();
-    const assignmentId = params.id as string;
+    const assignmentId = Number(params.id);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const [code, setCode] = useState('');
-    const [activeTab, setActiveTab] = useState('instructions');
+    const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+    const [selectedFile, setSelectedFile] = useState<UploadedFile | null>(null);
     const [isRunning, setIsRunning] = useState(false);
-    const [output, setOutput] = useState<string | null>(null);
-    const [testResults, setTestResults] = useState<any[]>([]);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [output, setOutput] = useState<string>('');
+    const [testResults, setTestResults] = useState<TestResult[]>([]);
+    const [isDragging, setIsDragging] = useState(false);
 
     // Fetch assignment details
-    const { data: assignment, isLoading } = useQuery({
+    const { data: assignment, isLoading: assignmentLoading } = useQuery({
         queryKey: ['assignment', assignmentId],
-        queryFn: () => apiClient.getAssignment(Number(assignmentId)),
+        queryFn: () => apiClient.getAssignment(assignmentId),
     });
 
-    // Mock assignment data
-    const mockAssignment = {
-        id: Number(assignmentId),
-        title: 'Binary Search Tree Implementation',
-        description: 'Implement a binary search tree (BST) data structure with the following operations: insert, search, delete, and inorder traversal.',
-        course_name: 'Data Structures',
-        course_code: 'CS201',
-        due_date: new Date(Date.now() + 1000 * 60 * 60 * 24 * 2).toISOString(),
-        max_score: 100,
-        language: 'Python',
-        difficulty: 'medium',
-        submission_count: 1,
-        max_submissions: 5,
-        status: 'pending',
-        instructions: `
-## Assignment Overview
+    // Fetch student's submissions for this assignment
+    const { data: submissions = [] } = useQuery({
+        queryKey: ['submissions', assignmentId],
+        queryFn: () => apiClient.getSubmissions(assignmentId),
+    });
 
-Implement a Binary Search Tree (BST) class in Python with the following methods:
+    const latestSubmission = submissions.length > 0 ? submissions[0] : null;
 
-### Required Methods
+    // Handle file upload
+    const handleFileUpload = useCallback((files: FileList | null) => {
+        if (!files) return;
 
-1. **insert(value)** - Insert a new value into the BST
-2. **search(value)** - Search for a value and return True if found, False otherwise
-3. **delete(value)** - Delete a value from the BST
-4. **inorder()** - Return a list of values in inorder traversal
+        Array.from(files).forEach((file) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const content = e.target?.result as string;
+                const newFile: UploadedFile = {
+                    name: file.name,
+                    content,
+                    size: file.size,
+                };
+                setUploadedFiles((prev) => {
+                    const exists = prev.find((f) => f.name === file.name);
+                    if (exists) {
+                        return prev.map((f) => (f.name === file.name ? newFile : f));
+                    }
+                    return [...prev, newFile];
+                });
+                if (!selectedFile) {
+                    setSelectedFile(newFile);
+                }
+            };
+            reader.readAsText(file);
+        });
+    }, [selectedFile]);
 
-### Example Usage
+    // Drag and drop handlers
+    const handleDragOver = useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(true);
+    }, []);
 
-\`\`\`python
-bst = BinarySearchTree()
-bst.insert(50)
-bst.insert(30)
-bst.insert(70)
-print(bst.inorder())  # Output: [30, 50, 70]
-print(bst.search(30))  # Output: True
-bst.delete(30)
-print(bst.inorder())  # Output: [50, 70]
-\`\`\`
+    const handleDragLeave = useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(false);
+    }, []);
 
-### Grading Criteria
+    const handleDrop = useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(false);
+        handleFileUpload(e.dataTransfer.files);
+    }, [handleFileUpload]);
 
-- **Correctness (60%)**: All test cases pass
-- **Code Quality (20%)**: Clean, readable code with proper naming
-- **Efficiency (20%)**: Optimal time complexity for each operation
-        `,
-        starter_code: `class TreeNode:
-    def __init__(self, value):
-        self.value = value
-        self.left = None
-        self.right = None
-
-
-class BinarySearchTree:
-    def __init__(self):
-        self.root = None
-    
-    def insert(self, value):
-        # TODO: Implement insert operation
-        pass
-    
-    def search(self, value):
-        # TODO: Implement search operation
-        pass
-    
-    def delete(self, value):
-        # TODO: Implement delete operation
-        pass
-    
-    def inorder(self):
-        # TODO: Implement inorder traversal
-        pass
-`,
-        test_cases: [
-            { id: 1, name: 'Test Insert', points: 20, passed: null },
-            { id: 2, name: 'Test Search', points: 20, passed: null },
-            { id: 3, name: 'Test Delete', points: 30, passed: null },
-            { id: 4, name: 'Test Inorder', points: 15, passed: null },
-            { id: 5, name: 'Test Edge Cases', points: 15, passed: null },
-        ],
-        previous_submissions: [
-            { id: 1, submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(), score: 45, passed_tests: 2, total_tests: 5 },
-        ],
-    };
-
-    const displayAssignment = assignment || mockAssignment;
-
-    useEffect(() => {
-        if (displayAssignment.starter_code) {
-            setCode(displayAssignment.starter_code);
+    // Remove file
+    const removeFile = useCallback((fileName: string) => {
+        setUploadedFiles((prev) => prev.filter((f) => f.name !== fileName));
+        if (selectedFile?.name === fileName) {
+            setSelectedFile(uploadedFiles.length > 1 ? uploadedFiles[0] : null);
         }
-    }, [displayAssignment]);
+    }, [selectedFile, uploadedFiles]);
 
-    const submitMutation = useMutation({
-        mutationFn: async (codeToSubmit: string) => {
-            // Simulate API call
-            return new Promise((resolve) => {
-                setTimeout(() => {
-                    resolve({
-                        success: true,
-                        score: 75,
-                        test_results: [
-                            { id: 1, name: 'Test Insert', passed: true, points: 20 },
-                            { id: 2, name: 'Test Search', passed: true, points: 20 },
-                            { id: 3, name: 'Test Delete', passed: false, points: 0, error: 'Expected [50, 70] but got [30, 50, 70]' },
-                            { id: 4, name: 'Test Inorder', passed: true, points: 15 },
-                            { id: 5, name: 'Test Edge Cases', passed: true, points: 15 },
-                        ],
-                    });
-                }, 3000);
-            });
-        },
-        onSuccess: (data: any) => {
-            setTestResults(data.test_results);
-            setActiveTab('results');
-            queryClient.invalidateQueries({ queryKey: ['assignment', assignmentId] });
-        },
-    });
-
+    // Run code
     const handleRunCode = async () => {
+        if (uploadedFiles.length === 0) {
+            setOutput('⚠️ Please upload at least one file to run.');
+            return;
+        }
+
         setIsRunning(true);
-        setOutput(null);
+        setOutput('🔄 Running your code...\n');
+        setTestResults([]);
 
-        // Simulate running code
-        setTimeout(() => {
-            setOutput(`Running code...
-            
-[30, 50, 70]
-True
+        try {
+            // Simulate running code and tests
+            await new Promise((resolve) => setTimeout(resolve, 2000));
 
-Execution completed successfully.
-Time: 0.023s
-Memory: 12.4 MB`);
+            const mockTestResults: TestResult[] = [
+                {
+                    id: 1,
+                    name: 'Test Basic Functionality',
+                    passed: true,
+                    score: 10,
+                    max_score: 10,
+                    output: 'All assertions passed ✓',
+                },
+                {
+                    id: 2,
+                    name: 'Test Edge Cases',
+                    passed: true,
+                    score: 15,
+                    max_score: 15,
+                    output: 'Empty list, single element, large numbers - all passed ✓',
+                },
+                {
+                    id: 3,
+                    name: 'Test Performance',
+                    passed: false,
+                    score: 5,
+                    max_score: 10,
+                    error: 'Execution time exceeded: 2.5s > 2.0s limit',
+                },
+                {
+                    id: 4,
+                    name: 'Test Error Handling',
+                    passed: true,
+                    score: 10,
+                    max_score: 10,
+                    output: 'Proper exception handling verified ✓',
+                },
+            ];
+
+            setTestResults(mockTestResults);
+            setOutput(
+                '✅ Code executed successfully!\n\n' +
+                '📊 Test Results:\n' +
+                mockTestResults
+                    .map(
+                        (t) =>
+                            `${t.passed ? '✓' : '✗'} ${t.name}: ${t.score}/${t.max_score} points`
+                    )
+                    .join('\n') +
+                '\n\n💡 Check the test panel on the right for detailed results.'
+            );
+        } catch (error: any) {
+            setOutput(`❌ Error: ${error.message}`);
+        } finally {
             setIsRunning(false);
-        }, 2000);
+        }
     };
 
-    const handleSubmit = () => {
-        submitMutation.mutate(code);
+    // Submit assignment
+    const handleSubmit = async () => {
+        if (uploadedFiles.length === 0) {
+            alert('Please upload at least one file before submitting.');
+            return;
+        }
+
+        if (!confirm('Are you sure you want to submit this assignment? This will count as an attempt.')) {
+            return;
+        }
+
+        setIsSubmitting(true);
+        try {
+            // Convert files to File objects for upload
+            const fileObjects = uploadedFiles.map((f) => {
+                const blob = new Blob([f.content], { type: 'text/plain' });
+                return new window.File([blob], f.name, { type: 'text/plain' });
+            });
+
+            await apiClient.createSubmission(assignmentId, fileObjects);
+            
+            setOutput('✅ Assignment submitted successfully!\n\n📝 Your submission is being graded...');
+            queryClient.invalidateQueries({ queryKey: ['submissions', assignmentId] });
+            
+            // Redirect after a delay
+            setTimeout(() => {
+                router.push('/student/courses');
+            }, 2000);
+        } catch (error: any) {
+            setOutput(`❌ Submission failed: ${error.message}`);
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
-    const tabs = [
-        { id: 'instructions', label: 'Instructions', icon: <BookOpen className="w-4 h-4" /> },
-        { id: 'code', label: 'Code Editor', icon: <Code className="w-4 h-4" /> },
-        { id: 'results', label: 'Results', icon: <Award className="w-4 h-4" /> },
-        { id: 'submissions', label: 'Submissions', icon: <FileCode className="w-4 h-4" /> },
-    ];
+    // Calculate test statistics
+    const testStats = {
+        total: testResults.length,
+        passed: testResults.filter((t) => t.passed).length,
+        failed: testResults.filter((t) => !t.passed).length,
+        score: testResults.reduce((sum, t) => sum + t.score, 0),
+        maxScore: testResults.reduce((sum, t) => sum + t.max_score, 0),
+    };
 
-    const passedTests = testResults.filter(t => t.passed).length;
-    const totalScore = testResults.reduce((acc, t) => acc + (t.passed ? t.points : 0), 0);
-
-    if (isLoading) {
+    if (assignmentLoading) {
         return (
             <ProtectedRoute allowedRoles={['STUDENT']}>
                 <DashboardLayout>
                     <div className="flex items-center justify-center h-96">
-                        <Loader2 className="w-8 h-8 animate-spin text-[#862733]" />
+                        <div className="text-center">
+                            <Loader2 className="w-12 h-12 animate-spin text-[#862733] mx-auto mb-4" />
+                            <p className="text-gray-500">Loading assignment...</p>
+                        </div>
                     </div>
                 </DashboardLayout>
             </ProtectedRoute>
         );
     }
 
+    if (!assignment) {
+        return (
+            <ProtectedRoute allowedRoles={['STUDENT']}>
+                <DashboardLayout>
+                    <div className="text-center py-12">
+                        <AlertCircle className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                        <h2 className="text-2xl font-bold text-gray-900 mb-2">Assignment Not Found</h2>
+                        <Button onClick={() => router.back()} className="mt-4">
+                            <ArrowLeft className="w-4 h-4 mr-2" />
+                            Go Back
+                        </Button>
+                    </div>
+                </DashboardLayout>
+            </ProtectedRoute>
+        );
+    }
+
+    const isOverdue = isPast(new Date(assignment.due_date));
+    const hasSubmission = latestSubmission !== null;
+
     return (
         <ProtectedRoute allowedRoles={['STUDENT']}>
             <DashboardLayout>
-                <div className="space-y-6">
+                <div className="space-y-4">
                     {/* Header */}
-                    <div className="flex items-start justify-between">
-                        <div className="flex items-start gap-4">
-                            <Button variant="ghost" size="sm" onClick={() => router.back()}>
-                                <ArrowLeft className="w-4 h-4 mr-1" />
+                    <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => router.back()}
+                                className="gap-2"
+                            >
+                                <ArrowLeft className="w-4 h-4" />
                                 Back
                             </Button>
                             <div>
-                                <div className="flex items-center gap-2 mb-1">
-                                    <Badge variant="outline">{displayAssignment.course_code}</Badge>
-                                    <Badge variant={displayAssignment.difficulty === 'hard' ? 'danger' : displayAssignment.difficulty === 'medium' ? 'warning' : 'success'}>
-                                        {displayAssignment.difficulty}
+                                <h1 className="text-2xl font-bold text-gray-900">{assignment.title}</h1>
+                                <div className="flex items-center gap-3 mt-1 text-sm text-gray-600">
+                                    <span className="flex items-center gap-1">
+                                        <Calendar className="w-4 h-4" />
+                                        Due: {format(new Date(assignment.due_date), 'MMM dd, yyyy HH:mm')}
+                                    </span>
+                                    <span className="flex items-center gap-1">
+                                        <Award className="w-4 h-4" />
+                                        {assignment.max_score} points
+                                    </span>
+                                    <Badge
+                                        variant="outline"
+                                        className={
+                                            assignment.difficulty === 'easy'
+                                                ? 'bg-green-100 text-green-700 border-green-200'
+                                                : assignment.difficulty === 'hard'
+                                                ? 'bg-red-100 text-red-700 border-red-200'
+                                                : 'bg-yellow-100 text-yellow-700 border-yellow-200'
+                                        }
+                                    >
+                                        {assignment.difficulty}
                                     </Badge>
-                                    <Badge variant="info">{displayAssignment.language}</Badge>
                                 </div>
-                                <h1 className="text-2xl font-bold text-gray-900">{displayAssignment.title}</h1>
-                                <p className="text-gray-500 mt-1">{displayAssignment.course_name}</p>
                             </div>
                         </div>
-                        <div className="text-right">
-                            <div className="flex items-center gap-2 text-gray-500 mb-1">
-                                <Calendar className="w-4 h-4" />
-                                Due {format(new Date(displayAssignment.due_date), 'MMM dd, yyyy h:mm a')}
-                            </div>
-                            <p className="text-sm text-gray-500">
-                                {displayAssignment.submission_count}/{displayAssignment.max_submissions} submissions used
-                            </p>
+
+                        {/* Action Buttons */}
+                        <div className="flex items-center gap-2">
+                            <Button
+                                onClick={handleRunCode}
+                                disabled={isRunning || uploadedFiles.length === 0}
+                                className="gap-2 bg-blue-600 hover:bg-blue-700"
+                            >
+                                {isRunning ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        Running...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Play className="w-4 h-4" />
+                                        Run Code
+                                    </>
+                                )}
+                            </Button>
+                            <Button
+                                onClick={handleSubmit}
+                                disabled={isSubmitting || uploadedFiles.length === 0}
+                                className="gap-2 bg-[#862733] hover:bg-[#6d1f29]"
+                            >
+                                {isSubmitting ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        Submitting...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Send className="w-4 h-4" />
+                                        Submit Assignment
+                                    </>
+                                )}
+                            </Button>
                         </div>
                     </div>
 
-                    {/* Alert for due soon */}
-                    {new Date(displayAssignment.due_date) > new Date() &&
-                        new Date(displayAssignment.due_date) < new Date(Date.now() + 1000 * 60 * 60 * 24) && (
-                            <Alert type="warning" title="Due Soon">
-                                This assignment is due in less than 24 hours. Make sure to submit before the deadline.
-                            </Alert>
-                        )}
+                    {/* Alerts */}
+                    {isOverdue && !hasSubmission && (
+                        <Alert type="error" className="border-red-200 bg-red-50">
+                            <AlertTriangle className="h-4 w-4 text-red-600" />
+                            <div className="ml-2">
+                                <p className="font-medium text-red-900">This assignment is overdue!</p>
+                                <p className="text-sm text-red-700">
+                                    Late submissions may incur a penalty of {assignment.late_penalty_per_day}% per day.
+                                </p>
+                            </div>
+                        </Alert>
+                    )}
 
-                    {/* Tabs */}
-                    <Card>
-                        <CardContent className="p-4">
-                            <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
-                        </CardContent>
-                    </Card>
+                    {hasSubmission && (
+                        <Alert type="success" className="border-green-200 bg-green-50">
+                            <CheckCircle className="h-4 w-4 text-green-600" />
+                            <div className="ml-2">
+                                <p className="font-medium text-green-900">
+                                    You have already submitted this assignment
+                                </p>
+                                <p className="text-sm text-green-700">
+                                    Score: {latestSubmission.final_score}/{assignment.max_score} | Tests Passed:{' '}
+                                    {latestSubmission.tests_passed}/{latestSubmission.tests_total}
+                                </p>
+                            </div>
+                        </Alert>
+                    )}
 
-                    {/* Tab Content */}
-                    {activeTab === 'instructions' && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Assignment Instructions</CardTitle>
-                                <CardDescription>{displayAssignment.description}</CardDescription>
+                    {/* Main VSCode-like Layout */}
+                    <div className="grid grid-cols-12 gap-4" style={{ height: 'calc(100vh - 280px)' }}>
+                        {/* Left Sidebar - File Explorer */}
+                        <Card className="col-span-12 lg:col-span-3 overflow-hidden flex flex-col">
+                            <CardHeader className="pb-3 border-b bg-gray-50">
+                                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                                    <Folder className="w-4 h-4" />
+                                    Files
+                                </CardTitle>
                             </CardHeader>
-                            <CardContent>
-                                <div className="prose prose-sm max-w-none">
-                                    <div dangerouslySetInnerHTML={{
-                                        __html: displayAssignment.instructions
-                                            .replace(/## /g, '<h2 class="text-lg font-semibold mt-6 mb-3">')
-                                            .replace(/### /g, '<h3 class="text-md font-medium mt-4 mb-2">')
-                                            .replace(/\n/g, '<br>')
-                                            .replace(/```python/g, '<pre class="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto"><code>')
-                                            .replace(/```/g, '</code></pre>')
-                                            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                                    }} />
-                                </div>
-
-                                <div className="mt-6 pt-6 border-t">
-                                    <h3 className="font-medium text-gray-900 mb-4">Test Cases</h3>
-                                    <div className="space-y-2">
-                                        {displayAssignment.test_cases.map((test: any) => (
-                                            <div key={test.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                                                <span className="text-sm">{test.name}</span>
-                                                <Badge variant="outline">{test.points} pts</Badge>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div className="mt-6 flex justify-center">
-                                    <Button onClick={() => setActiveTab('code')}>
-                                        <Code className="w-4 h-4 mr-2" />
-                                        Start Coding
+                            <CardContent className="flex-1 p-0 overflow-y-auto">
+                                {/* Drag & Drop Zone */}
+                                <div
+                                    onDragOver={handleDragOver}
+                                    onDragLeave={handleDragLeave}
+                                    onDrop={handleDrop}
+                                    className={`m-3 border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+                                        isDragging
+                                            ? 'border-[#862733] bg-[#862733]/5'
+                                            : 'border-gray-300 hover:border-gray-400'
+                                    }`}
+                                >
+                                    <Upload className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                                    <p className="text-sm text-gray-600 mb-2">
+                                        Drag & drop files here
+                                    </p>
+                                    <p className="text-xs text-gray-500 mb-3">or</p>
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file"
+                                        multiple
+                                        onChange={(e) => handleFileUpload(e.target.files)}
+                                        className="hidden"
+                                        accept=".py,.java,.js,.ts,.cpp,.c,.h,.hpp"
+                                    />
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => fileInputRef.current?.click()}
+                                        className="gap-2"
+                                    >
+                                        <Upload className="w-4 h-4" />
+                                        Browse Files
                                     </Button>
+                                </div>
+
+                                {/* File List */}
+                                <div className="px-3 pb-3">
+                                    {uploadedFiles.length > 0 ? (
+                                        <div className="space-y-1">
+                                            {uploadedFiles.map((file) => (
+                                                <div
+                                                    key={file.name}
+                                                    onClick={() => setSelectedFile(file)}
+                                                    className={`flex items-center justify-between p-2 rounded-md cursor-pointer transition-colors ${
+                                                        selectedFile?.name === file.name
+                                                            ? 'bg-[#862733] text-white'
+                                                            : 'hover:bg-gray-100'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                        <FileCode className="w-4 h-4 flex-shrink-0" />
+                                                        <span className="text-sm font-medium truncate">
+                                                            {file.name}
+                                                        </span>
+                                                    </div>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            removeFile(file.name);
+                                                        }}
+                                                        className={`ml-2 p-1 rounded hover:bg-red-100 ${
+                                                            selectedFile?.name === file.name
+                                                                ? 'hover:bg-red-600'
+                                                                : ''
+                                                        }`}
+                                                    >
+                                                        <X className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="text-center py-8 text-gray-500 text-sm">
+                                            No files uploaded yet
+                                        </div>
+                                    )}
                                 </div>
                             </CardContent>
                         </Card>
-                    )}
 
-                    {activeTab === 'code' && (
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            {/* Code Editor */}
-                            <Card className="lg:col-span-1">
-                                <CardHeader className="pb-3">
-                                    <div className="flex items-center justify-between">
-                                        <CardTitle className="flex items-center gap-2">
-                                            <Code className="w-5 h-5" />
-                                            Code Editor
-                                        </CardTitle>
-                                        <div className="flex items-center gap-2">
-                                            <Button variant="ghost" size="sm" onClick={() => setCode(displayAssignment.starter_code)}>
-                                                <RotateCcw className="w-4 h-4 mr-1" />
-                                                Reset
-                                            </Button>
+                        {/* Middle - Code Editor */}
+                        <Card className="col-span-12 lg:col-span-6 overflow-hidden flex flex-col">
+                            <CardHeader className="pb-3 border-b bg-gray-50">
+                                <div className="flex items-center justify-between">
+                                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                                        <FileCode className="w-4 h-4" />
+                                        {selectedFile ? selectedFile.name : 'Code Editor'}
+                                    </CardTitle>
+                                    {selectedFile && (
+                                        <Badge variant="default" className="text-xs">
+                                            {(selectedFile.size / 1024).toFixed(2)} KB
+                                        </Badge>
+                                    )}
+                                </div>
+                            </CardHeader>
+                            <CardContent className="flex-1 p-0 overflow-hidden flex flex-col">
+                                {selectedFile ? (
+                                    <div className="flex-1 overflow-auto">
+                                        <pre className="p-4 text-sm font-mono bg-gray-50 h-full overflow-auto">
+                                            <code>{selectedFile.content}</code>
+                                        </pre>
+                                    </div>
+                                ) : (
+                                    <div className="flex-1 flex items-center justify-center text-gray-500">
+                                        <div className="text-center">
+                                            <FileCode className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                                            <p>Select a file to view its contents</p>
+                                            <p className="text-sm text-gray-400 mt-1">
+                                                Upload files from the left panel
+                                            </p>
                                         </div>
                                     </div>
-                                </CardHeader>
-                                <CardContent>
-                                    <textarea
-                                        value={code}
-                                        onChange={(e) => setCode(e.target.value)}
-                                        className="w-full h-96 font-mono text-sm p-4 bg-gray-900 text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#862733]"
-                                        spellCheck={false}
-                                    />
-                                    <div className="flex items-center justify-between mt-4">
-                                        <Button variant="outline" onClick={handleRunCode} disabled={isRunning}>
-                                            {isRunning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
-                                            Run Code
-                                        </Button>
-                                        <Button
-                                            onClick={handleSubmit}
-                                            disabled={submitMutation.isPending || displayAssignment.submission_count >= displayAssignment.max_submissions}
-                                        >
-                                            {submitMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
-                                            Submit
-                                        </Button>
-                                    </div>
-                                </CardContent>
-                            </Card>
+                                )}
 
-                            {/* Output Panel */}
-                            <Card className="lg:col-span-1">
-                                <CardHeader className="pb-3">
-                                    <CardTitle className="flex items-center gap-2">
-                                        <Terminal className="w-5 h-5" />
-                                        Output
-                                    </CardTitle>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="h-96 bg-gray-900 rounded-lg p-4 overflow-auto">
-                                        {isRunning ? (
-                                            <div className="flex items-center gap-2 text-gray-400">
-                                                <Loader2 className="w-4 h-4 animate-spin" />
-                                                Running...
-                                            </div>
-                                        ) : output ? (
-                                            <pre className="text-sm text-gray-100 whitespace-pre-wrap">{output}</pre>
-                                        ) : (
-                                            <p className="text-gray-500">Click "Run Code" to see output here...</p>
-                                        )}
+                                {/* Output Section */}
+                                {output && (
+                                    <div className="border-t bg-gray-900 text-gray-100">
+                                        <div className="px-4 py-2 bg-gray-800 border-b border-gray-700 flex items-center justify-between">
+                                            <span className="text-xs font-medium flex items-center gap-2">
+                                                <Zap className="w-3 h-3" />
+                                                Output
+                                            </span>
+                                            <button
+                                                onClick={() => setOutput('')}
+                                                className="text-gray-400 hover:text-white"
+                                            >
+                                                <X className="w-3 h-3" />
+                                            </button>
+                                        </div>
+                                        <pre className="p-4 text-xs font-mono overflow-auto max-h-48">
+                                            {output}
+                                        </pre>
                                     </div>
-                                </CardContent>
-                            </Card>
-                        </div>
-                    )}
+                                )}
+                            </CardContent>
+                        </Card>
 
-                    {activeTab === 'results' && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Test Results</CardTitle>
-                                <CardDescription>
-                                    {testResults.length > 0
-                                        ? `${passedTests}/${testResults.length} tests passed • Score: ${totalScore}/${displayAssignment.max_score}`
-                                        : 'Submit your code to see test results'
-                                    }
-                                </CardDescription>
+                        {/* Right Sidebar - Test Results */}
+                        <Card className="col-span-12 lg:col-span-3 overflow-hidden flex flex-col">
+                            <CardHeader className="pb-3 border-b bg-gray-50">
+                                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                                    <Target className="w-4 h-4" />
+                                    Test Results
+                                </CardTitle>
                             </CardHeader>
-                            <CardContent>
+                            <CardContent className="flex-1 p-4 overflow-y-auto">
                                 {testResults.length > 0 ? (
-                                    <>
-                                        <div className="mb-6">
+                                    <div className="space-y-4">
+                                        {/* Summary */}
+                                        <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg p-4 border border-blue-200">
                                             <div className="flex items-center justify-between mb-2">
-                                                <span className="text-sm font-medium">Overall Score</span>
-                                                <span className="text-lg font-bold text-[#862733]">{totalScore}%</span>
+                                                <span className="text-sm font-medium text-gray-700">
+                                                    Score
+                                                </span>
+                                                <span className="text-2xl font-bold text-[#862733]">
+                                                    {testStats.score}/{testStats.maxScore}
+                                                </span>
                                             </div>
                                             <Progress
-                                                value={totalScore}
-                                                variant={totalScore >= 80 ? 'success' : totalScore >= 60 ? 'warning' : 'danger'}
+                                                value={(testStats.score / testStats.maxScore) * 100}
+                                                className="h-2 mb-3"
                                             />
+                                            <div className="flex items-center justify-between text-sm">
+                                                <div className="flex items-center gap-1 text-green-600">
+                                                    <CheckCircle2 className="w-4 h-4" />
+                                                    <span>{testStats.passed} Passed</span>
+                                                </div>
+                                                <div className="flex items-center gap-1 text-red-600">
+                                                    <XCircle className="w-4 h-4" />
+                                                    <span>{testStats.failed} Failed</span>
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div className="space-y-3">
+
+                                        {/* Individual Tests */}
+                                        <div className="space-y-2">
                                             {testResults.map((test) => (
                                                 <div
                                                     key={test.id}
-                                                    className={`p-4 rounded-lg border ${test.passed ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}
+                                                    className={`p-3 rounded-lg border-l-4 ${
+                                                        test.passed
+                                                            ? 'bg-green-50 border-green-500'
+                                                            : 'bg-red-50 border-red-500'
+                                                    }`}
                                                 >
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="flex items-center gap-2">
-                                                            {test.passed ? (
-                                                                <CheckCircle className="w-5 h-5 text-green-600" />
-                                                            ) : (
-                                                                <AlertCircle className="w-5 h-5 text-red-600" />
-                                                            )}
-                                                            <span className="font-medium">{test.name}</span>
-                                                        </div>
-                                                        <Badge variant={test.passed ? 'success' : 'danger'}>
-                                                            {test.passed ? `+${test.points}` : '0'} pts
-                                                        </Badge>
+                                                    <div className="flex items-start justify-between mb-1">
+                                                        <span className="text-sm font-medium text-gray-900 flex-1">
+                                                            {test.name}
+                                                        </span>
+                                                        {test.passed ? (
+                                                            <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
+                                                        ) : (
+                                                            <XCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
+                                                        )}
                                                     </div>
+                                                    <div className="text-xs text-gray-600 mb-2">
+                                                        Score: {test.score}/{test.max_score}
+                                                    </div>
+                                                    {test.output && (
+                                                        <p className="text-xs text-gray-700 mt-1">
+                                                            {test.output}
+                                                        </p>
+                                                    )}
                                                     {test.error && (
-                                                        <p className="mt-2 text-sm text-red-600">{test.error}</p>
+                                                        <p className="text-xs text-red-700 mt-1 font-mono">
+                                                            {test.error}
+                                                        </p>
                                                     )}
                                                 </div>
                                             ))}
                                         </div>
-                                    </>
+                                    </div>
                                 ) : (
-                                    <div className="text-center py-12">
-                                        <FileCode className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-                                        <h3 className="text-lg font-medium text-gray-900 mb-2">No results yet</h3>
-                                        <p className="text-gray-500 mb-4">Submit your code to run tests and see results.</p>
-                                        <Button onClick={() => setActiveTab('code')}>
-                                            <Code className="w-4 h-4 mr-2" />
-                                            Go to Code Editor
-                                        </Button>
+                                    <div className="flex items-center justify-center h-full text-center">
+                                        <div>
+                                            <Target className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                                            <p className="text-sm text-gray-500 mb-1">
+                                                No test results yet
+                                            </p>
+                                            <p className="text-xs text-gray-400">
+                                                Run your code to see test results
+                                            </p>
+                                        </div>
                                     </div>
                                 )}
                             </CardContent>
                         </Card>
-                    )}
+                    </div>
 
-                    {activeTab === 'submissions' && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Submission History</CardTitle>
-                                <CardDescription>
-                                    {displayAssignment.submission_count}/{displayAssignment.max_submissions} submissions used
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                {displayAssignment.previous_submissions && displayAssignment.previous_submissions.length > 0 ? (
-                                    <div className="space-y-4">
-                                        {displayAssignment.previous_submissions.map((sub: any, index: number) => (
-                                            <div key={sub.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                                                <div className="flex items-center gap-4">
-                                                    <div className="w-10 h-10 rounded-full bg-[#862733]/10 flex items-center justify-center text-[#862733] font-bold">
-                                                        #{displayAssignment.previous_submissions.length - index}
-                                                    </div>
-                                                    <div>
-                                                        <p className="font-medium text-gray-900">
-                                                            Submitted {format(new Date(sub.submitted_at), 'MMM dd, yyyy h:mm a')}
-                                                        </p>
-                                                        <p className="text-sm text-gray-500">
-                                                            {sub.passed_tests}/{sub.total_tests} tests passed
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-4">
-                                                    <div className="text-right">
-                                                        <p className="text-xl font-bold text-[#862733]">{sub.score}%</p>
-                                                        <p className="text-sm text-gray-500">Score</p>
-                                                    </div>
-                                                    <Button variant="ghost" size="sm">
-                                                        <Eye className="w-4 h-4" />
-                                                    </Button>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <div className="text-center py-12">
-                                        <FileCode className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-                                        <h3 className="text-lg font-medium text-gray-900 mb-2">No submissions yet</h3>
-                                        <p className="text-gray-500">Submit your code to see your submission history.</p>
+                    {/* Assignment Instructions */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="text-lg flex items-center gap-2">
+                                <Info className="w-5 h-5" />
+                                Instructions
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="prose max-w-none text-gray-700">
+                                <p>{assignment.description}</p>
+                                {assignment.instructions && (
+                                    <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                                        <p className="text-sm whitespace-pre-wrap">{assignment.instructions}</p>
                                     </div>
                                 )}
-                            </CardContent>
-                        </Card>
-                    )}
+                            </div>
+                        </CardContent>
+                    </Card>
                 </div>
             </DashboardLayout>
         </ProtectedRoute>

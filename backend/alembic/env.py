@@ -17,8 +17,8 @@ from app.models import (
     Submission, SubmissionFile, TestResult, RubricScore, PlagiarismMatch,
     Language, FacultyLanguagePermission,
     StudentProgress, Achievement, StudentAchievement, Skill, StudentSkill,
-    NotificationSettings, UserPreferences, SystemSettings,
-    AuditLog, LoginAttempt, SecurityEvent,
+    NotificationSettings, UserPreferences,
+    AuditLog,
     Notification
 )
 

@@ -1,5 +1,6 @@
 'use client';
 
+import React, { useState } from 'react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { DashboardLayout } from '@/components/layouts/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
@@ -12,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { StatsCard } from '@/components/ui/stats-card';
+import { DashboardCalendar } from '@/components/dashboard/DashboardCalendar';
 import {
     BookOpen,
     FileCode,
@@ -74,6 +76,24 @@ export default function StudentDashboardPage() {
     const displayAssignments = assignments.length > 0 ? assignments : mockUpcomingAssignments;
     const displayCourses = courses.length > 0 ? courses : mockCourses;
 
+    const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+
+    const highlightDates = displayAssignments
+        .map((assignment: any) => assignment.due_date)
+        .filter((date: string | undefined | null) => Boolean(date));
+
+    const filteredAssignments = selectedDate
+        ? displayAssignments.filter((assignment: any) => {
+              const raw = assignment.due_date;
+              if (!raw) return false;
+              const due = new Date(raw);
+              if (isNaN(due.getTime())) return false;
+              return due.toDateString() === selectedDate.toDateString();
+          })
+        : displayAssignments;
+
+    const assignmentsToShow = (selectedDate ? filteredAssignments : displayAssignments).slice(0, 4);
+
     const getTimeRemaining = (dueDate: string) => {
         const due = new Date(dueDate);
         if (isPast(due)) return { text: 'Overdue', urgent: true };
@@ -97,11 +117,7 @@ export default function StudentDashboardPage() {
                                     You have {displayStats.pending_assignments || 3} assignments due this week.
                                 </p>
                             </div>
-                            <div className="flex items-center gap-4">
-                                <div className="text-center px-4 py-2 bg-white/10 rounded-lg">
-                                    <p className="text-2xl font-bold">{displayStats.streak_days || 7}</p>
-                                    <p className="text-xs text-white/70">Day Streak 🔥</p>
-                                </div>
+                            <div className="flex items-center gap-4">    
                                 <Link href="/student/assignments">
                                     <Button className="bg-white text-[#862733] hover:bg-white/90">
                                         View Assignments
@@ -113,35 +129,33 @@ export default function StudentDashboardPage() {
                     </div>
 
                     {/* Stats Cards */}
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                        <StatsCard
-                            title="Enrolled Courses"
-                            value={statsLoading ? '...' : displayStats.enrolled_courses}
-                            icon={BookOpen}
-                            trend={{ value: 0, label: 'Active' }}
-                            variant="primary"
-                        />
-                        <StatsCard
-                            title="Submissions"
-                            value={statsLoading ? '...' : displayStats.total_submissions}
-                            icon={FileCode}
-                            trend={{ value: 5, label: 'this week' }}
-                            variant="success"
-                        />
-                        <StatsCard
-                            title="Pending"
-                            value={statsLoading ? '...' : displayStats.pending_assignments || 3}
-                            icon={Clock}
-                            trend={{ value: 0, label: 'due soon' }}
-                            variant="warning"
-                        />
-                        <StatsCard
-                            title="Average Score"
-                            value={statsLoading ? '...' : `${displayStats.average_score}%`}
-                            icon={Award}
-                            trend={{ value: 3, label: 'improvement' }}
-                            variant="default"
-                        />
+                    <div className="flex justify-center">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-6xl">
+                            <StatsCard
+                                title="Enrolled Courses"
+                                value={statsLoading ? '...' : displayStats.enrolled_courses}
+                                icon={BookOpen}
+                                variant="primary"
+                            />
+                            <StatsCard
+                                title="Submissions"
+                                value={statsLoading ? '...' : displayStats.total_submissions}
+                                icon={FileCode}
+                                variant="success"
+                            />
+                            <StatsCard
+                                title="Pending"
+                                value={statsLoading ? '...' : displayStats.pending_assignments || 3}
+                                icon={Clock}
+                                variant="warning"
+                            />
+                            <StatsCard
+                                title="Average Score"
+                                value={statsLoading ? '...' : `${displayStats.average_score}%`}
+                                icon={Award}
+                                variant="default"
+                            />
+                        </div>
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -153,7 +167,11 @@ export default function StudentDashboardPage() {
                                         <Clock className="w-5 h-5 text-[#862733]" />
                                         Upcoming Assignments
                                     </CardTitle>
-                                    <CardDescription>Assignments due soon</CardDescription>
+                                    <CardDescription>
+                                        {selectedDate
+                                            ? `Assignments due on ${format(selectedDate, 'MMM d, yyyy')}`
+                                            : 'Assignments due soon'}
+                                    </CardDescription>
                                 </div>
                                 <Link href="/student/assignments">
                                     <Button variant="ghost" size="sm">
@@ -167,7 +185,7 @@ export default function StudentDashboardPage() {
                                     <div className="text-center py-8 text-gray-500">Loading...</div>
                                 ) : (
                                     <div className="space-y-3">
-                                        {displayAssignments.slice(0, 4).map((assignment: any) => {
+                                        {assignmentsToShow.map((assignment: any) => {
                                             const timeInfo = getTimeRemaining(assignment.due_date);
                                             return (
                                                 <Link
@@ -187,7 +205,7 @@ export default function StudentDashboardPage() {
                                                 </Link>
                                             );
                                         })}
-                                        {displayAssignments.length === 0 && (
+                                        {(selectedDate ? filteredAssignments.length : displayAssignments.length) === 0 && (
                                             <div className="text-center py-8 text-gray-500">
                                                 <CheckCircle className="w-12 h-12 mx-auto mb-3 text-green-500" />
                                                 <p>All caught up! No pending assignments.</p>
@@ -198,41 +216,68 @@ export default function StudentDashboardPage() {
                             </CardContent>
                         </Card>
 
-                        {/* Recent Grades */}
-                        <Card>
-                            <CardHeader className="pb-2">
-                                <CardTitle className="flex items-center gap-2">
-                                    <Award className="w-5 h-5 text-[#862733]" />
-                                    Recent Grades
-                                </CardTitle>
-                                <CardDescription>Your latest results</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="space-y-4">
-                                    {mockRecentGrades.map((grade) => (
-                                        <div key={grade.id} className="p-3 bg-gray-50 rounded-lg">
-                                            <div className="flex items-center justify-between mb-2">
-                                                <p className="font-medium text-gray-900 text-sm truncate flex-1">{grade.title}</p>
-                                                <Badge variant={grade.score >= 90 ? 'success' : grade.score >= 70 ? 'warning' : 'danger'}>
-                                                    {grade.score}%
-                                                </Badge>
+                        {/* Calendar + Recent Grades (stacked in right column) */}
+                        <div className="space-y-4">
+                            <DashboardCalendar
+                                highlightDates={highlightDates}
+                                selectedDate={selectedDate}
+                                onSelectDate={setSelectedDate}
+                            />
+
+                            {/* Recent Grades (moved below calendar) */}
+                            <Card>
+                                <CardHeader className="pb-2">
+                                    <CardTitle className="flex items-center gap-2">
+                                        <Award className="w-5 h-5 text-[#862733]" />
+                                        Recent Grades
+                                    </CardTitle>
+                                    <CardDescription>Your latest results</CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="space-y-4">
+                                        {mockRecentGrades.map((grade) => (
+                                            <div key={grade.id} className="p-3 bg-gray-50 rounded-lg">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <p className="font-medium text-gray-900 text-sm truncate flex-1">
+                                                        {grade.title}
+                                                    </p>
+                                                    <Badge
+                                                        variant={
+                                                            grade.score >= 90
+                                                                ? 'success'
+                                                                : grade.score >= 70
+                                                                ? 'warning'
+                                                                : 'danger'
+                                                        }
+                                                    >
+                                                        {grade.score}%
+                                                    </Badge>
+                                                </div>
+                                                <p className="text-xs text-gray-500">{grade.course}</p>
+                                                <Progress
+                                                    value={grade.score}
+                                                    max={grade.max_score}
+                                                    size="sm"
+                                                    variant={
+                                                        grade.score >= 90
+                                                            ? 'success'
+                                                            : grade.score >= 70
+                                                            ? 'warning'
+                                                            : 'danger'
+                                                    }
+                                                    className="mt-2"
+                                                />
                                             </div>
-                                            <p className="text-xs text-gray-500">{grade.course}</p>
-                                            <Progress
-                                                value={grade.score}
-                                                max={grade.max_score}
-                                                size="sm"
-                                                variant={grade.score >= 90 ? 'success' : grade.score >= 70 ? 'warning' : 'danger'}
-                                                className="mt-2"
-                                            />
-                                        </div>
-                                    ))}
-                                </div>
-                                <Link href="/student/grades">
-                                    <Button variant="outline" className="w-full mt-4">View All Grades</Button>
-                                </Link>
-                            </CardContent>
-                        </Card>
+                                        ))}
+                                    </div>
+                                    <Link href="/student/grades">
+                                        <Button variant="outline" className="w-full mt-4">
+                                            View All Grades
+                                        </Button>
+                                    </Link>
+                                </CardContent>
+                            </Card>
+                        </div>
                     </div>
 
                     {/* My Courses */}

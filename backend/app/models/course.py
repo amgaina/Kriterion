@@ -38,7 +38,7 @@ class Course(Base):
     instructor_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     
     # Status
-    status = Column(Enum(CourseStatus), default=CourseStatus.DRAFT)
+    status = Column(Enum(CourseStatus), default=CourseStatus.ACTIVE)
     is_active = Column(Boolean, default=True)
     
     # Appearance

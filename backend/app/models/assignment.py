@@ -57,10 +57,6 @@ class Assignment(Base):
     allowed_file_extensions = Column(JSON, nullable=True)  # [".py", ".java"]
     required_files = Column(JSON, nullable=True)  # ["main.py", "helper.py"]
     
-    # Execution limits
-    time_limit_seconds = Column(Integer, default=30)
-    memory_limit_mb = Column(Integer, default=256)
-    
     # Group settings
     allow_groups = Column(Boolean, default=False)
     max_group_size = Column(Integer, default=4)
@@ -75,10 +71,8 @@ class Assignment(Base):
     test_weight = Column(Float, default=70.0)  # Percentage from test cases
     rubric_weight = Column(Float, default=30.0)  # Percentage from manual rubric
     
-    # Status
-    status = Column(Enum(AssignmentStatus), default=AssignmentStatus.DRAFT)
+    # Status and publishing
     is_published = Column(Boolean, default=False)
-    published_at = Column(DateTime, nullable=True)
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)

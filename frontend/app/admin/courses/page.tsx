@@ -53,16 +53,20 @@ export default function CoursesPage() {
     const [activeTab, setActiveTab] = useState('all');
     const [createModal, setCreateModal] = useState(false);
     const [enrollModal, setEnrollModal] = useState<{ open: boolean; course?: Course }>({ open: false });
+    const [editCourseId, setEditCourseId] = useState<number | null>(null);
+    const [editFormData, setEditFormData] = useState<any>(null);
 
     const [newCourse, setNewCourse] = useState({
         name: '',
         code: '',
         description: '',
         instructor_id: '',
+        section: '',
         semester: 'Fall',
         year: new Date().getFullYear(),
         is_active: true,
     });
+
 
     const { data: courses = [], isLoading } = useQuery({
         queryKey: ['courses'],
@@ -79,6 +83,18 @@ export default function CoursesPage() {
         queryFn: () => apiClient.getUsers('STUDENT'),
     });
 
+    // Transform courses data to match admin page interface
+    // Map backend field names (students_count, assignments_count) to frontend interface names
+    const transformedCourses = courses.map((course: any) => {
+        const instructor = faculty.find((f: any) => f.id === course.instructor_id);
+        return {
+            ...course,
+            instructor_name: instructor?.full_name || 'Unassigned',
+            student_count: course.students_count || 0,
+            assignment_count: course.assignments_count || 0,
+        };
+    });
+
     const createMutation = useMutation({
         mutationFn: (data: any) => apiClient.createCourse(data),
         onSuccess: () => {
@@ -89,10 +105,20 @@ export default function CoursesPage() {
                 code: '',
                 description: '',
                 instructor_id: '',
+                section: '',
                 semester: 'Fall',
                 year: new Date().getFullYear(),
                 is_active: true,
             });
+        },
+    });
+
+    const updateMutation = useMutation({
+        mutationFn: ({ id, data }: { id: number; data: any }) => apiClient.updateCourse(id, data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['courses'] });
+            setEditCourseId(null);
+            setEditFormData(null);
         },
     });
 
@@ -101,15 +127,15 @@ export default function CoursesPage() {
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['courses'] }),
     });
 
-    const filteredCourses = courses.filter((course: Course) =>
+    const filteredCourses = transformedCourses.filter((course: Course) =>
         course.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         course.code.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     const tabs = [
-        { id: 'all', label: 'All Courses', count: courses.length },
-        { id: 'active', label: 'Active', count: courses.filter((c: Course) => c.is_active).length },
-        { id: 'archived', label: 'Archived', count: courses.filter((c: Course) => !c.is_active).length },
+        { id: 'all', label: 'All Courses', count: transformedCourses.length },
+        { id: 'active', label: 'Active', count: transformedCourses.filter((c: Course) => c.is_active).length },
+        { id: 'archived', label: 'Archived', count: transformedCourses.filter((c: Course) => !c.is_active).length },
     ];
 
     const columns = [
@@ -194,7 +220,19 @@ export default function CoursesPage() {
                     onSelect={(value) => {
                         if (value === 'enroll') setEnrollModal({ open: true, course });
                         else if (value === 'delete') deleteMutation.mutate(course.id);
-                        else if (value === 'edit') window.location.href = `/admin/courses/${course.id}/edit`;
+                        else if (value === 'edit') {
+                            setEditCourseId(course.id);
+                            setEditFormData({
+                                name: course.name,
+                                code: course.code,
+                                description: course.description || '',
+                                instructor_id: course.instructor_id,
+                                section: course.section || '',
+                                semester: course.semester || 'Fall',
+                                year: course.year || new Date().getFullYear(),
+                                is_active: course.is_active,
+                            });
+                        }
                     }}
                     align="right"
                 />
@@ -223,14 +261,14 @@ export default function CoursesPage() {
                         <Card>
                             <CardContent className="p-4">
                                 <p className="text-sm text-gray-500">Total Courses</p>
-                                <p className="text-2xl font-bold text-gray-900">{courses.length}</p>
+                                <p className="text-2xl font-bold text-gray-900">{transformedCourses.length}</p>
                             </CardContent>
                         </Card>
                         <Card>
                             <CardContent className="p-4">
                                 <p className="text-sm text-gray-500">Active Courses</p>
                                 <p className="text-2xl font-bold text-green-600">
-                                    {courses.filter((c: Course) => c.is_active).length}
+                                    {transformedCourses.filter((c: any) => c.is_active).length}
                                 </p>
                             </CardContent>
                         </Card>
@@ -238,7 +276,7 @@ export default function CoursesPage() {
                             <CardContent className="p-4">
                                 <p className="text-sm text-gray-500">Total Enrollments</p>
                                 <p className="text-2xl font-bold text-blue-600">
-                                    {courses.reduce((acc: number, c: Course) => acc + (c.student_count || 0), 0)}
+                                    {transformedCourses.reduce((acc: number, c: any) => acc + (c.student_count || 0), 0)}
                                 </p>
                             </CardContent>
                         </Card>
@@ -246,7 +284,7 @@ export default function CoursesPage() {
                             <CardContent className="p-4">
                                 <p className="text-sm text-gray-500">Total Assignments</p>
                                 <p className="text-2xl font-bold text-purple-600">
-                                    {courses.reduce((acc: number, c: Course) => acc + (c.assignment_count || 0), 0)}
+                                    {transformedCourses.reduce((acc: number, c: any) => acc + (c.assignment_count || 0), 0)}
                                 </p>
                             </CardContent>
                         </Card>
@@ -296,7 +334,7 @@ export default function CoursesPage() {
                     size="lg"
                 >
                     <div className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <Input
                                 label="Course Name"
                                 value={newCourse.name}
@@ -306,8 +344,14 @@ export default function CoursesPage() {
                             <Input
                                 label="Course Code"
                                 value={newCourse.code}
-                                onChange={(e) => setNewCourse(prev => ({ ...prev, code: e.target.value }))}
+                                onChange={(e) => setNewCourse(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
                                 placeholder="CS101"
+                            />
+                            <Input
+                                label="Section"
+                                value={newCourse.section}
+                                onChange={(e) => setNewCourse(prev => ({ ...prev, section: e.target.value }))}
+                                placeholder="e.g., A, B, 001"
                             />
                         </div>
                         <Textarea
@@ -353,12 +397,122 @@ export default function CoursesPage() {
                             Cancel
                         </Button>
                         <Button
-                            onClick={() => createMutation.mutate(newCourse)}
+                            onClick={() => {
+                                const courseData = {
+                                    ...newCourse,
+                                    instructor_id: newCourse.instructor_id ? parseInt(newCourse.instructor_id) : null,
+                                };
+                                createMutation.mutate(courseData);
+                            }}
                             disabled={createMutation.isPending}
                         >
                             {createMutation.isPending ? 'Creating...' : 'Create Course'}
                         </Button>
                     </ModalFooter>
+                </Modal>
+
+                {/* Edit Course Modal */}
+                <Modal
+                    isOpen={editCourseId !== null && editFormData !== null}
+                    onClose={() => {
+                        setEditCourseId(null);
+                        setEditFormData(null);
+                    }}
+                    title="Edit Course"
+                    description="Update course information"
+                    size="lg"
+                >
+                    {editFormData && (
+                        <>
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                    <Input
+                                        label="Course Name"
+                                        value={editFormData.name}
+                                        onChange={(e) => setEditFormData(prev => ({ ...prev, name: e.target.value }))}
+                                        placeholder="Introduction to Programming"
+                                    />
+                                    <Input
+                                        label="Course Code"
+                                        value={editFormData.code}
+                                        onChange={(e) => setEditFormData(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
+                                        placeholder="CS101"
+                                    />
+                                    <Input
+                                        label="Section"
+                                        value={editFormData.section}
+                                        onChange={(e) => setEditFormData(prev => ({ ...prev, section: e.target.value }))}
+                                        placeholder="A"
+                                    />
+                                </div>
+                                <Textarea
+                                    label="Description"
+                                    value={editFormData.description}
+                                    onChange={(e) => setEditFormData(prev => ({ ...prev, description: e.target.value }))}
+                                    placeholder="Course description"
+                                    rows={3}
+                                />
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <Select
+                                        label="Instructor"
+                                        value={editFormData.instructor_id?.toString() || ''}
+                                        onChange={(value) => setEditFormData(prev => ({ ...prev, instructor_id: parseInt(value) }))}
+                                        options={faculty.map((f: any) => ({
+                                            value: f.id.toString(),
+                                            label: f.full_name
+                                        }))}
+                                    />
+                                    <Select
+                                        label="Semester"
+                                        value={editFormData.semester}
+                                        onChange={(value) => setEditFormData(prev => ({ ...prev, semester: value }))}
+                                        options={[
+                                            { value: 'Spring', label: 'Spring' },
+                                            { value: 'Summer', label: 'Summer' },
+                                            { value: 'Fall', label: 'Fall' },
+                                            { value: 'Winter', label: 'Winter' },
+                                        ]}
+                                    />
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <Input
+                                        label="Year"
+                                        type="number"
+                                        value={editFormData.year?.toString()}
+                                        onChange={(e) => setEditFormData(prev => ({ ...prev, year: parseInt(e.target.value) }))}
+                                    />
+                                    <Switch
+                                        checked={editFormData.is_active}
+                                        onChange={(checked) => setEditFormData(prev => ({ ...prev, is_active: checked }))}
+                                        label="Active Course"
+                                        description="Course is visible to students and faculty"
+                                    />
+                                </div>
+                            </div>
+                            <ModalFooter>
+                                <Button variant="outline" onClick={() => {
+                                    setEditCourseId(null);
+                                    setEditFormData(null);
+                                }}>
+                                    Cancel
+                                </Button>
+                                <Button
+                                    onClick={() => {
+                                        if (editCourseId !== null) {
+                                            const courseData = {
+                                                ...editFormData,
+                                                instructor_id: editFormData.instructor_id ? parseInt(editFormData.instructor_id) : null,
+                                            };
+                                            updateMutation.mutate({ id: editCourseId, data: courseData });
+                                        }
+                                    }}
+                                    disabled={updateMutation.isPending}
+                                >
+                                    {updateMutation.isPending ? 'Updating...' : 'Update Course'}
+                                </Button>
+                            </ModalFooter>
+                        </>
+                    )}
                 </Modal>
 
                 {/* Enroll Students Modal */}

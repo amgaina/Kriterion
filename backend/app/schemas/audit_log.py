@@ -1,26 +1,26 @@
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional
+
 
 class AuditLog(BaseModel):
     id: int
-    user_id: int
+    user_id: Optional[int] = None
     event_type: str
-    resource_type: str
-    resource_id: int
-    action: str
-    description: str
+    description: Optional[str] = None
+    ip_address: Optional[str] = None
+    status: str
+    error_message: Optional[str] = None
     created_at: datetime
-    metadata: Optional[Dict[str, Any]] = None
     
     class Config:
         from_attributes = True
 
+
 class AuditLogCreate(BaseModel):
-    user_id: int
+    user_id: Optional[int] = None
     event_type: str
-    resource_type: str
-    resource_id: int
-    action: str
-    description: str
-    metadata: Optional[Dict[str, Any]] = None
+    description: Optional[str] = None
+    ip_address: Optional[str] = None
+    status: Optional[str] = "success"
+    error_message: Optional[str] = None

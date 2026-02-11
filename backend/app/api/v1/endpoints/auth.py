@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from app.api.deps import get_db, get_current_user
+from app.api.deps import get_db, get_current_user, require_role
 from app.core.security import (
     verify_password,
     get_password_hash,
@@ -13,7 +13,7 @@ from app.core.security import (
     create_refresh_token,
     decode_token
 )
-from app.models import User, AuditLog
+from app.models import User, AuditLog, UserRole
 from app.schemas.token import Token, LoginRequest, RefreshTokenRequest
 from app.schemas.user import UserCreate, User as UserSchema
 from app.core.config import settings
@@ -25,9 +25,10 @@ limiter = Limiter(key_func=get_remote_address)
 @router.post("/register", response_model=UserSchema, status_code=status.HTTP_201_CREATED)
 def register(
     user_in: UserCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
-    """Register a new user"""
+    """Register a new user (admin only)"""
     # Check if user already exists
     existing_user = db.query(User).filter(User.email == user_in.email).first()
     if existing_user:
@@ -62,9 +63,6 @@ def register(
     audit = AuditLog(
         user_id=user.id,
         event_type="user_registration",
-        resource_type="user",
-        resource_id=user.id,
-        action="create",
         description=f"User {user.email} registered"
     )
     db.add(audit)
@@ -106,9 +104,6 @@ def login(
     audit = AuditLog(
         user_id=user.id,
         event_type="user_login",
-        resource_type="user",
-        resource_id=user.id,
-        action="view",
         description=f"User {user.email} logged in"
     )
     db.add(audit)

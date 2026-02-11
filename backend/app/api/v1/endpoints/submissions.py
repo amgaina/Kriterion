@@ -21,6 +21,7 @@ from app.schemas.submission import (
 from app.core.config import settings
 from app.core.logging import logger
 from app.services.grading import GradingService
+from app.services.s3_storage import s3_service
 
 router = APIRouter()
 
@@ -160,58 +161,140 @@ async def create_submission(
     late_penalty = 0.0
     
     if is_late:
+        if not assignment.allow_late:
+            raise HTTPException(status_code=403, detail="Late submissions not allowed")
         days_late = (now - assignment.due_date).days + 1
+        if days_late > assignment.max_late_days:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Submission is {days_late} days late (max {assignment.max_late_days} allowed)"
+            )
         late_penalty = min(days_late * assignment.late_penalty_per_day, 100.0)
+    
+    # Get attempt number
+    attempt_number = db.query(Submission).filter(
+        and_(
+            Submission.assignment_id == assignment_id,
+            Submission.student_id == current_user.id
+        )
+    ).count() + 1
     
     # Create submission
     submission = Submission(
         assignment_id=assignment_id,
         student_id=current_user.id,
         group_id=group_id,
+        attempt_number=attempt_number,
         submitted_at=now,
         is_late=is_late,
-        late_penalty=late_penalty,
-        status="pending"
+        late_penalty_applied=late_penalty,
+        max_score=assignment.max_score,
+        tests_total=0  # Will be updated after grading
     )
     
     db.add(submission)
     db.flush()  # Get submission.id
     
-    # Save files
-    submission_dir = Path(settings.SUBMISSIONS_DIR) / str(submission.id)
-    submission_dir.mkdir(parents=True, exist_ok=True)
+    # Save files to S3 or local storage
+    uploaded_files_data = []
     
     for upload_file in files:
-        file_path = submission_dir / upload_file.filename
+        try:
+            # Read file content
+            file_content = await upload_file.read()
+            file_size = len(file_content)
+            
+            # Validate file size
+            if file_size > settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"File {upload_file.filename} exceeds maximum size of {settings.MAX_UPLOAD_SIZE_MB}MB"
+                )
+            
+            if settings.USE_S3_STORAGE:
+                # Upload to S3
+                from io import BytesIO
+                file_io = BytesIO(file_content)
+                
+                s3_data = s3_service.upload_submission_file(
+                    file_content=file_io,
+                    filename=upload_file.filename,
+                    submission_id=submission.id,
+                    student_id=current_user.id,
+                    assignment_id=assignment_id
+                )
+                
+                # Create file record with S3 data
+                sub_file = SubmissionFile(
+                    submission_id=submission.id,
+                    filename=upload_file.filename,
+                    original_filename=upload_file.filename,
+                    file_path=s3_data['s3_url'],  # Store S3 URL
+                    file_hash=s3_data['file_hash']
+                )
+                db.add(sub_file)
+                
+                uploaded_files_data.append({
+                    'filename': upload_file.filename,
+                    's3_url': s3_data['s3_url'],
+                    's3_key': s3_data['s3_key']
+                })
+                
+                logger.info(f"File {upload_file.filename} uploaded to S3: {s3_data['s3_url']}")
+                
+            else:
+                # Save to local storage
+                submission_dir = Path(settings.SUBMISSIONS_DIR) / str(submission.id)
+                submission_dir.mkdir(parents=True, exist_ok=True)
+                
+                file_path = submission_dir / upload_file.filename
+                
+                with open(file_path, "wb") as f:
+                    f.write(file_content)
+                
+                # Calculate file hash
+                import hashlib
+                file_hash = hashlib.sha256(file_content).hexdigest()
+                
+                # Create file record
+                sub_file = SubmissionFile(
+                    submission_id=submission.id,
+                    filename=upload_file.filename,
+                    original_filename=upload_file.filename,
+                    file_path=str(file_path),
+                    file_hash=file_hash
+                )
+                db.add(sub_file)
+                
+                uploaded_files_data.append({
+                    'filename': upload_file.filename,
+                    'file_path': str(file_path)
+                })
+                
+                logger.info(f"File {upload_file.filename} saved locally: {file_path}")
         
-        with open(file_path, "wb") as f:
-            shutil.copyfileobj(upload_file.file, f)
-        
-        # Create file record
-        sub_file = SubmissionFile(
-            submission_id=submission.id,
-            filename=upload_file.filename,
-            file_path=str(file_path),
-            file_size=os.path.getsize(file_path)
-        )
-        db.add(sub_file)
+        except Exception as e:
+            logger.error(f"Error uploading file {upload_file.filename}: {str(e)}")
+            # Clean up partial submission
+            db.rollback()
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to upload file {upload_file.filename}: {str(e)}"
+            )
+    
+    # Create audit log
+    audit_log = AuditLog(
+        user_id=current_user.id,
+        event_type="SUBMISSION_CREATE",
+        description=f"Submission created for assignment {assignment_id} - Attempt {attempt_number} - {len(files)} file(s) - Storage: {'S3' if settings.USE_S3_STORAGE else 'local'}",
+        status="success"
+    )
+    db.add(audit_log)
     
     db.commit()
     db.refresh(submission)
     
-    # Audit log
-    audit = AuditLog(
-        user_id=current_user.id,
-        event_type="submission_created",
-        resource_type="submission",
-        resource_id=submission.id,
-        action="create",
-        description=f"Submission created for assignment {assignment.title}"
-    )
-    db.add(audit)
-    db.commit()
-    
-    logger.info(f"Submission {submission.id} created by user {current_user.id}")
+    logger.info(f"Submission {submission.id} created by user {current_user.id} for assignment {assignment_id}")
     
     # Trigger autograding asynchronously (in production, use Celery/background tasks)
     # For now, we'll return and grade later
@@ -244,9 +327,6 @@ async def grade_submission(
         audit = AuditLog(
             user_id=current_user.id,
             event_type="submission_graded",
-            resource_type="submission",
-            resource_id=submission.id,
-            action="update",
             description=f"Submission graded: {result.get('status')}"
         )
         db.add(audit)
@@ -288,11 +368,7 @@ def override_score(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="score_overridden",
-        resource_type="submission",
-        resource_id=submission.id,
-        action="update",
-        description=f"Score overridden from {old_score} to {new_score}. Reason: {reason}",
-        metadata={"old_score": old_score, "new_score": new_score, "reason": reason}
+        description=f"Score overridden from {old_score} to {new_score}. Reason: {reason}"
     )
     db.add(audit)
     db.commit()

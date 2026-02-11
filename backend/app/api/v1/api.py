@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from app.api.v1.endpoints import (
     auth, courses, assignments, submissions, reports, admin,
-    students, faculty, settings, code
+    students, faculty, settings, code, languages
 )
 
 api_router = APIRouter()
@@ -35,4 +35,7 @@ api_router.include_router(reports.router, prefix="/reports", tags=["Reports"])
 
 # User settings & profile
 api_router.include_router(settings.router, prefix="/settings", tags=["Settings"])
+
+# Programming languages
+api_router.include_router(languages.router, prefix="/languages", tags=["Languages"])
 

@@ -17,12 +17,11 @@ from app.core.config import settings
 from app.models import (
     User, UserRole,
     Course, CourseStatus, Enrollment, EnrollmentStatus,
-    Assignment, AssignmentStatus, DifficultyLevel, TestCase,
+    Assignment, DifficultyLevel, TestCase,
     Rubric, RubricCategory, RubricItem,
     Language, DEFAULT_LANGUAGES,
     Achievement, Skill, StudentProgress,
     DEFAULT_ACHIEVEMENTS, DEFAULT_SKILLS,
-    SystemSettings, DEFAULT_SYSTEM_SETTINGS,
     NotificationSettings, UserPreferences
 )
 
@@ -36,12 +35,18 @@ def seed_database():
         
         # ========== 1. Create Languages ==========
         print("\n📝 Creating programming languages...")
+        allowed_lang_keys = {
+            "name", "display_name", "version", "file_extension",
+            "compile_command", "run_command", "docker_image",
+            "default_timeout_seconds", "default_memory_mb", "is_active"
+        }
         for lang_data in DEFAULT_LANGUAGES:
             lang = db.query(Language).filter(Language.name == lang_data["name"]).first()
             if not lang:
-                lang = Language(**lang_data)
+                filtered = {k: v for k, v in lang_data.items() if k in allowed_lang_keys}
+                lang = Language(**filtered)
                 db.add(lang)
-                print(f"  ✅ Created language: {lang_data['display_name']}")
+                print(f"  ✅ Created language: {filtered.get('display_name', lang_data['name'])}")
             else:
                 print(f"  ℹ️  Language already exists: {lang_data['display_name']}")
         db.commit()
@@ -49,15 +54,7 @@ def seed_database():
         # Get Python language for assignments
         python_lang = db.query(Language).filter(Language.name == "python").first()
         
-        # ========== 2. Create System Settings ==========
-        print("\n⚙️  Creating system settings...")
-        for setting_data in DEFAULT_SYSTEM_SETTINGS:
-            setting = db.query(SystemSettings).filter(SystemSettings.key == setting_data["key"]).first()
-            if not setting:
-                setting = SystemSettings(**setting_data)
-                db.add(setting)
-        db.commit()
-        print("  ✅ System settings configured")
+        # (Removed) System settings seeding – no SystemSettings model in current schema
         
         # ========== 3. Create Achievements ==========
         print("\n🏆 Creating achievements...")
@@ -227,17 +224,13 @@ Submit your `main.py` file before the deadline.
                 late_penalty_per_day=10.0,
                 max_late_days=3,
                 max_attempts=5,
-                time_limit_seconds=10,
-                memory_limit_mb=128,
                 enable_plagiarism_check=True,
                 plagiarism_threshold=30.0,
                 enable_ai_detection=True,
                 ai_detection_threshold=50.0,
                 test_weight=70.0,
                 rubric_weight=30.0,
-                status=AssignmentStatus.PUBLISHED,
                 is_published=True,
-                published_at=datetime.utcnow()
             )
             db.add(assignment)
             db.commit()

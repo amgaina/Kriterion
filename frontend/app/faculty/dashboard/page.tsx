@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+import { format } from 'date-fns';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { DashboardLayout } from '@/components/layouts/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
@@ -9,6 +11,7 @@ import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { StatsCard } from '@/components/ui/stats-card';
 import { BookOpen, Users, FileText, Clock, ArrowRight } from 'lucide-react';
+import { DashboardCalendar } from '@/components/dashboard/DashboardCalendar';
 
 export default function FacultyDashboard() {
     const { user } = useAuth();
@@ -17,6 +20,36 @@ export default function FacultyDashboard() {
         queryKey: ['dashboard-stats'],
         queryFn: () => apiClient.getDashboardStats(),
     });
+
+    // Placeholder upcoming events for now; later this can use real faculty schedule/assignments
+    const mockUpcomingItems = [
+        {
+            id: 1,
+            type: 'lecture',
+            title: 'Lecture: Data Structures',
+            detail: 'Section A',
+            date: new Date(Date.now() + 1000 * 60 * 60 * 24 * 1).toISOString(),
+        },
+        {
+            id: 2,
+            type: 'grading',
+            title: 'Grade: Linked List Assignment',
+            detail: '24 submissions pending',
+            date: new Date(Date.now() + 1000 * 60 * 60 * 24 * 3).toISOString(),
+        },
+    ];
+
+    const mockFacultyEvents = mockUpcomingItems.map((item) => item.date);
+
+    const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+
+    const filteredItems = selectedDate
+        ? mockUpcomingItems.filter((item) => {
+              const d = new Date(item.date);
+              if (isNaN(d.getTime())) return false;
+              return d.toDateString() === selectedDate.toDateString();
+          })
+        : mockUpcomingItems;
 
     const quickLinks = [
         {
@@ -88,6 +121,77 @@ export default function FacultyDashboard() {
                             subtitle="Awaiting review"
                             trend={stats?.pending_grading > 0 ? { value: stats.pending_grading, label: 'need review' } : undefined}
                         />
+                    </div>
+
+                    {/* Main Content Row: Upcoming Teaching + Calendar (mirrors student layout) */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        {/* Upcoming Teaching / Grading */}
+                        <Card className="lg:col-span-2">
+                            <CardHeader className="flex flex-row items-center justify-between pb-2">
+                                <div>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <Clock className="w-5 h-5 text-[#862733]" />
+                                        Upcoming Teaching & Grading
+                                    </CardTitle>
+                                    <CardDescription>
+                                        Key sessions and grading work for the next few days
+                                    </CardDescription>
+                                </div>
+                                <Link href="/faculty/assignments">
+                                    <span className="text-sm text-[#862733] hover:underline flex items-center gap-1">
+                                        View assignments
+                                        <ArrowRight className="w-4 h-4" />
+                                    </span>
+                                </Link>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="space-y-3">
+                                    {filteredItems.map((item) => {
+                                        const isLecture = item.type === 'lecture';
+                                        const iconBg = isLecture ? 'bg-blue-100' : 'bg-green-100';
+                                        const iconColor = isLecture ? 'text-blue-600' : 'text-green-600';
+                                        const Icon = isLecture ? BookOpen : FileText;
+                                        const when = format(new Date(item.date), 'EEE, MMM d');
+
+                                        return (
+                                            <div
+                                                key={item.id}
+                                                className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg"
+                                            >
+                                                <div
+                                                    className={`w-10 h-10 rounded-lg flex items-center justify-center ${iconBg}`}
+                                                >
+                                                    <Icon className={`w-5 h-5 ${iconColor}`} />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="font-medium text-gray-900 truncate">
+                                                        {item.title}
+                                                    </p>
+                                                    <p className="text-sm text-gray-500">
+                                                        {when} • {item.detail}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+
+                                    {filteredItems.length === 0 && (
+                                        <div className="text-center py-8 text-gray-500">
+                                            <p>No teaching sessions or grading on this date.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        {/* Calendar column (same position as student) */}
+                        <div className="space-y-4">
+                            <DashboardCalendar
+                                highlightDates={mockFacultyEvents}
+                                selectedDate={selectedDate}
+                                onSelectDate={setSelectedDate}
+                            />
+                        </div>
                     </div>
 
                     {/* Quick Links */}

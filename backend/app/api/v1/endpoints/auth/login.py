@@ -118,9 +118,6 @@ def login(
     audit = AuditLog(
         user_id=user.id,
         event_type="user_login",
-        resource_type="user",
-        resource_id=user.id,
-        action="login",
         description=f"User {user.email} logged in successfully"
     )
     db.add(audit)

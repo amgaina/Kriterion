@@ -16,7 +16,6 @@
 
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { DashboardLayout } from '@/components/layouts/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
@@ -43,12 +42,9 @@ import {
     CheckCircle2,
     ChevronRight,
     GraduationCap,
-    MoreHorizontal,
-    Settings,
-    Trash2,
-    Edit,
     ArrowRight
 } from 'lucide-react';
+import { Edit, Trash2 } from 'lucide-react';
 
 // ============================================================================
 // TYPES - Matching Backend Models
@@ -185,6 +181,7 @@ export default function FacultyCoursesPage() {
         semester: 'Spring',
         year: new Date().getFullYear(),
     });
+    const [editCourseId, setEditCourseId] = useState<number | null>(null);
     const [enrollEmail, setEnrollEmail] = useState('');
     const [bulkEmails, setBulkEmails] = useState('');
 
@@ -222,6 +219,29 @@ export default function FacultyCoursesPage() {
         onError: (error: any) => {
             showNotification('error', error.response?.data?.detail || 'Failed to create course');
         },
+    });
+
+    const updateMutation = useMutation({
+        mutationFn: ({ id, data }: { id: number; data: NewCourse }) => apiClient.updateCourse(id, data),
+        onSuccess: (updated: any) => {
+            queryClient.invalidateQueries({ queryKey: QUERY_KEYS.facultyCourses });
+            setCreateModal(false);
+            setEditCourseId(null);
+            resetNewCourseForm();
+            showNotification('success', 'Course updated successfully');
+        },
+        onError: (err: any) => {
+            showNotification('error', err.response?.data?.detail || 'Failed to update course');
+        }
+    });
+
+    const deleteMutation = useMutation({
+        mutationFn: (id: number) => apiClient.deleteCourse(id),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: QUERY_KEYS.facultyCourses });
+            showNotification('success', 'Course deleted');
+        },
+        onError: (err: any) => showNotification('error', err.response?.data?.detail || 'Failed to delete course')
     });
 
     /** Enroll single student mutation */
@@ -702,6 +722,40 @@ export default function FacultyCoursesPage() {
                                                 >
                                                     <ChevronRight className="w-4 h-4" />
                                                 </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="text-xs px-2"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        // open edit modal with prefilled data
+                                                        setEditCourseId(course.id);
+                                                        setNewCourse({
+                                                            code: course.code,
+                                                            name: course.name,
+                                                            description: course.description || '',
+                                                            section: course.section || '',
+                                                            semester: course.semester,
+                                                            year: course.year,
+                                                        });
+                                                        setCreateModal(true);
+                                                    }}
+                                                >
+                                                    <Edit className="w-4 h-4" />
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="text-xs px-2 text-red-600"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (confirm(`Delete course ${course.code}? This cannot be undone.`)) {
+                                                            deleteMutation.mutate(course.id);
+                                                        }
+                                                    }}
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </Button>
                                             </div>
                                         </CardContent>
                                     </Card>
@@ -722,8 +776,8 @@ export default function FacultyCoursesPage() {
                 {/* ==================== Create Course Modal ==================== */}
                 <Modal
                     isOpen={createModal}
-                    onClose={() => setCreateModal(false)}
-                    title="Create New Course"
+                    onClose={() => { setCreateModal(false); setEditCourseId(null); resetNewCourseForm(); }}
+                    title={editCourseId ? 'Edit Course' : 'Create New Course'}
                     size="lg"
                 >
                     <div className="space-y-4">
@@ -817,18 +871,24 @@ export default function FacultyCoursesPage() {
                             Cancel
                         </Button>
                         <Button
-                            onClick={() => createMutation.mutate(newCourse)}
-                            disabled={!newCourse.code.trim() || !newCourse.name.trim() || createMutation.isPending}
+                            onClick={() => {
+                                if (editCourseId) {
+                                    updateMutation.mutate({ id: editCourseId, data: newCourse });
+                                } else {
+                                    createMutation.mutate(newCourse);
+                                }
+                            }}
+                            disabled={!newCourse.code.trim() || !newCourse.name.trim() || createMutation.isPending || updateMutation.isPending}
                         >
-                            {createMutation.isPending ? (
+                            {(createMutation.isPending || updateMutation.isPending) ? (
                                 <>
                                     <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                                    Creating...
+                                    {editCourseId ? 'Updating...' : 'Creating...'}
                                 </>
                             ) : (
                                 <>
                                     <Plus className="w-4 h-4 mr-2" />
-                                    Create Course
+                                    {editCourseId ? 'Update Course' : 'Create Course'}
                                 </>
                             )}
                         </Button>

@@ -330,9 +330,6 @@ def enroll_students(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="students_enrolled",
-        resource_type="course",
-        resource_id=course_id,
-        action="create",
         description=f"Enrolled {len(enrolled)} students in {course.code}"
     )
     db.add(audit)
@@ -613,9 +610,6 @@ def grade_submission(
     audit = AuditLog(
         user_id=current_user.id,
         event_type="submission_graded",
-        resource_type="submission",
-        resource_id=submission_id,
-        action="update",
         description=f"Graded submission {submission_id} with score {grade_request.final_score}"
     )
     db.add(audit)

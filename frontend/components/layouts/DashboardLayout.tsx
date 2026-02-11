@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuth, UserRole } from '@/contexts/AuthContext';
 
 interface NavItem {
@@ -145,150 +145,369 @@ const getRoleBadgeColor = (role: UserRole) => {
     }
 };
 
+const getTopNavItems = (role: UserRole) => {
+    if (role === 'STUDENT') {
+        return [
+            { label: 'Dashboard', href: '/student/dashboard' },
+            { label: 'My Courses', href: '/student/courses' },
+            { label: 'Assignments', href: '/student/assignments' },
+            { label: 'Grades', href: '/student/grades' },
+            { label: 'Progress', href: '/student/progress' },
+            { label: 'Schedule', href: '/student/schedule' },
+        ];
+    }
+
+    if (role === 'FACULTY') {
+        return [
+            { label: 'Dashboard', href: '/faculty/dashboard' },
+            { label: 'Courses', href: '/faculty/courses' },
+            { label: 'Assignments', href: '/faculty/assignments' },
+            { label: 'Submissions', href: '/faculty/submissions' },
+            { label: 'Grading', href: '/faculty/grading' },
+            { label: 'Reports', href: '/faculty/reports' },
+        ];
+    }
+
+    // ADMIN
+    return [
+        { label: 'Dashboard', href: '/admin/dashboard' },
+        { label: 'Users', href: '/admin/users' },
+        { label: 'Courses', href: '/admin/courses' },
+        { label: 'Assignments', href: '/admin/assignments' },
+        { label: 'Reports', href: '/admin/reports' },
+        { label: 'Settings', href: '/admin/settings' },
+    ];
+};
+
 export function DashboardLayout({ children }: DashboardLayoutProps) {
     const { user, logout } = useAuth();
     const pathname = usePathname();
+    const router = useRouter();
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [userMenuOpen, setUserMenuOpen] = useState(false);
+    const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+    const [contentVisible, setContentVisible] = useState(true);
+    const [isNavigating, setIsNavigating] = useState(false);
+    const userMenuRef = React.useRef<HTMLDivElement>(null);
+
+    const handleNavClick = (e: React.MouseEvent, href: string, closeSidebar = false) => {
+        if (e) e.preventDefault();
+        if (isNavigating) return;
+
+        if (closeSidebar) setSidebarOpen(false);
+
+        // Respect reduced motion user preference
+        if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            router.push(href);
+            return;
+        }
+
+        setIsNavigating(true);
+        setContentVisible(false);
+
+        // Wait for exit animation to finish before navigating
+        const NAV_DELAY = 450; // ms, should be shorter than the container duration (500ms)
+        setTimeout(() => {
+            router.push(href);
+            setIsNavigating(false);
+        }, NAV_DELAY);
+    };
 
     if (!user) return null;
 
     const navItems = getNavItems(user.role);
 
+    // For students, remove the primary learning nav from the sidebar since we show it in the top nav
+    // Also remove 'Help' and 'Settings' from the sidebar and surface them in the profile menu
+    const sidebarItems = user.role === 'STUDENT'
+        ? navItems.filter(i => !['Dashboard', 'My Courses', 'Assignments', 'Grades', 'Progress', 'Schedule', 'Help', 'Settings'].includes(i.label))
+        : navItems;
+
     const handleLogout = () => {
         logout();
     };
 
+    React.useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+                setUserMenuOpen(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    // On route change, reveal content after the new page mounts (we trigger exit explicitly on clicks)
+    React.useEffect(() => {
+        if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            setContentVisible(true);
+            return;
+        }
+
+        // Small delay to allow the new route to render before fading in
+        const t = setTimeout(() => setContentVisible(true), 80);
+        return () => clearTimeout(t);
+    }, [pathname]);
+
     return (
         <div className="min-h-screen bg-gray-50">
-            {/* Mobile sidebar backdrop */}
-            {sidebarOpen && (
-                <div
-                    className="fixed inset-0 z-40 bg-black/50 lg:hidden"
-                    onClick={() => setSidebarOpen(false)}
-                />
+            {/* Sidebar (used only for admin; students and faculty use top nav only) */}
+            {user.role === 'ADMIN' && (
+                <>
+                    {/* Mobile sidebar backdrop */}
+                    {sidebarOpen && (
+                        <div
+                            className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+                            onClick={() => setSidebarOpen(false)}
+                        />
+                    )}
+
+                    {/* Sidebar */}
+                    <aside
+                        className={`fixed inset-y-0 left-0 z-50 w-72 transform bg-white shadow-xl transition-transform duration-300 ease-in-out lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+                            }`}
+                    >
+                        {/* Logo Section */}
+                        <div className="flex h-16 items-center justify-between border-b border-gray-200 px-4">
+                            <Link href={`/${user.role.toLowerCase()}/dashboard`} className="flex items-center gap-3">
+                                <div className="h-10 w-10 overflow-hidden rounded-lg bg-[#862733] flex items-center justify-center">
+                                    <Image
+                                        src="/logo.png"
+                                        alt="Kriterion"
+                                        width={28}
+                                        height={28}
+                                        className="object-contain"
+                                    />
+                                </div>
+                                <span className="text-xl font-bold text-gray-900">Kriterion</span>
+                            </Link>
+                            <button
+                                onClick={() => setSidebarOpen(false)}
+                                className="rounded-md p-1 text-gray-500 hover:bg-gray-100 lg:hidden"
+                            >
+                                <CloseIcon />
+                            </button>
+                        </div>
+
+                        {/* User Info */}
+                        <div className="border-b border-gray-200 p-4">
+                            <div className="flex items-center gap-3">
+                                <div className="h-10 w-10 rounded-full bg-[#862733] flex items-center justify-center text-white font-semibold">
+                                    {user.full_name?.charAt(0).toUpperCase() || 'U'}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="truncate text-sm font-semibold text-gray-900">
+                                        {user.full_name}
+                                    </p>
+                                    <p className="truncate text-xs text-gray-500">{user.email}</p>
+                                </div>
+                            </div>
+                            <div className="mt-3">
+                                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getRoleBadgeColor(user.role)}`}>
+                                    {user.role}
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Navigation */}
+                        <nav className="flex-1 overflow-y-auto p-4">
+                            <ul className="space-y-1">
+                                {sidebarItems.map((item) => {
+                                    const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+                                    return (
+                                        <li key={item.href}>
+                                            <Link
+                                                href={item.href}
+                                                onClick={(e) => handleNavClick(e, item.href, true)}
+                                                aria-current={isActive ? 'page' : undefined}
+                                                className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transform transition-transform duration-500 ease-[cubic-bezier(.2,.9,.2,1)] active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#862733] ${isActive
+                                                    ? 'bg-[#862733] text-white shadow-md ring-1 ring-[#862733]/20'
+                                                    : 'text-gray-700 hover:bg-gray-100 hover:-translate-y-0.5 hover:shadow-sm'
+                                                    }`}
+                                            >
+                                                <span className={isActive ? 'text-white' : 'text-gray-500 group-hover:text-gray-700 transition-colors'}>
+                                                    {item.icon}
+                                                </span>
+                                                {item.label}
+                                            </Link>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        </nav>
+
+                        {/* Logout Button - Mobile only */}
+                        <div className="border-t border-gray-200 p-4 lg:hidden">
+                            <button
+                                onClick={handleLogout}
+                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-red-50 hover:text-red-700"
+                            >
+                                <LogoutIcon />
+                                Sign Out
+                            </button>
+                        </div>
+                    </aside>
+                </>
             )}
 
-            {/* Sidebar */}
-            <aside
-                className={`fixed inset-y-0 left-0 z-50 w-64 transform bg-white shadow-xl transition-transform duration-300 ease-in-out lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-                    }`}
-            >
-                {/* Logo Section */}
-                <div className="flex h-16 items-center justify-between border-b border-gray-200 px-4">
-                    <Link href={`/${user.role.toLowerCase()}/dashboard`} className="flex items-center gap-3">
-                        <div className="h-10 w-10 overflow-hidden rounded-lg bg-[#862733] flex items-center justify-center">
-                            <Image
-                                src="/logo.png"
-                                alt="Kriterion"
-                                width={28}
-                                height={28}
-                                className="object-contain"
-                            />
-                        </div>
-                        <span className="text-xl font-bold text-gray-900">Kriterion</span>
-                    </Link>
-                    <button
-                        onClick={() => setSidebarOpen(false)}
-                        className="rounded-md p-1 text-gray-500 hover:bg-gray-100 lg:hidden"
-                    >
-                        <CloseIcon />
-                    </button>
-                </div>
+            {/* Main Content */}
+            <div className={user.role === 'ADMIN' ? 'lg:pl-72' : ''}>
+                {/* Top Header */}
+                <header className="sticky top-0 z-30 relative flex h-16 items-center gap-4 border-b border-gray-200 bg-white px-4 shadow-sm lg:px-6">
+                    {user.role !== 'STUDENT' && (
+                        <button
+                            onClick={() => setSidebarOpen(true)}
+                            className="rounded-md p-2 text-gray-500 hover:bg-gray-100 lg:hidden"
+                        >
+                            <MenuIcon />
+                        </button>
+                    )}
 
-                {/* User Info */}
-                <div className="border-b border-gray-200 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-full bg-[#862733] flex items-center justify-center text-white font-semibold">
-                            {user.full_name?.charAt(0).toUpperCase() || 'U'}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <p className="truncate text-sm font-semibold text-gray-900">
-                                {user.full_name}
-                            </p>
-                            <p className="truncate text-xs text-gray-500">{user.email}</p>
-                        </div>
-                    </div>
-                    <div className="mt-3">
-                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getRoleBadgeColor(user.role)}`}>
-                            {user.role}
-                        </span>
-                    </div>
-                </div>
-
-                {/* Navigation */}
-                <nav className="flex-1 overflow-y-auto p-4">
-                    <ul className="space-y-1">
-                        {navItems.map((item) => {
-                            const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
-                            return (
-                                <li key={item.href}>
+                    {/* Top nav (large screens) - centered */}
+                    <div className="absolute inset-x-0 hidden lg:flex justify-center pointer-events-none">
+                        <nav className="pointer-events-auto flex items-center gap-6">
+                            {getTopNavItems(user.role).map((item) => {
+                                const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+                                return (
                                     <Link
+                                        key={item.href}
                                         href={item.href}
-                                        onClick={() => setSidebarOpen(false)}
-                                        className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${isActive
-                                            ? 'bg-[#862733] text-white'
-                                            : 'text-gray-700 hover:bg-gray-100'
-                                            }`}
+                                        onClick={(e) => handleNavClick(e, item.href)}
+                                        className={`text-sm px-2 py-1 rounded-md transition-colors transform-gpu will-change-transform hover:-translate-y-0.5 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#862733] ${isActive ? 'text-[#862733] font-semibold border-b-2 border-[#862733]' : 'text-gray-600 hover:text-[#862733]'}`}
                                     >
-                                        <span className={isActive ? 'text-white' : 'text-gray-500'}>
-                                            {item.icon}
-                                        </span>
                                         {item.label}
                                     </Link>
-                                </li>
-                            );
-                        })}
-                    </ul>
-                </nav>
-
-                {/* Logout Button */}
-                <div className="border-t border-gray-200 p-4">
-                    <button
-                        onClick={handleLogout}
-                        className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-red-50 hover:text-red-700"
-                    >
-                        <LogoutIcon />
-                        Sign Out
-                    </button>
-                </div>
-            </aside>
-
-            {/* Main Content */}
-            <div className="lg:pl-64">
-                {/* Top Header */}
-                <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-gray-200 bg-white px-4 shadow-sm lg:px-6">
-                    <button
-                        onClick={() => setSidebarOpen(true)}
-                        className="rounded-md p-2 text-gray-500 hover:bg-gray-100 lg:hidden"
-                    >
-                        <MenuIcon />
-                    </button>
+                                );
+                            })}
+                        </nav>
+                    </div>
 
                     <div className="flex-1" />
 
-                    {/* Right side of header */}
-                    <div className="flex items-center gap-4">
+                    {/* Right side of header */}                    <div className="flex items-center gap-4">
                         {/* Notifications - placeholder */}
-                        <button className="relative rounded-full p-2 text-gray-500 hover:bg-gray-100">
+                        <button className="relative rounded-full p-2 text-gray-500 hover:bg-gray-100 transition-colors">
                             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                             </svg>
                             <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500" />
                         </button>
 
-                        {/* User menu */}
-                        <div className="hidden sm:flex items-center gap-2">
-                            <span className="text-sm text-gray-700">{user.full_name}</span>
-                            <div className="h-8 w-8 rounded-full bg-[#862733] flex items-center justify-center text-white text-sm font-semibold">
-                                {user.full_name?.charAt(0).toUpperCase() || 'U'}
-                            </div>
+                        {/* User Profile Menu - Outlook style */}
+                        <div className="relative hidden sm:block" ref={userMenuRef}>
+                            <button
+                                onClick={() => setUserMenuOpen(!userMenuOpen)}
+                                className="flex items-center gap-2 rounded-lg p-1.5 hover:bg-gray-100 transition-colors"
+                            >
+                                <div className="h-8 w-8 rounded-full bg-[#862733] flex items-center justify-center text-white text-sm font-semibold">
+                                    S
+                                </div>
+                            </button>
+
+                            {/* Dropdown - Outlook style */}
+                            {userMenuOpen && (
+                                <div className="absolute right-0 mt-2 w-72 rounded-lg border border-gray-200 bg-white shadow-lg z-50">
+                                    {/* User Info Section - Top with large avatar */}
+                                    <div className="p-4 text-center border-b border-gray-200">
+                                        <div className="h-16 w-16 mx-auto mb-3 rounded-full bg-[#862733] flex items-center justify-center text-white text-2xl font-semibold">
+                                            S
+                                        </div>
+                                        <p className="text-sm font-semibold text-gray-900">{user.full_name}</p>
+                                        <p className="text-xs text-gray-500 mt-1 break-words">{user.email}</p>
+                                    </div>
+                                    
+                                    {/* Menu Items */}
+                                    <div className="p-2 space-y-1">
+                                        <Link
+                                            href={`/${user.role.toLowerCase()}/settings`}
+                                            className="flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                                            onClick={() => setUserMenuOpen(false)}
+                                        >
+                                            <SettingsIcon />
+                                            Settings
+                                        </Link>
+
+                                        {/* Help moved under profile for students */}
+                                        {user.role === 'STUDENT' && (
+                                            <Link
+                                                href={`/${user.role.toLowerCase()}/help`}
+                                                className="flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                                                onClick={() => setUserMenuOpen(false)}
+                                            >
+                                                <SubmissionIcon />
+                                                Help
+                                            </Link>
+                                        )}
+                                    </div>
+                                    
+                                    {/* Sign Out */}
+                                    <div className="border-t border-gray-200 p-2">
+                                        <button
+                                            onClick={() => {
+                                                setShowLogoutConfirm(true);
+                                            }}
+                                            className="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-medium text-red-700 hover:bg-red-50 transition-colors"
+                                        >
+                                            <LogoutIcon />
+                                            Sign Out
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </header>
 
+                {/* Logout Confirmation Modal */}
+                {showLogoutConfirm && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 animate-in fade-in duration-200">
+                        <div className="bg-white rounded-2xl shadow-2xl p-8 w-96 animate-in zoom-in duration-200">
+                            {/* Logo/Avatar */}
+                            <div className="flex justify-center mb-6">
+                                <div className="h-12 w-12 rounded-full bg-[#862733] flex items-center justify-center text-white text-lg font-bold">
+                                    {user.full_name?.charAt(0).toUpperCase() || 'S'}
+                                </div>
+                            </div>
+                            
+                            {/* Title */}
+                            <h2 className="text-center text-xl font-semibold text-gray-900 mb-3">Sign out?</h2>
+                            
+                            {/* Description */}
+                            <p className="text-center text-sm text-gray-600 mb-8">You'll be signed out of your account.</p>
+                            
+                            {/* Buttons */}
+                            <div className="flex gap-3 justify-center">
+                                <button
+                                    onClick={() => {
+                                        setShowLogoutConfirm(false);
+                                        setUserMenuOpen(false);
+                                    }}
+                                    className="px-6 py-2.5 text-sm font-medium text-gray-700 bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors"
+                                >
+                                    No
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setShowLogoutConfirm(false);
+                                        handleLogout();
+                                    }}
+                                    className="px-6 py-2.5 rounded-lg text-sm font-medium text-white bg-[#862733] hover:bg-[#a13040] transition-colors"
+                                >
+                                    Yes
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Page Content */}
                 <main className="p-4 lg:p-6">
-                    {children}
+                    <div className="mx-auto max-w-7xl w-full">
+                        <div className={`bg-white/90 dark:bg-[#0b0b0b]/80 rounded-2xl shadow-sm p-6 motion-reduce:transition-none transition-all duration-500 ease-[cubic-bezier(.2,.9,.2,1)] transform will-change-transform will-change-opacity ${contentVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 -translate-y-2 scale-98'}`}>
+                            {children}
+                        </div>
+                    </div>
                 </main>
             </div>
         </div>
