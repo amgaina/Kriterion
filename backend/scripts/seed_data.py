@@ -17,7 +17,7 @@ from app.core.config import settings
 from app.models import (
     User, UserRole,
     Course, CourseStatus, Enrollment, EnrollmentStatus,
-    Assignment, AssignmentStatus, DifficultyLevel, TestCase,
+    Assignment, DifficultyLevel, TestCase,
     Rubric, RubricCategory, RubricItem,
     Language, DEFAULT_LANGUAGES,
     Achievement, Skill, StudentProgress,
@@ -230,9 +230,7 @@ Submit your `main.py` file before the deadline.
                 ai_detection_threshold=50.0,
                 test_weight=70.0,
                 rubric_weight=30.0,
-                status=AssignmentStatus.PUBLISHED,
                 is_published=True,
-                published_at=datetime.utcnow()
             )
             db.add(assignment)
             db.commit()
