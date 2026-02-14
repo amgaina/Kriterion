@@ -197,18 +197,37 @@ async def create_submission(
     
     # Save files to S3 or local storage
     uploaded_files_data = []
+    total_size = 0
+    
+    MAX_TOTAL_SIZE = 100 * 1024 * 1024  # 100MB total per submission
     
     for upload_file in files:
         try:
             # Read file content
             file_content = await upload_file.read()
             file_size = len(file_content)
+            total_size += file_size
             
-            # Validate file size
-            if file_size > settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024:
+            # Validate individual file size
+            MAX_FILE_SIZE = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024 if hasattr(settings, 'MAX_UPLOAD_SIZE_MB') else 10 * 1024 * 1024
+            if file_size > MAX_FILE_SIZE:
                 raise HTTPException(
-                    status_code=400,
-                    detail=f"File {upload_file.filename} exceeds maximum size of {settings.MAX_UPLOAD_SIZE_MB}MB"
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"File {upload_file.filename} exceeds maximum size of {MAX_FILE_SIZE / 1024 / 1024}MB"
+                )
+            
+            # Validate total size
+            if total_size > MAX_TOTAL_SIZE:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Total file size exceeds maximum of {MAX_TOTAL_SIZE / 1024 / 1024}MB"
+                )
+            
+            # Validate file is not empty
+            if file_size == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"File {upload_file.filename} is empty"
                 )
             
             if settings.USE_S3_STORAGE:

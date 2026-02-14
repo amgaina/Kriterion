@@ -248,6 +248,11 @@ class ApiClient {
         return response.data;
     }
 
+    async runCode(assignmentId: number, files: { name: string; content: string }[]) {
+        const response = await this.client.post(`/assignments/${assignmentId}/run`, { files });
+        return response.data;
+    }
+
     // Reports endpoints
     async getDashboardStats(courseId?: number) {
         const params = courseId ? { course_id: courseId } : {};

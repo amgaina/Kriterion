@@ -2,8 +2,15 @@ from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import joinedload
+from pydantic import BaseModel, Field
+import tempfile
+import os
+import shutil
+from pathlib import Path
+import asyncio
+from celery.result import AsyncResult
 
 from app.api.deps import get_db, get_current_user, require_role
 from app.models import (
@@ -19,8 +26,45 @@ from app.schemas.assignment import (
     RubricUpdate
 )
 from app.core.logging import logger
+from app.services.autograding import autograding_service
+from app.services.sandbox import sandbox_executor
+from app.tasks.code_execution import run_code_task, compile_check_task
 
 router = APIRouter()
+
+
+# ============== Request/Response Models ==============
+
+class CodeFile(BaseModel):
+    """File for code execution"""
+    name: str = Field(..., description="File name")
+    content: str = Field(..., description="File content")
+
+class RunCodeRequest(BaseModel):
+    """Request to run code without submission"""
+    files: List[CodeFile] = Field(..., min_items=1, description="Code files to run")
+
+class TestResult(BaseModel):
+    """Individual test result"""
+    id: int
+    name: str
+    passed: bool
+    score: float
+    max_score: float
+    output: Optional[str] = None
+    error: Optional[str] = None
+    expected_output: Optional[str] = None
+    execution_time: Optional[float] = None
+
+class RunCodeResponse(BaseModel):
+    """Response from code execution"""
+    success: bool
+    results: List[TestResult]
+    total_score: float
+    max_score: float
+    tests_passed: int
+    tests_total: int
+    message: Optional[str] = None
 
 
 @router.get("", response_model=List[AssignmentSchema])
@@ -297,6 +341,294 @@ def publish_assignment(
     db.commit()
     
     return {"message": "Assignment published successfully"}
+
+
+@router.post("/{assignment_id}/run", response_model=RunCodeResponse)
+async def run_assignment_code(
+    assignment_id: int,
+    request: RunCodeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Run student code against test cases without creating a submission.
+    This allows students to test their code before submitting.
+    
+    Edge cases handled:
+    - Assignment not found
+    - Assignment not published (students can't access)
+    - User not enrolled in course
+    - No test cases available
+    - Invalid file formats
+    - Execution errors
+    - Timeout handling
+    - Memory limits
+    """
+    # Validate assignment exists
+    assignment = db.query(Assignment).options(
+        joinedload(Assignment.language),
+        joinedload(Assignment.course)
+    ).filter(Assignment.id == assignment_id).first()
+    
+    if not assignment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Assignment not found"
+        )
+    
+    # Check if assignment is published (students only)
+    if current_user.role == UserRole.STUDENT and not assignment.is_published:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Assignment is not published yet"
+        )
+    
+    # Verify enrollment for students
+    if current_user.role == UserRole.STUDENT:
+        enrollment = db.query(Enrollment).filter(
+            and_(
+                Enrollment.student_id == current_user.id,
+                Enrollment.course_id == assignment.course_id,
+                Enrollment.status == EnrollmentStatus.ACTIVE
+            )
+        ).first()
+        
+        if not enrollment:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not enrolled in this course"
+            )
+    
+    # Verify language is configured
+    if not assignment.language:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Assignment language not configured"
+        )
+    
+    # Validate files
+    if not request.files:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one file is required"
+        )
+    
+    # Check file count limit (prevent abuse)
+    MAX_FILES = 50
+    if len(request.files) > MAX_FILES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Too many files. Maximum is {MAX_FILES}"
+        )
+    
+    # Check file size limit
+    MAX_FILE_SIZE = 1024 * 1024  # 1MB per file
+    for file in request.files:
+        if len(file.content) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"File '{file.name}' exceeds maximum size of 1MB"
+            )
+        
+        # Validate file name (prevent path traversal)
+        if ".." in file.name or "/" in file.name or "\\" in file.name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid file name: {file.name}"
+            )
+    
+    # Get test cases (only public/sample tests for practice runs)
+    test_cases = db.query(TestCase).filter(
+        and_(
+            TestCase.assignment_id == assignment_id,
+            or_(
+                TestCase.is_sample == True,
+                TestCase.is_hidden == False
+            )
+        )
+    ).order_by(TestCase.order).all()
+    
+    # Create temporary directory for code files
+    temp_dir = None
+    try:
+        temp_dir = tempfile.mkdtemp(prefix="assignment_run_")
+        
+        # Write files to temp directory
+        for file in request.files:
+            file_path = os.path.join(temp_dir, file.name)
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(file.content)
+        
+        # If no test cases, just compile and run the code to verify it works
+        if not test_cases:
+            logger.info(f"No test cases for assignment {assignment_id}, attempting compilation/run for user {current_user.id}")
+            
+            try:
+                # Try to compile/run the code
+                execution_result = await asyncio.to_thread(
+                    sandbox_executor.execute_code,
+                    code_path=temp_dir,
+                    language=assignment.language.name.lower(),
+                    test_input="",  # No input
+                    command_args=None
+                )
+                
+                # Check if compilation/execution succeeded
+                if execution_result.get("success", False) or execution_result.get("exit_code") == 0:
+                    message = "✓ Your code compiled and ran successfully!"
+                    if execution_result.get("stdout"):
+                        message += f"\n\nOutput:\n{execution_result.get('stdout', '')[:500]}"
+                else:
+                    # Compilation or runtime error
+                    error_msg = execution_result.get("stderr", "Unknown error")
+                    message = f"⚠ Compilation/Runtime Error:\n{error_msg[:500]}"
+                    
+                # Audit log
+                audit = AuditLog(
+                    user_id=current_user.id,
+                    event_type="code_run_no_tests",
+                    description=f"Code compilation check for assignment {assignment_id}: {'success' if execution_result.get('success') else 'failed'}"
+                )
+                db.add(audit)
+                db.commit()
+                
+                return RunCodeResponse(
+                    success=execution_result.get("success", False) or execution_result.get("exit_code") == 0,
+                    results=[],
+                    total_score=0,
+                    max_score=0,
+                    tests_passed=0,
+                    tests_total=0,
+                    message=message
+                )
+                
+            except Exception as e:
+                logger.error(f"Compilation check error: {str(e)}", exc_info=True)
+                return RunCodeResponse(
+                    success=False,
+                    results=[],
+                    total_score=0,
+                    max_score=0,
+                    tests_passed=0,
+                    tests_total=0,
+                    message=f"Error during compilation: {str(e)}"
+                )
+            finally:
+                # Clean up
+                if temp_dir and os.path.exists(temp_dir):
+                    try:
+                        shutil.rmtree(temp_dir)
+                    except Exception as e:
+                        logger.warning(f"Failed to clean up temp directory: {str(e)}")
+        
+        logger.info(f"Running code for assignment {assignment_id}, user {current_user.id}")
+        
+        # Run test cases
+        all_results = []
+        total_score = 0
+        max_score = 0
+        tests_passed = 0
+        tests_total = len(test_cases)
+        
+        for test_case in test_cases:
+            max_score += test_case.points
+            
+            try:
+                # Execute code with test input
+                execution_result = await asyncio.to_thread(
+                    sandbox_executor.execute_code,
+                    code_path=temp_dir,
+                    language=assignment.language.name.lower(),
+                    test_input=test_case.input_data,
+                    command_args=None
+                )
+                
+                # Compare output
+                actual_output = execution_result.get("stdout", "").strip()
+                expected_output = (test_case.expected_output or "").strip()
+                
+                # Apply comparison settings
+                if test_case.ignore_whitespace:
+                    actual_output = " ".join(actual_output.split())
+                    expected_output = " ".join(expected_output.split())
+                
+                if test_case.ignore_case:
+                    actual_output = actual_output.lower()
+                    expected_output = expected_output.lower()
+                
+                passed = (
+                    execution_result.get("success", False) and 
+                    actual_output == expected_output
+                )
+                
+                if passed:
+                    tests_passed += 1
+                    total_score += test_case.points
+                
+                # Build test result
+                test_result = TestResult(
+                    id=test_case.id,
+                    name=test_case.name,
+                    passed=passed,
+                    score=test_case.points if passed else 0,
+                    max_score=test_case.points,
+                    output=execution_result.get("stdout", "")[:1000],  # Limit output
+                    error=execution_result.get("stderr", "")[:1000] if not execution_result.get("success") else None,
+                    expected_output=expected_output if not passed else None,
+                    execution_time=execution_result.get("runtime", 0)
+                )
+                
+                all_results.append(test_result)
+                
+            except Exception as e:
+                logger.error(f"Test execution error: {str(e)}", exc_info=True)
+                all_results.append(TestResult(
+                    id=test_case.id,
+                    name=test_case.name,
+                    passed=False,
+                    score=0,
+                    max_score=test_case.points,
+                    output=None,
+                    error=f"Execution error: {str(e)}",
+                    expected_output=None,
+                    execution_time=0
+                ))
+        
+        # Audit log
+        audit = AuditLog(
+            user_id=current_user.id,
+            event_type="code_run",
+            description=f"Code run for assignment {assignment_id}: {tests_passed}/{tests_total} tests passed"
+        )
+        db.add(audit)
+        db.commit()
+        
+        return RunCodeResponse(
+            success=True,
+            results=all_results,
+            total_score=total_score,
+            max_score=max_score,
+            tests_passed=tests_passed,
+            tests_total=tests_total,
+            message=f"Tests completed: {tests_passed}/{tests_total} passed"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Code execution error: {str(e)}", exc_info=True)
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to execute code: {str(e)}"
+        )
+    finally:
+        # Clean up temporary directory
+        if temp_dir and os.path.exists(temp_dir):
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception as e:
+                logger.warning(f"Failed to clean up temp directory: {str(e)}")
 
 
 @router.post("/{assignment_id}/unpublish")

@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from app.api.v1.endpoints import (
     auth, courses, assignments, submissions, reports, admin,
-    students, faculty, settings, code, languages
+    students, faculty, settings, code, languages, code_execution
 )
 
 api_router = APIRouter()
@@ -27,8 +27,11 @@ api_router.include_router(assignments.router, prefix="/assignments", tags=["Assi
 # Submissions
 api_router.include_router(submissions.router, prefix="/submissions", tags=["Submissions"])
 
-# Code execution
+# Code execution (synchronous - legacy)
 api_router.include_router(code.router, prefix="/code", tags=["Code Execution"])
+
+# Code execution (asynchronous with Celery - recommended)
+api_router.include_router(code_execution.router, prefix="/assignments", tags=["Code Execution (Celery)"])
 
 # Reports & Analytics
 api_router.include_router(reports.router, prefix="/reports", tags=["Reports"])

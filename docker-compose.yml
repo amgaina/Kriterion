@@ -18,6 +18,19 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: kriterion-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: ./backend
@@ -34,6 +47,8 @@ services:
       - AWS_REGION=${AWS_REGION:-us-east-1}
       - AWS_S3_BUCKET_NAME=${AWS_S3_BUCKET_NAME:-kriterion-submissions}
       - USE_S3_STORAGE=${USE_S3_STORAGE:-true}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
     volumes:
       - ./backend:/app
       - uploads_data:/tmp/kriterion/uploads
@@ -42,7 +57,53 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: kriterion-celery-worker
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-kriterion}:${POSTGRES_PASSWORD:-kriterion_dev_password}@db:5432/${POSTGRES_DB:-kriterion}
+      - SECRET_KEY=${SECRET_KEY}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_S3_BUCKET_NAME=${AWS_S3_BUCKET_NAME:-kriterion-submissions}
+      - USE_S3_STORAGE=${USE_S3_STORAGE:-true}
+    volumes:
+      - ./backend:/app
+      - uploads_data:/tmp/kriterion/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.core.celery_app worker --loglevel=info --queues=default,code_execution,grading --concurrency=4
+
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: kriterion-celery-beat
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-kriterion}:${POSTGRES_PASSWORD:-kriterion_dev_password}@db:5432/${POSTGRES_DB:-kriterion}
+      - SECRET_KEY=${SECRET_KEY}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.core.celery_app beat --loglevel=info
 
   frontend:
     build:
@@ -92,6 +153,7 @@ networks:
 
 volumes:
   postgres_data:
+  redis_data:
   uploads_data:
   frontend_node_modules:
   frontend_next:

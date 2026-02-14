@@ -66,7 +66,16 @@ def get_dashboard_stats(
             "graded_submissions": graded_submissions,
             "average_score": round(avg_score, 2),
             "upcoming_assignments": len(upcoming),
-            "recent_submissions": submissions[:5]
+            "recent_submissions": [
+    {
+        "id": sub.id,
+        "assignment_id": sub.assignment_id,
+        "created_at": sub.created_at.isoformat() if sub.created_at else None,
+        "status": sub.status,
+        "final_score": sub.final_score,
+    }
+    for sub in submissions[:5]
+]
         }
     
     elif current_user.role == UserRole.FACULTY:

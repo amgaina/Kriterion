@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     SANDBOX_CPU_LIMIT: float = 1.0
     SANDBOX_IMAGE: str = "kriterion-sandbox:latest"
     
+    # Celery
+    CELERY_BROKER_URL: str = "redis://redis:6379/0"
+    CELERY_RESULT_BACKEND: str = "redis://redis:6379/0"
+    
     # Email
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587

@@ -1,8 +1,7 @@
 from typing import Dict, List, Any
 from sqlalchemy.orm import Session
 from app.models.submission import Submission
-from app.models.test_case import TestCase, TestSuite
-from app.models.assignment import Assignment
+from app.models.assignment import TestCase, Assignment
 from app.services.sandbox import sandbox_executor
 from app.core.logging import logger
 import os
@@ -22,32 +21,41 @@ class AutoGradingService:
         if not assignment:
             return {"error": "Assignment not found"}
         
-        # Get all test suites for this assignment
-        test_suites = db.query(TestSuite).filter(TestSuite.assignment_id == assignment.id).all()
+        # Get all test cases for this assignment
+        test_cases = db.query(TestCase).filter(
+            TestCase.assignment_id == assignment.id
+        ).order_by(TestCase.order).all()
         
         results = {
-            "test_suites": [],
+            "test_cases": [],
             "public_passed": 0,
             "public_total": 0,
-            "private_passed": 0,
-            "private_total": 0,
+            "hidden_passed": 0,
+            "hidden_total": 0,
             "total_score": 0,
             "max_score": 0
         }
         
-        for suite in test_suites:
-            suite_result = self._run_test_suite(suite, submission, assignment, db)
-            results["test_suites"].append(suite_result)
+        for test_case in test_cases:
+            case_result = self._run_test_case(
+                test_case,
+                submission.files_path if hasattr(submission, 'files_path') else "",
+                assignment.language.name if assignment.language else "python"
+            )
+            results["test_cases"].append(case_result)
             
-            if suite.visibility == "public":
-                results["public_passed"] += suite_result["passed"]
-                results["public_total"] += suite_result["total"]
+            if not test_case.is_hidden:
+                results["public_total"] += 1
+                if case_result["passed"]:
+                    results["public_passed"] += 1
             else:
-                results["private_passed"] += suite_result["passed"]
-                results["private_total"] += suite_result["total"]
+                results["hidden_total"] += 1
+                if case_result["passed"]:
+                    results["hidden_passed"] += 1
             
-            results["total_score"] += suite_result["score"]
-            results["max_score"] += suite_result["max_score"]
+            if case_result["passed"]:
+                results["total_score"] += test_case.points
+            results["max_score"] += test_case.points
         
         # Calculate percentage score
         if results["max_score"] > 0:
@@ -58,42 +66,6 @@ class AutoGradingService:
         results["percentage"] = percentage
         
         return results
-    
-    def _run_test_suite(
-        self,
-        test_suite: TestSuite,
-        submission: Submission,
-        assignment: Assignment,
-        db: Session
-    ) -> Dict[str, Any]:
-        """Run all test cases in a suite"""
-        test_cases = db.query(TestCase).filter(
-            TestCase.test_suite_id == test_suite.id
-        ).order_by(TestCase.order).all()
-        
-        suite_result = {
-            "suite_name": test_suite.name,
-            "visibility": test_suite.visibility,
-            "test_cases": [],
-            "passed": 0,
-            "total": len(test_cases),
-            "score": 0,
-            "max_score": sum(tc.points for tc in test_cases)
-        }
-        
-        for test_case in test_cases:
-            case_result = self._run_test_case(
-                test_case,
-                submission.files_path,
-                assignment.language
-            )
-            suite_result["test_cases"].append(case_result)
-            
-            if case_result["passed"]:
-                suite_result["passed"] += 1
-                suite_result["score"] += test_case.points
-        
-        return suite_result
     
     def _run_test_case(
         self,

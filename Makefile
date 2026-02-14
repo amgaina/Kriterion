@@ -32,6 +32,21 @@ logs-backend: ## View backend logs
 logs-frontend: ## View frontend logs
 	docker-compose logs -f frontend
 
+logs-celery: ## View Celery worker logs
+	docker-compose logs -f celery_worker
+
+logs-redis: ## View Redis logs
+	docker-compose logs -f redis
+
+celery-status: ## Check Celery worker status
+	docker-compose exec celery_worker celery -A app.core.celery_app inspect active
+
+celery-purge: ## Purge all Celery tasks
+	docker-compose exec celery_worker celery -A app.core.celery_app purge
+
+celery-restart: ## Restart Celery worker
+	docker-compose restart celery_worker
+
 clean: ## Clean up containers, volumes, and caches
 	@echo "Cleaning up..."
 	docker-compose down -v

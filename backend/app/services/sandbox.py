@@ -72,15 +72,22 @@ class SandboxExecutor:
     
     def _get_exec_command(self, language: str, code_path: str, args: Optional[str] = None) -> str:
         """Get execution command based on language"""
+        import glob
+        
+        # For Python, find the first .py file
+        python_files = glob.glob(os.path.join(code_path, "*.py"))
+        python_file = os.path.basename(python_files[0]) if python_files else "main.py"
+        
         commands = {
-            "python": f"python3 main.py {args or ''}",
+            "python": f"python3 {python_file} {args or ''}",
             "java": f"javac *.java && java Main {args or ''}",
             "cpp": f"g++ -o program *.cpp && ./program {args or ''}",
             "c": f"gcc -o program *.c && ./program {args or ''}",
-            "javascript": f"node main.js {args or ''}",
-            "typescript": f"ts-node main.ts {args or ''}"
+            "javascript": f"node *.js {args or ''}",
+            "typescript": f"ts-node *.ts {args or ''}"
         }
         return commands.get(language, "echo 'Unsupported language'")
+
     
     def _run_in_docker(
         self,
@@ -90,12 +97,18 @@ class SandboxExecutor:
     ) -> Dict[str, Any]:
         """Run command in Docker container"""
         
-        # For development without Docker, use subprocess directly
-        # In production, this should use Docker
-        if settings.ENVIRONMENT == "development" and not os.path.exists("/.dockerenv"):
+        # If we're already inside a Docker container (backend container),
+        # use local execution instead of trying Docker-in-Docker
+        if os.path.exists("/.dockerenv"):
+            logger.info("Running inside Docker container, using local execution")
             return self._run_local(command, code_path, stdin_input)
         
-        # Docker execution
+        # For development without Docker, use subprocess directly
+        if settings.ENVIRONMENT == "development":
+            logger.info("Development mode, using local execution")
+            return self._run_local(command, code_path, stdin_input)
+        
+        # Docker execution (only for production on host machine)
         docker_cmd = [
             "docker", "run",
             "--rm",
@@ -151,19 +164,29 @@ class SandboxExecutor:
             )
             
             return {
-                "stdout": process.stdout.decode(),
-                "stderr": process.stderr.decode(),
+                "stdout": process.stdout.decode('utf-8', errors='replace'),
+                "stderr": process.stderr.decode('utf-8', errors='replace'),
                 "exit_code": process.returncode,
-                "memory_used": 0
+                "memory_used": 0  # Not available in local mode
             }
         except subprocess.TimeoutExpired:
+            logger.warning(f"Process timed out after {self.timeout} seconds")
             return {
                 "stdout": "",
-                "stderr": "Execution timed out",
+                "stderr": f"Execution timed out after {self.timeout} seconds",
+                "exit_code": -1,
+                "memory_used": 0
+            }
+        except FileNotFoundError as e:
+            logger.error(f"File not found during execution: {str(e)}")
+            return {
+                "stdout": "",
+                "stderr": f"Required file or command not found: {str(e)}",
                 "exit_code": -1,
                 "memory_used": 0
             }
         except Exception as e:
+            logger.error(f"Local execution error: {str(e)}", exc_info=True)
             return {
                 "stdout": "",
                 "stderr": f"Execution error: {str(e)}",
