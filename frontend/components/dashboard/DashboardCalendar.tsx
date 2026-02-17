@@ -8,12 +8,14 @@ type DashboardCalendarProps = {
     highlightDates?: string[];
     selectedDate?: Date | null;
     onSelectDate?: (date: Date | null) => void;
+    compact?: boolean;
 };
 
 export function DashboardCalendar({
     highlightDates = [],
     selectedDate = null,
     onSelectDate,
+    compact = false,
 }: DashboardCalendarProps) {
     // Track which month is currently being viewed
     const [currentMonth, setCurrentMonth] = useState<Date>(() => {
@@ -90,14 +92,14 @@ export function DashboardCalendar({
                 <CardDescription>Assignment schedule overview</CardDescription>
             </CardHeader>
             <CardContent>
-                <div className="grid grid-cols-7 gap-2 text-xs text-gray-500 mb-2">
+                <div className={`grid grid-cols-7 ${compact ? 'gap-1 text-[10px] mb-1' : 'gap-2 text-xs mb-2'} text-gray-500`}>
                     {weekdayLabels.map((day) => (
                         <div key={day} className="text-center font-medium">
                             {day}
                         </div>
                     ))}
                 </div>
-                <div className="grid grid-cols-7 gap-2 text-sm">
+                <div className={`grid grid-cols-7 ${compact ? 'gap-1 text-xs' : 'gap-2 text-sm'}`}>
                     {calendarDays.map((day, index) => {
                         if (!day) {
                             return <div key={index} />;
@@ -114,8 +116,7 @@ export function DashboardCalendar({
                             !!selectedDate &&
                             selectedDate.toDateString() === dateObj.toDateString();
 
-                        const baseClasses =
-                            'h-10 rounded-lg flex flex-col items-center justify-center cursor-pointer transition-colors';
+                        const baseClasses = `${compact ? 'h-8' : 'h-10'} rounded-lg flex flex-col items-center justify-center cursor-pointer transition-colors`;
                         const visualClasses = isSelected
                             ? 'bg-[#862733] text-white'
                             : 'bg-gray-50 text-gray-900';

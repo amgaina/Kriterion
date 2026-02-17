@@ -76,7 +76,7 @@ export default function StudentDashboardPage() {
           })
         : displayAssignments;
 
-    const assignmentsToShow = (selectedDate ? filteredAssignments : displayAssignments).slice(0, 4);
+    const assignmentsToShow = (selectedDate ? filteredAssignments : displayAssignments).slice(0, 3);
 
     const getTimeRemaining = (dueDate: string) => {
         const due = new Date(dueDate);
@@ -89,21 +89,21 @@ export default function StudentDashboardPage() {
     return (
         <ProtectedRoute allowedRoles={['STUDENT']}>
             <DashboardLayout>
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
                     {/* Welcome Section */}
-                    <div className="bg-gradient-to-r from-[#862733] to-[#a13040] rounded-xl p-6 text-white">
-                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div className="bg-gradient-to-r from-[#862733] to-[#a13040] rounded-xl p-4 text-white">
+                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                             <div>
-                                <h1 className="text-2xl font-bold">
+                                <h1 className="text-xl font-semibold">
                                     Welcome back, {user?.full_name?.split(' ')[0] || 'Student'}! 👋
                                 </h1>
-                                <p className="text-white/80 mt-1">
+                                <p className="text-white/80 mt-1 text-sm">
                                     You have {displayStats.pending_assignments || 3} assignments due this week.
                                 </p>
                             </div>
-                            <div className="flex items-center gap-4">    
+                            <div className="flex items-center gap-3">    
                                 <Link href="/student/assignments">
-                                    <Button className="bg-white text-[#862733] hover:bg-white/90">
+                                    <Button className="bg-white text-[#862733] hover:bg-white/90 py-1 px-3 text-sm">
                                         View Assignments
                                         <ArrowRight className="w-4 h-4 ml-2" />
                                     </Button>
@@ -115,26 +115,26 @@ export default function StudentDashboardPage() {
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
                         {/* Left column: Stats Cards */}
                         <div className="lg:col-span-1">
-                            <div className="grid grid-cols-2 gap-4">
-                                <StatsCard
+                            <div className="grid grid-cols-2 gap-3">
+                                <StatsCard className="p-4"
                                     title="Enrolled Courses"
                                     value={statsLoading ? '...' : displayStats.enrolled_courses}
                                     icon={BookOpen}
                                     variant="primary"
                                 />
-                                <StatsCard
+                                <StatsCard className="p-4"
                                     title="Submissions"
                                     value={statsLoading ? '...' : displayStats.total_submissions}
                                     icon={FileCode}
                                     variant="success"
                                 />
-                                <StatsCard
+                                <StatsCard className="p-4"
                                     title="Pending"
                                     value={statsLoading ? '...' : displayStats.pending_assignments || 3}
                                     icon={Clock}
                                     variant="warning"
                                 />
-                                <StatsCard
+                                <StatsCard className="p-4"
                                     title="Average Score"
                                     value={statsLoading ? '...' : `${displayStats.average_score}%`}
                                     icon={Award}
@@ -143,12 +143,13 @@ export default function StudentDashboardPage() {
                             </div>
                         </div>
 
-                        {/* Right column: Calendar on top, Upcoming Assignments below, then Recent Grades */}
-                        <div className="lg:col-span-2 space-y-6">
+                        {/* Right column: Calendar on top, Upcoming Assignments below */}
+                        <div className="lg:col-span-2 space-y-4">
                             <DashboardCalendar
                                 highlightDates={highlightDates}
                                 selectedDate={selectedDate}
                                 onSelectDate={setSelectedDate}
+                                compact
                             />
 
                             {/* Upcoming Assignments (moved below calendar) */}
@@ -174,32 +175,32 @@ export default function StudentDashboardPage() {
                                 </CardHeader>
                                 <CardContent>
                                     {assignmentsLoading ? (
-                                        <div className="text-center py-8 text-gray-500">Loading...</div>
+                                        <div className="text-center py-6 text-gray-500">Loading...</div>
                                     ) : (
-                                        <div className="space-y-4">
+                                        <div className="space-y-3">
                                             {assignmentsToShow.map((assignment: any) => {
                                                 const timeInfo = getTimeRemaining(assignment.due_date);
                                                 return (
                                                     <Link
                                                         key={assignment.id}
                                                         href={`/student/assignments/${assignment.id}`}
-                                                        className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors group"
+                                                        className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors group"
                                                     >
-                                                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${timeInfo.urgent ? 'bg-red-100' : 'bg-blue-100'}`}>
-                                                            <FileCode className={`w-5 h-5 ${timeInfo.urgent ? 'text-red-600' : 'text-blue-600'}`} />
+                                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${timeInfo.urgent ? 'bg-red-100' : 'bg-blue-100'}`}>
+                                                            <FileCode className={`w-4 h-4 ${timeInfo.urgent ? 'text-red-600' : 'text-blue-600'}`} />
                                                         </div>
                                                         <div className="flex-1 min-w-0">
-                                                            <p className="font-medium text-gray-900 truncate">{assignment.title}</p>
-                                                            <p className="text-sm text-gray-500">{assignment.course_name || assignment.course?.name}</p>
+                                                            <p className="font-medium text-sm text-gray-900 truncate">{assignment.title}</p>
+                                                            <p className="text-xs text-gray-500">{assignment.course_name || assignment.course?.name}</p>
                                                         </div>
-                                                        <Badge variant={timeInfo.urgent ? 'danger' : 'warning'}>{timeInfo.text}</Badge>
-                                                        <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-gray-600" />
+                                                        <Badge variant={timeInfo.urgent ? 'danger' : 'warning'} className="text-xs">{timeInfo.text}</Badge>
+                                                        <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-gray-600" />
                                                     </Link>
                                                 );
                                             })}
                                             {(selectedDate ? filteredAssignments.length : displayAssignments.length) === 0 && (
-                                                <div className="text-center py-8 text-gray-500">
-                                                    <CheckCircle className="w-12 h-12 mx-auto mb-3 text-green-500" />
+                                                <div className="text-center py-6 text-gray-500">
+                                                    <CheckCircle className="w-10 h-10 mx-auto mb-3 text-green-500" />
                                                     <p>All caught up! No pending assignments.</p>
                                                 </div>
                                             )}
