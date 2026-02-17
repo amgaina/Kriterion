@@ -99,8 +99,6 @@ const getNavItems = (role: UserRole): NavItem[] => {
             { label: 'My Courses', href: `${baseUrl}/courses`, icon: <BookIcon /> },
             { label: 'Assignments', href: `${baseUrl}/assignments`, icon: <AssignmentIcon /> },
             { label: 'Grades', href: `${baseUrl}/grades`, icon: <GradeIcon /> },
-            { label: 'Progress', href: `${baseUrl}/progress`, icon: <ReportIcon /> },
-            { label: 'Schedule', href: `${baseUrl}/schedule`, icon: <AuditIcon /> },
             { label: 'Help', href: `${baseUrl}/help`, icon: <SubmissionIcon /> },
             { label: 'Settings', href: `${baseUrl}/settings`, icon: <SettingsIcon /> },
         ];
@@ -152,8 +150,6 @@ const getTopNavItems = (role: UserRole) => {
             { label: 'My Courses', href: '/student/courses' },
             { label: 'Assignments', href: '/student/assignments' },
             { label: 'Grades', href: '/student/grades' },
-            { label: 'Progress', href: '/student/progress' },
-            { label: 'Schedule', href: '/student/schedule' },
         ];
     }
 
@@ -222,7 +218,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     // For students, remove the primary learning nav from the sidebar since we show it in the top nav
     // Also remove 'Help' and 'Settings' from the sidebar and surface them in the profile menu
     const sidebarItems = user.role === 'STUDENT'
-        ? navItems.filter(i => !['Dashboard', 'My Courses', 'Assignments', 'Grades', 'Progress', 'Schedule', 'Help', 'Settings'].includes(i.label))
+        ? navItems.filter(i => !['Dashboard', 'My Courses', 'Assignments', 'Grades', 'Help', 'Settings'].includes(i.label))
         : navItems;
 
     const handleLogout = () => {
