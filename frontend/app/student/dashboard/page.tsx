@@ -112,32 +112,41 @@ export default function StudentDashboardPage() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-                        {/* Left column: Stats Cards */}
-                        <div className="lg:col-span-1">
-                            <div className="grid grid-cols-2 gap-3">
-                                <StatsCard className="p-4"
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch min-h-[360px]">
+                        {/* Left column: Stats Cards (stack & stretch on large screens) */}
+                        <div className="lg:col-span-1 grid grid-cols-2 gap-3 lg:flex lg:flex-col lg:gap-3 h-full">
+                            <div className="lg:flex-1">
+                                <StatsCard className="p-4 min-h-[84px] lg:h-full lg:flex-1 lg:flex lg:flex-col lg:justify-center"
                                     title="Enrolled Courses"
                                     value={statsLoading ? '...' : displayStats.enrolled_courses}
                                     icon={BookOpen}
                                     iconSize={36}
                                     variant="primary"
                                 />
-                                <StatsCard className="p-4"
+                            </div>
+
+                            <div className="lg:flex-1">
+                                <StatsCard className="p-4 min-h-[84px] lg:h-full lg:flex-1 lg:flex lg:flex-col lg:justify-center"
                                     title="Submissions"
                                     value={statsLoading ? '...' : displayStats.total_submissions}
                                     icon={FileCode}
                                     iconSize={36}
                                     variant="success"
                                 />
-                                <StatsCard className="p-4"
+                            </div>
+
+                            <div className="lg:flex-1">
+                                <StatsCard className="p-4 min-h-[84px] lg:h-full lg:flex-1 lg:flex lg:flex-col lg:justify-center"
                                     title="Pending"
                                     value={statsLoading ? '...' : displayStats.pending_assignments || 3}
                                     icon={Clock}
                                     iconSize={36}
                                     variant="warning"
                                 />
-                                <StatsCard className="p-4"
+                            </div>
+
+                            <div className="lg:flex-1">
+                                <StatsCard className="p-4 min-h-[84px] lg:h-full lg:flex-1 lg:flex lg:flex-col lg:justify-center"
                                     title="Average Score"
                                     value={statsLoading ? '...' : `${displayStats.average_score}%`}
                                     icon={Award}
