@@ -352,7 +352,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             )}
 
             {/* Main Content */}
-            <div className={user.role === 'ADMIN' ? 'lg:pl-72' : ''}>
+            <div className={`${user.role === 'ADMIN' ? 'lg:pl-72' : ''} pt-6 pb-8`}>
                 {/* Top Header */}
                 <header className="sticky top-0 z-30 relative flex h-16 items-center gap-4 border-b border-gray-200 bg-white px-4 shadow-sm lg:px-6">
                     {user.role !== 'STUDENT' && (
