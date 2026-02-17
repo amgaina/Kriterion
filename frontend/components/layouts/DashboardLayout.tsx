@@ -434,14 +434,14 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                             <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500" />
                         </button>
 
-                        {/* User Profile Menu - Outlook style */}
-                        <div className="relative hidden sm:block" ref={userMenuRef}>
+                        {/* User Profile Menu - visible on all sizes (mobile header shows avatar on right) */}
+                        <div className="relative" ref={userMenuRef}>
                             <button
                                 onClick={() => setUserMenuOpen(!userMenuOpen)}
                                 className="flex items-center gap-2 rounded-lg p-1.5 hover:bg-gray-100 transition-colors"
                             >
                                 <div className="h-8 w-8 rounded-full bg-[#862733] flex items-center justify-center text-white text-sm font-semibold">
-                                    S
+                                    {user.full_name?.charAt(0).toUpperCase() || 'U'}
                                 </div>
                             </button>
 
