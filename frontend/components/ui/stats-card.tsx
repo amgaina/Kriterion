@@ -18,6 +18,8 @@ interface StatsCardProps {
     }
     className?: string
     variant?: 'default' | 'primary' | 'success' | 'warning' | 'danger'
+    /** icon size in pixels (controls visual weight for empty-space balancing) */
+    iconSize?: number
 }
 
 const variantStyles = {
@@ -55,9 +57,12 @@ export function StatsCard({
     icon: Icon,
     trend,
     className,
-    variant = 'default'
+    variant = 'default',
+    iconSize = 24
 }: StatsCardProps) {
     const styles = variantStyles[variant]
+
+    const iconWrapperSize = typeof iconSize === 'number' ? iconSize + 16 : 40
 
     const TrendIcon = trend
         ? trend.value > 0
@@ -101,10 +106,10 @@ export function StatsCard({
                     )}
                 </div>
                 {Icon && (
-                    <div className={cn("p-3 rounded-xl", styles.icon)}>
-                        <Icon className="w-6 h-6" />
+                    <div className={cn("p-3 rounded-xl flex items-center justify-center", styles.icon)} style={{ width: iconWrapperSize, height: iconWrapperSize }}>
+                        <Icon style={{ width: iconSize, height: iconSize }} />
                     </div>
-                )}
+                )} 
             </div>
         </div>
     )

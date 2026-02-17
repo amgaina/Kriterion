@@ -189,6 +189,8 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     const [contentVisible, setContentVisible] = useState(true);
     const [isNavigating, setIsNavigating] = useState(false);
     const userMenuRef = React.useRef<HTMLDivElement>(null);
+    const [mobileNavOpen, setMobileNavOpen] = useState(false);
+    const mobileNavRef = React.useRef<HTMLDivElement>(null);
 
     const handleNavClick = (e: React.MouseEvent, href: string, closeSidebar = false) => {
         if (e) e.preventDefault();
@@ -232,6 +234,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
                 setUserMenuOpen(false);
             }
+            if (mobileNavRef.current && !mobileNavRef.current.contains(event.target as Node)) {
+                setMobileNavOpen(false);
+            }
         };
 
         document.addEventListener('mousedown', handleClickOutside);
@@ -247,6 +252,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
         // Small delay to allow the new route to render before fading in
         const t = setTimeout(() => setContentVisible(true), 80);
+        setMobileNavOpen(false);
         return () => clearTimeout(t);
     }, [pathname]);
 
@@ -364,9 +370,19 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                         </button>
                     )}
 
-                    {/* Top nav (large screens) - centered */}
-                    <div className="absolute inset-x-0 hidden lg:flex justify-center pointer-events-none">
-                        <nav className="pointer-events-auto flex items-center gap-6">
+                    {/* Mobile top-nav hamburger (xs) */}
+                    <button
+                        onClick={() => setMobileNavOpen(!mobileNavOpen)}
+                        className="rounded-md p-2 text-gray-500 hover:bg-gray-100 sm:hidden"
+                        aria-expanded={mobileNavOpen}
+                        aria-label="Open navigation"
+                    >
+                        <MenuIcon />
+                    </button>
+
+                    {/* Top nav (responsive) - centered on larger screens, horizontally scrollable on small */}
+                    <div className="absolute inset-x-0 hidden sm:flex justify-center pointer-events-none">
+                        <nav className="pointer-events-auto flex items-center gap-4 overflow-x-auto whitespace-nowrap px-4">
                             {getTopNavItems(user.role).map((item) => {
                                 const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
                                 return (
@@ -374,7 +390,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                                         key={item.href}
                                         href={item.href}
                                         onClick={(e) => handleNavClick(e, item.href)}
-                                        className={`text-sm px-2 py-1 rounded-md transition-colors transform-gpu will-change-transform hover:-translate-y-0.5 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#862733] ${isActive ? 'text-[#862733] font-semibold border-b-2 border-[#862733]' : 'text-gray-600 hover:text-[#862733]'}`}
+                                        className={`text-sm px-2 py-1 rounded-md whitespace-nowrap transition-colors transform-gpu will-change-transform hover:-translate-y-0.5 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#862733] ${isActive ? 'text-[#862733] font-semibold border-b-2 border-[#862733]' : 'text-gray-600 hover:text-[#862733]'}`}
                                     >
                                         {item.label}
                                     </Link>
@@ -382,6 +398,30 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                             })}
                         </nav>
                     </div>
+
+                    {/* Mobile nav overlay */}
+                    {mobileNavOpen && (
+                        <>
+                            <div ref={mobileNavRef} className="absolute top-full left-0 right-0 z-40 sm:hidden">
+                                <div className="bg-white shadow-md rounded-b-lg overflow-hidden divide-y divide-gray-100">
+                                    {getTopNavItems(user.role).map((item) => {
+                                        const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+                                        return (
+                                            <Link
+                                                key={item.href}
+                                                href={item.href}
+                                                onClick={(e) => { handleNavClick(e, item.href); setMobileNavOpen(false); }}
+                                                className={`block px-4 py-3 text-sm ${isActive ? 'text-[#862733] font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}
+                                            >
+                                                {item.label}
+                                            </Link>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                            <div className="fixed inset-0 z-30 bg-black/30 sm:hidden" onClick={() => setMobileNavOpen(false)} />
+                        </>
+                    )}
 
                     <div className="flex-1" />
 

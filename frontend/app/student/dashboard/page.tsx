@@ -120,24 +120,28 @@ export default function StudentDashboardPage() {
                                     title="Enrolled Courses"
                                     value={statsLoading ? '...' : displayStats.enrolled_courses}
                                     icon={BookOpen}
+                                    iconSize={36}
                                     variant="primary"
                                 />
                                 <StatsCard className="p-4"
                                     title="Submissions"
                                     value={statsLoading ? '...' : displayStats.total_submissions}
                                     icon={FileCode}
+                                    iconSize={36}
                                     variant="success"
                                 />
                                 <StatsCard className="p-4"
                                     title="Pending"
                                     value={statsLoading ? '...' : displayStats.pending_assignments || 3}
                                     icon={Clock}
+                                    iconSize={36}
                                     variant="warning"
                                 />
                                 <StatsCard className="p-4"
                                     title="Average Score"
                                     value={statsLoading ? '...' : `${displayStats.average_score}%`}
                                     icon={Award}
+                                    iconSize={36}
                                     variant="default"
                                 />
                             </div>
