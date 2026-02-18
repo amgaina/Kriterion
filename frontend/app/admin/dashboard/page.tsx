@@ -17,11 +17,7 @@ import {
     ArrowRight,
     BarChart3,
     PieChart,
-    Code,
-    Shield,
-    UserPlus,
-    BookPlus,
-    Settings
+    Shield
 } from 'lucide-react';
 
 export default function AdminDashboard() {
@@ -46,38 +42,17 @@ export default function AdminDashboard() {
         { name: 'Grading Engine', status: 'healthy', uptime: '99.5%' },
     ];
 
-    const quickActions = [
-        { label: 'Add User', icon: UserPlus, href: '/admin/users/new', color: 'bg-blue-500' },
-        { label: 'Create Course', icon: BookPlus, href: '/admin/courses/new', color: 'bg-green-500' },
-        { label: 'Add Language', icon: Code, href: '/admin/languages/new', color: 'bg-purple-500' },
-        { label: 'System Settings', icon: Settings, href: '/admin/settings', color: 'bg-gray-500' },
-    ];
-
     return (
         <ProtectedRoute allowedRoles={['ADMIN']}>
             <AdminLayout>
                 <div className="space-y-6">
                     {/* Welcome Section */}
                     <div className="bg-gradient-to-r from-[#862733] to-[#a63344] rounded-2xl p-6 text-white">
-                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                            <div>
-                                <h1 className="text-2xl font-bold">Welcome back, Admin!</h1>
-                                <p className="text-white/80 mt-1">
-                                    Here's what's happening with your grading system today.
-                                </p>
-                            </div>
-                            <div className="flex flex-wrap gap-3">
-                                {quickActions.map((action) => (
-                                    <Link
-                                        key={action.label}
-                                        href={action.href}
-                                        className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-sm font-medium"
-                                    >
-                                        <action.icon className="w-4 h-4" />
-                                        {action.label}
-                                    </Link>
-                                ))}
-                            </div>
+                        <div>
+                            <h1 className="text-2xl font-bold">Welcome back, Admin!</h1>
+                            <p className="text-white/80 mt-1">
+                                Here's what's happening with your grading system today.
+                            </p>
                         </div>
                     </div>
 
