@@ -12,7 +12,6 @@ import { Avatar } from '@/components/ui/avatar';
 import Link from 'next/link';
 import {
     Users,
-    GraduationCap,
     BookOpen,
     CheckCircle,
     ArrowRight,
@@ -93,14 +92,6 @@ export default function AdminDashboard() {
                             trend={{ value: 12, label: 'vs last month' }}
                         />
                         <StatsCard
-                            title="Students"
-                            value={isLoading ? '...' : stats?.users?.students || 0}
-                            subtitle="Enrolled students"
-                            icon={GraduationCap}
-                            variant="success"
-                            trend={{ value: 8, label: 'vs last month' }}
-                        />
-                        <StatsCard
                             title="Courses"
                             value={isLoading ? '...' : stats?.courses?.total || 0}
                             subtitle={`${stats?.courses?.active || 0} active`}
@@ -148,32 +139,6 @@ export default function AdminDashboard() {
                             </CardHeader>
                             <CardContent>
                                 <div className="space-y-4">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-3 h-3 rounded-full bg-[#862733]" />
-                                            <span className="text-sm text-gray-600">Students</span>
-                                        </div>
-                                        <span className="text-sm font-medium">{stats?.users?.students || 0}</span>
-                                    </div>
-                                    <Progress
-                                        value={stats?.users?.students || 0}
-                                        max={stats?.users?.total || 1}
-                                        variant="default"
-                                    />
-
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-3 h-3 rounded-full bg-blue-500" />
-                                            <span className="text-sm text-gray-600">Faculty</span>
-                                        </div>
-                                        <span className="text-sm font-medium">{stats?.users?.faculty || 0}</span>
-                                    </div>
-                                    <Progress
-                                        value={stats?.users?.faculty || 0}
-                                        max={stats?.users?.total || 1}
-                                        variant="default"
-                                    />
-
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-3">
                                             <div className="w-3 h-3 rounded-full bg-green-500" />

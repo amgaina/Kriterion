@@ -121,8 +121,6 @@ const getNavItems = (role: UserRole): NavItem[] => {
     return [
         { label: 'Dashboard', href: `${baseUrl}/dashboard`, icon: <DashboardIcon /> },
         { label: 'Users', href: `${baseUrl}/users`, icon: <UsersIcon /> },
-        { label: 'Students', href: `${baseUrl}/students`, icon: <UsersIcon /> },
-        { label: 'Faculty', href: `${baseUrl}/faculty`, icon: <UsersIcon /> },
         { label: 'Courses', href: `${baseUrl}/courses`, icon: <BookIcon /> },
         { label: 'Languages', href: `${baseUrl}/languages`, icon: <SettingsIcon /> },
         { label: 'Security', href: `${baseUrl}/security`, icon: <AuditIcon /> },
