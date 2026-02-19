@@ -112,11 +112,11 @@ export default function StudentDashboardPage() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch min-h-[360px]">
-                        {/* Left column: Stats Cards (stack & stretch on large screens) */}
-                        <div className="lg:col-span-1 grid grid-cols-2 gap-3 lg:flex lg:flex-col lg:gap-3 h-full">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start min-h-[360px]">
+                        {/* Left column: Stats Cards (stack; don't stretch to match right column) */}
+                        <div className="lg:col-span-1 grid grid-cols-2 gap-3 lg:flex lg:flex-col lg:gap-3">
                             <div className="lg:flex-1">
-                                <StatsCard className="p-4 min-h-[84px] lg:h-full lg:flex-1 lg:flex lg:flex-col lg:justify-center"
+                                <StatsCard className="p-4 min-h-[84px] lg:flex lg:flex-col lg:justify-center"
                                     title="Enrolled Courses"
                                     value={statsLoading ? '...' : displayStats.enrolled_courses}
                                     icon={BookOpen}
@@ -126,7 +126,7 @@ export default function StudentDashboardPage() {
                             </div>
 
                             <div className="lg:flex-1">
-                                <StatsCard className="p-4 min-h-[84px] lg:h-full lg:flex-1 lg:flex lg:flex-col lg:justify-center"
+                                <StatsCard className="p-4 min-h-[84px] lg:flex lg:flex-col lg:justify-center"
                                     title="Submissions"
                                     value={statsLoading ? '...' : displayStats.total_submissions}
                                     icon={FileCode}
@@ -136,7 +136,7 @@ export default function StudentDashboardPage() {
                             </div>
 
                             <div className="lg:flex-1">
-                                <StatsCard className="p-4 min-h-[84px] lg:h-full lg:flex-1 lg:flex lg:flex-col lg:justify-center"
+                                <StatsCard className="p-4 min-h-[84px] lg:flex lg:flex-col lg:justify-center"
                                     title="Pending"
                                     value={statsLoading ? '...' : displayStats.pending_assignments || 3}
                                     icon={Clock}
@@ -146,7 +146,7 @@ export default function StudentDashboardPage() {
                             </div>
 
                             <div className="lg:flex-1">
-                                <StatsCard className="p-4 min-h-[84px] lg:h-full lg:flex-1 lg:flex lg:flex-col lg:justify-center"
+                                <StatsCard className="p-4 min-h-[84px] lg:flex lg:flex-col lg:justify-center"
                                     title="Average Score"
                                     value={statsLoading ? '...' : `${displayStats.average_score}%`}
                                     icon={Award}
@@ -168,12 +168,12 @@ export default function StudentDashboardPage() {
                             {/* Upcoming Assignments (moved below calendar) */}
                             <Card>
                                 <CardHeader className="flex flex-row items-center justify-between pb-2">
-                                    <div>
+                                    <div className="flex-1">
                                         <CardTitle className="flex items-center gap-2">
                                             <Clock className="w-5 h-5 text-[#862733]" />
                                             Upcoming Assignments
                                         </CardTitle>
-                                        <CardDescription>
+                                        <CardDescription className="h-5">
                                             {selectedDate
                                                 ? `Assignments due on ${format(selectedDate, 'MMM d, yyyy')}`
                                                 : 'Assignments due soon'}
@@ -186,18 +186,20 @@ export default function StudentDashboardPage() {
                                         </Button>
                                     </Link>
                                 </CardHeader>
-                                <CardContent>
+                                <CardContent className="transition-all duration-300">
                                     {assignmentsLoading ? (
                                         <div className="text-center py-6 text-gray-500">Loading...</div>
                                     ) : (
-                                        <div className="space-y-3">
+                                        <>
+                                            {assignmentsToShow.length > 0 ? (
+                                                <div className="space-y-3 animate-in fade-in duration-300">
                                             {assignmentsToShow.map((assignment: any) => {
                                                 const timeInfo = getTimeRemaining(assignment.due_date);
                                                 return (
                                                     <Link
                                                         key={assignment.id}
                                                         href={`/student/assignments/${assignment.id}`}
-                                                        className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors group"
+                                                        className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-all duration-200 group hover:shadow-sm"
                                                     >
                                                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${timeInfo.urgent ? 'bg-red-100' : 'bg-blue-100'}`}>
                                                             <FileCode className={`w-4 h-4 ${timeInfo.urgent ? 'text-red-600' : 'text-blue-600'}`} />
@@ -210,14 +212,15 @@ export default function StudentDashboardPage() {
                                                         <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-gray-600" />
                                                     </Link>
                                                 );
-                                            })}
-                                            {(selectedDate ? filteredAssignments.length : displayAssignments.length) === 0 && (
-                                                <div className="text-center py-6 text-gray-500">
+                                                })}
+                                                </div>
+                                            ) : (
+                                                <div className="text-center py-6 text-gray-500 animate-in fade-in duration-300">
                                                     <CheckCircle className="w-10 h-10 mx-auto mb-3 text-green-500" />
                                                     <p>All caught up! No pending assignments.</p>
                                                 </div>
                                             )}
-                                        </div>
+                                        </>
                                     )}
                                 </CardContent>
                             </Card>

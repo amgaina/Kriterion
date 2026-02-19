@@ -125,7 +125,7 @@ export function DashboardCalendar({
                             <button
                                 key={index}
                                 type="button"
-                                className={`${baseClasses} ${visualClasses}`}
+                                className={`${baseClasses} ${visualClasses} transition-all duration-200 hover:scale-105`}
                                 onClick={() =>
                                     onSelectDate?.(isSelected ? null : dateObj)
                                 }
@@ -155,9 +155,9 @@ export function DashboardCalendar({
                         <span className="inline-block w-2 h-2 rounded-full bg-[#862733]" />
                         <span>Assignment due</span>
                     </div>
-                    {selectedDate && (
-                        <span>{format(selectedDate, 'MMM d, yyyy')} selected</span>
-                    )}
+                    <span className={`min-w-[9rem] text-right ${selectedDate ? '' : 'invisible'}`}>
+                        {selectedDate ? `${format(selectedDate, 'MMM d, yyyy')} selected` : ''}
+                    </span>
                 </div>
             </CardContent>
         </Card>
