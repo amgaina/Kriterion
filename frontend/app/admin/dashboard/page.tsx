@@ -1,7 +1,7 @@
 'use client';
 
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { DashboardLayout } from '@/components/layouts/DashboardLayout';
+import { AdminLayout } from '@/components/layouts/AdminLayout';
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import { StatsCard } from '@/components/ui/stats-card';
@@ -12,18 +12,12 @@ import { Avatar } from '@/components/ui/avatar';
 import Link from 'next/link';
 import {
     Users,
-    GraduationCap,
     BookOpen,
-    FileText,
     CheckCircle,
     ArrowRight,
     BarChart3,
     PieChart,
-    Code,
-    Shield,
-    UserPlus,
-    BookPlus,
-    Settings
+    Shield
 } from 'lucide-react';
 
 export default function AdminDashboard() {
@@ -48,38 +42,17 @@ export default function AdminDashboard() {
         { name: 'Grading Engine', status: 'healthy', uptime: '99.5%' },
     ];
 
-    const quickActions = [
-        { label: 'Add User', icon: UserPlus, href: '/admin/users/new', color: 'bg-blue-500' },
-        { label: 'Create Course', icon: BookPlus, href: '/admin/courses/new', color: 'bg-green-500' },
-        { label: 'Add Language', icon: Code, href: '/admin/languages/new', color: 'bg-purple-500' },
-        { label: 'System Settings', icon: Settings, href: '/admin/settings', color: 'bg-gray-500' },
-    ];
-
     return (
         <ProtectedRoute allowedRoles={['ADMIN']}>
-            <DashboardLayout>
+            <AdminLayout>
                 <div className="space-y-6">
                     {/* Welcome Section */}
                     <div className="bg-gradient-to-r from-[#862733] to-[#a63344] rounded-2xl p-6 text-white">
-                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                            <div>
-                                <h1 className="text-2xl font-bold">Welcome back, Admin!</h1>
-                                <p className="text-white/80 mt-1">
-                                    Here's what's happening with your grading system today.
-                                </p>
-                            </div>
-                            <div className="flex flex-wrap gap-3">
-                                {quickActions.map((action) => (
-                                    <Link
-                                        key={action.label}
-                                        href={action.href}
-                                        className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-sm font-medium"
-                                    >
-                                        <action.icon className="w-4 h-4" />
-                                        {action.label}
-                                    </Link>
-                                ))}
-                            </div>
+                        <div>
+                            <h1 className="text-2xl font-bold">Welcome back, Admin!</h1>
+                            <p className="text-white/80 mt-1">
+                                Here's what's happening with your grading system today.
+                            </p>
                         </div>
                     </div>
 
@@ -94,27 +67,13 @@ export default function AdminDashboard() {
                             trend={{ value: 12, label: 'vs last month' }}
                         />
                         <StatsCard
-                            title="Students"
-                            value={isLoading ? '...' : stats?.users?.students || 0}
-                            subtitle="Enrolled students"
-                            icon={GraduationCap}
-                            variant="success"
-                            trend={{ value: 8, label: 'vs last month' }}
-                        />
-                        <StatsCard
                             title="Courses"
                             value={isLoading ? '...' : stats?.courses?.total || 0}
                             subtitle={`${stats?.courses?.active || 0} active`}
                             icon={BookOpen}
                             variant="warning"
                         />
-                        <StatsCard
-                            title="Assignments"
-                            value={isLoading ? '...' : stats?.assignments?.total || 0}
-                            subtitle={`${stats?.assignments?.published || 0} published`}
-                            icon={FileText}
-                            variant="danger"
-                        />
+
                     </div>
 
                     {/* Second Row */}
@@ -155,32 +114,6 @@ export default function AdminDashboard() {
                             </CardHeader>
                             <CardContent>
                                 <div className="space-y-4">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-3 h-3 rounded-full bg-[#862733]" />
-                                            <span className="text-sm text-gray-600">Students</span>
-                                        </div>
-                                        <span className="text-sm font-medium">{stats?.users?.students || 0}</span>
-                                    </div>
-                                    <Progress
-                                        value={stats?.users?.students || 0}
-                                        max={stats?.users?.total || 1}
-                                        variant="default"
-                                    />
-
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-3 h-3 rounded-full bg-blue-500" />
-                                            <span className="text-sm text-gray-600">Faculty</span>
-                                        </div>
-                                        <span className="text-sm font-medium">{stats?.users?.faculty || 0}</span>
-                                    </div>
-                                    <Progress
-                                        value={stats?.users?.faculty || 0}
-                                        max={stats?.users?.total || 1}
-                                        variant="default"
-                                    />
-
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-3">
                                             <div className="w-3 h-3 rounded-full bg-green-500" />
@@ -286,75 +219,8 @@ export default function AdminDashboard() {
                             </CardContent>
                         </Card>
                     </div>
-
-                    {/* Fourth Row - Quick Links */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <Link href="/admin/users" className="group">
-                            <Card className="hover:border-[#862733]/30 hover:shadow-md transition-all">
-                                <CardContent className="p-6">
-                                    <div className="flex items-center gap-4">
-                                        <div className="p-3 bg-blue-100 rounded-xl group-hover:bg-blue-200 transition-colors">
-                                            <Users className="w-6 h-6 text-blue-600" />
-                                        </div>
-                                        <div>
-                                            <p className="font-medium text-gray-900">Manage Users</p>
-                                            <p className="text-sm text-gray-500">Add, edit, remove users</p>
-                                        </div>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        </Link>
-
-                        <Link href="/admin/courses" className="group">
-                            <Card className="hover:border-[#862733]/30 hover:shadow-md transition-all">
-                                <CardContent className="p-6">
-                                    <div className="flex items-center gap-4">
-                                        <div className="p-3 bg-green-100 rounded-xl group-hover:bg-green-200 transition-colors">
-                                            <BookOpen className="w-6 h-6 text-green-600" />
-                                        </div>
-                                        <div>
-                                            <p className="font-medium text-gray-900">Manage Courses</p>
-                                            <p className="text-sm text-gray-500">Create and edit courses</p>
-                                        </div>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        </Link>
-
-                        <Link href="/admin/security/audit" className="group">
-                            <Card className="hover:border-[#862733]/30 hover:shadow-md transition-all">
-                                <CardContent className="p-6">
-                                    <div className="flex items-center gap-4">
-                                        <div className="p-3 bg-yellow-100 rounded-xl group-hover:bg-yellow-200 transition-colors">
-                                            <Shield className="w-6 h-6 text-yellow-600" />
-                                        </div>
-                                        <div>
-                                            <p className="font-medium text-gray-900">Security & Audit</p>
-                                            <p className="text-sm text-gray-500">View audit logs</p>
-                                        </div>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        </Link>
-
-                        <Link href="/admin/reports" className="group">
-                            <Card className="hover:border-[#862733]/30 hover:shadow-md transition-all">
-                                <CardContent className="p-6">
-                                    <div className="flex items-center gap-4">
-                                        <div className="p-3 bg-purple-100 rounded-xl group-hover:bg-purple-200 transition-colors">
-                                            <BarChart3 className="w-6 h-6 text-purple-600" />
-                                        </div>
-                                        <div>
-                                            <p className="font-medium text-gray-900">Reports</p>
-                                            <p className="text-sm text-gray-500">View analytics</p>
-                                        </div>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        </Link>
-                    </div>
                 </div>
-            </DashboardLayout>
+            </AdminLayout>
         </ProtectedRoute>
     );
 }

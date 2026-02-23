@@ -2,11 +2,11 @@
 
 A production-grade automated grading system for programming assignments, built with modern technologies and best practices.
 
-## 🎯 Overview
+## Overview
 
 Kriterion is a comprehensive web application that automates the grading process for programming assignments. It supports multiple programming languages, provides detailed feedback, and includes features for students, faculty, and administrators.
 
-## ✨ Features
+## Features
 
 ### For Students
 
@@ -36,7 +36,7 @@ Kriterion is a comprehensive web application that automates the grading process 
 - Control database and system maintenance
 - Manage user accounts and roles
 
-## 🏗️ Architecture
+## Architecture
 
 ### Tech Stack
 
@@ -76,13 +76,13 @@ Kriterion is a comprehensive web application that automates the grading process 
 - CSRF protection
 - Request ID tracking
 
-## 📋 Prerequisites
+## Prerequisites
 
 - Docker and Docker Compose
 - Make (optional, but recommended)
 - Git
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Clone the Repository
 
@@ -449,36 +449,6 @@ Interactive API documentation available at:
 - Swagger UI: http://localhost:8000/api/docs
 - ReDoc: http://localhost:8000/api/redoc
 - OpenAPI JSON: http://localhost:8000/api/openapi.json
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is proprietary software. All rights reserved.
-
-## 👥 Support
-
-For issues and questions:
-
-- Create an issue in the repository
-- Email: support@kriterion.edu
-- Documentation: [Project Wiki](./docs)
-
-## 🎯 Roadmap
-
-- [ ] Real-time collaboration features
-- [ ] Advanced plagiarism detection (AI-powered)
-- [ ] Integration with LMS platforms (Canvas, Blackboard)
-- [ ] Mobile applications
-- [ ] Advanced analytics and ML insights
-- [ ] Peer review system
-- [ ] Code quality metrics integration
 
 ---
 

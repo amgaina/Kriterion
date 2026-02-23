@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { DashboardLayout } from '@/components/layouts/DashboardLayout';
+import { AdminLayout } from '@/components/layouts/AdminLayout';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import { DataTable } from '@/components/ui/data-table';
@@ -191,7 +191,7 @@ export default function UsersPage() {
 
     return (
         <ProtectedRoute allowedRoles={['ADMIN']}>
-            <DashboardLayout>
+            <AdminLayout>
                 <div className="space-y-6">
                     {/* Header */}
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -375,7 +375,7 @@ export default function UsersPage() {
                         </Button>
                     </ModalFooter>
                 </Modal>
-            </DashboardLayout>
+            </AdminLayout>
         </ProtectedRoute>
     );
 }

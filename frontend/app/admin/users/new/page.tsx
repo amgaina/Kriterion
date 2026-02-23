@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
-import { DashboardLayout } from "@/components/layouts/DashboardLayout";
+import { AdminLayout } from "@/components/layouts/AdminLayout";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/lib/api-client";
 import {
@@ -94,7 +94,7 @@ export default function NewUserPage() {
 
   return (
     <ProtectedRoute allowedRoles={["ADMIN"]}>
-      <DashboardLayout>
+      <AdminLayout>
         <div className="max-w-2xl mx-auto space-y-6">
           {/* Header */}
           <div className="flex items-center gap-4">
@@ -205,7 +205,7 @@ export default function NewUserPage() {
             </div>
           </form>
         </div>
-      </DashboardLayout>
+      </AdminLayout>
     </ProtectedRoute>
   );
 }
