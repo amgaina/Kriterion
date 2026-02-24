@@ -3,8 +3,6 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { DashboardLayout } from '@/components/layouts/DashboardLayout';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -491,35 +489,27 @@ export default function AssignmentDetailPage() {
 
     if (isLoading) {
         return (
-            <ProtectedRoute allowedRoles={["FACULTY"]}>
-                <DashboardLayout>
-                    <div className="flex items-center justify-center h-96">
-                        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                    </div>
-                </DashboardLayout>
-            </ProtectedRoute>
+            <div className="flex items-center justify-center h-96">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
         );
     }
 
     if (error || !assignment) {
         return (
-            <ProtectedRoute allowedRoles={["FACULTY"]}>
-                <DashboardLayout>
-                    <div className="text-center py-20">
-                        <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-                        <h2 className="text-xl font-semibold text-gray-900 mb-2">
-                            {error ? 'Failed to load assignment' : 'Assignment not found'}
-                        </h2>
-                        <p className="text-gray-500 mb-6">{(error as any)?.message || 'The assignment may have been deleted.'}</p>
-                        <Button
-                            onClick={() => router.push(`/faculty/courses/${courseId}/assignments`)}
-                            className="gap-2"
-                        >
-                            <ArrowLeft className="w-4 h-4" /> Back to Assignments
-                        </Button>
-                    </div>
-                </DashboardLayout>
-            </ProtectedRoute>
+            <div className="text-center py-20">
+                <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+                <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                    {error ? 'Failed to load assignment' : 'Assignment not found'}
+                </h2>
+                <p className="text-gray-500 mb-6">{(error as any)?.message || 'The assignment may have been deleted.'}</p>
+                <Button
+                    onClick={() => router.push(`/faculty/courses/${courseId}/assignments`)}
+                    className="gap-2"
+                >
+                    <ArrowLeft className="w-4 h-4" /> Back to Assignments
+                </Button>
+            </div>
         );
     }
 
@@ -530,9 +520,7 @@ export default function AssignmentDetailPage() {
         : 'from-amber-500 to-orange-600';
 
     return (
-        <ProtectedRoute allowedRoles={["FACULTY"]}>
-            <DashboardLayout>
-                <div className="space-y-6 pb-8">
+        <div className="space-y-6 pb-8">
                     {/* ─── Header Banner ─── */}
                     <div className={`bg-gradient-to-r ${statusGradient} rounded-2xl p-6 md:p-8 text-white relative overflow-hidden`}>
                         <div className="absolute inset-0 opacity-10">
@@ -1824,8 +1812,5 @@ export default function AssignmentDetailPage() {
                         </div>
                     )}
                 </div>
-
-            </DashboardLayout>
-        </ProtectedRoute>
     );
 }

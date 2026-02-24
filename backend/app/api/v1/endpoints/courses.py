@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from pydantic import BaseModel, EmailStr
 
-from app.api.deps import get_db, get_current_user, require_roles
+from app.api.deps import get_db, get_current_user, require_roles, require_role
 from app.models import User, UserRole, Course, CourseStatus, Enrollment, EnrollmentStatus, Assignment, TestCase, AuditLog
 from app.schemas.course import Course as CourseSchema, CourseCreate, CourseUpdate, Enrollment as EnrollmentSchema
 from app.schemas.assignment import Assignment as AssignmentSchema
@@ -59,7 +59,7 @@ class StudentInCourse(BaseModel):
 @router.post("/", response_model=CourseSchema, status_code=status.HTTP_201_CREATED)
 def create_course(
     course_in: CourseCreate,
-    current_user: User = Depends(require_roles(UserRole.FACULTY, UserRole.ADMIN)),
+    current_user: User = Depends(require_role(UserRole.ADMIN)),
     db: Session = Depends(get_db)
 ):
     """Create a new course (Faculty/Admin only)"""
@@ -223,7 +223,7 @@ def get_course(
 def update_course(
     course_id: int,
     course_update: CourseUpdate,
-    current_user: User = Depends(require_roles(UserRole.FACULTY, UserRole.ADMIN)),
+    current_user: User = Depends(require_role(UserRole.ADMIN)),
     db: Session = Depends(get_db)
 ):
     """Update course (Faculty/Admin only)"""
@@ -264,7 +264,7 @@ def update_course(
 @router.delete("/{course_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_course(
     course_id: int,
-    current_user: User = Depends(require_roles(UserRole.FACULTY, UserRole.ADMIN)),
+    current_user: User = Depends(require_role(UserRole.ADMIN)),
     db: Session = Depends(get_db)
 ):
     """Delete a course (Admin or owning Faculty)"""

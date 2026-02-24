@@ -3,8 +3,6 @@
 import React, { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { DashboardLayout } from '@/components/layouts/DashboardLayout';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -130,20 +128,14 @@ export default function AssignmentsPage() {
 
     if (isLoading) {
         return (
-            <ProtectedRoute allowedRoles={["FACULTY"]}>
-                <DashboardLayout>
-                    <div className="flex items-center justify-center h-96">
-                        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                    </div>
-                </DashboardLayout>
-            </ProtectedRoute>
+            <div className="flex items-center justify-center h-96">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
         );
     }
 
     return (
-        <ProtectedRoute allowedRoles={["FACULTY"]}>
-            <DashboardLayout>
-                <div className="space-y-6 pb-8">
+        <div className="space-y-6 pb-8">
                     {/* Notification */}
                     {notification && (
                         <div className={`rounded-lg border p-4 flex items-start gap-3 ${
@@ -430,7 +422,5 @@ export default function AssignmentsPage() {
                         </div>
                     )}
                 </div>
-            </DashboardLayout>
-        </ProtectedRoute>
     );
 }

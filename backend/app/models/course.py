@@ -41,6 +41,10 @@ class Course(Base):
     status = Column(Enum(CourseStatus), default=CourseStatus.ACTIVE)
     is_active = Column(Boolean, default=True)
     
+    # Schedule
+    start_date = Column(DateTime, nullable=True)
+    end_date = Column(DateTime, nullable=True)
+    
     # Appearance
     color = Column(String(20), nullable=True)  # For UI card color
     

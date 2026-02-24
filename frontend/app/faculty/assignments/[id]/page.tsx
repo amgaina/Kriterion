@@ -2,8 +2,6 @@
 
 import { useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { DashboardLayout } from '@/components/layouts/DashboardLayout';
 
 export default function FacultyAssignmentRedirect() {
     const params = useParams();
@@ -18,12 +16,8 @@ export default function FacultyAssignmentRedirect() {
     }, [id, router]);
 
     return (
-        <ProtectedRoute allowedRoles={["FACULTY"]}>
-            <DashboardLayout>
-                <div className="flex items-center justify-center h-72">
-                    <p className="text-gray-600">Redirecting to assignment details...</p>
-                </div>
-            </DashboardLayout>
-        </ProtectedRoute>
+        <div className="flex items-center justify-center h-72">
+            <p className="text-gray-600">Redirecting to assignment details...</p>
+        </div>
     );
 }

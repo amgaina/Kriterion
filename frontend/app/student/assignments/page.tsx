@@ -145,12 +145,7 @@ export default function StudentAssignmentsPage() {
                                 className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#862733]/20"
                             >
                                 <option value="all">All Courses</option>
-                                {(courses.length > 0 ? courses : mockAssignments.reduce((acc: any[], a) => {
-                                    if (!acc.find(c => c.id === a.course_id)) {
-                                        acc.push({ id: a.course_id, name: a.course_name });
-                                    }
-                                    return acc;
-                                }, [])).map((course: any) => (
+                                {(courses.length > 0 ? courses : []).map((course: any) => (
                                     <option key={course.id} value={course.id}>{course.name}</option>
                                 ))}
                             </select>

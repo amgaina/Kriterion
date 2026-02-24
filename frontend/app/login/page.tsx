@@ -9,6 +9,7 @@ import { loginSchema, type LoginFormData } from '@/lib/validation';
 import { useAuth } from '@/contexts/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Eye, EyeOff, ArrowRight, Loader2, AlertCircle, Code2, Shield, GraduationCap } from 'lucide-react';
+import Navbar from '@/components/landing/Navbar';
 
 export default function LoginPage() {
     const router = useRouter();
@@ -57,6 +58,13 @@ export default function LoginPage() {
         return !!email?.trim() && !!password && !isLoading && !authLoading;
     }, [email, password, isLoading, authLoading]);
 
+    const emailDomainValid = useMemo(() => {
+        if (!email || !email.includes('@')) return null;
+        const lower = email.toLowerCase();
+        if (lower.endsWith('@ulm.edu') || lower.endsWith('@warhawks.ulm.edu')) return true;
+        return false;
+    }, [email]);
+
     const onSubmit = async (data: LoginFormData) => {
         setError('');
         setIsLoading(true);
@@ -75,7 +83,9 @@ export default function LoginPage() {
     };
 
     return (
-        <div className="min-h-screen w-full flex">
+        <div className="min-h-screen w-full flex flex-col">
+            <Navbar />
+            <div className="flex-1 flex pt-16">
             {/* Left panel — branding */}
             <motion.div
                 initial={{ opacity: 0, x: -30 }}
@@ -213,7 +223,7 @@ export default function LoginPage() {
                                         ? 'border-red-300 focus:border-red-400 focus:ring-2 focus:ring-red-100'
                                         : 'border-gray-200 focus:border-primary/40 focus:ring-2 focus:ring-primary/10'
                                 }`}
-                                placeholder="you@university.edu"
+                                placeholder="you@ulm.edu"
                             />
                             {errors.email && (
                                 <motion.p
@@ -224,6 +234,20 @@ export default function LoginPage() {
                                     {errors.email.message}
                                 </motion.p>
                             )}
+                            <AnimatePresence>
+                                {emailDomainValid === false && !errors.email && (
+                                    <motion.div
+                                        initial={{ opacity: 0, height: 0 }}
+                                        animate={{ opacity: 1, height: 'auto' }}
+                                        exit={{ opacity: 0, height: 0 }}
+                                        className="overflow-hidden"
+                                    >
+                                        <p className="mt-1.5 text-xs text-red-500">
+                                            Only @ulm.edu and @warhawks.ulm.edu emails are supported.
+                                        </p>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
                         </div>
 
                         {/* Password */}
@@ -302,6 +326,7 @@ export default function LoginPage() {
                         </Link>
                     </p>
                 </motion.div>
+            </div>
             </div>
         </div>
     );

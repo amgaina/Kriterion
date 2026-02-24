@@ -249,7 +249,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     }, [pathname]);
 
     return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
             {/* Sidebar (used only for admin; students and faculty use top nav only) */}
             {user.role === 'ADMIN' && (
                 <>
@@ -350,9 +350,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             )}
 
             {/* Main Content */}
-            <div className={isAdmin ? 'lg:pl-72' : ''}>
+            <div className={`flex-1 flex flex-col min-h-0 overflow-hidden ${isAdmin ? 'lg:pl-72' : ''}`}>
                 {/* Top Header */}
-                <header className="sticky top-0 z-30 bg-white border-b border-gray-200 shadow-sm">
+                <header className="flex-shrink-0 z-30 bg-white border-b border-gray-200 shadow-sm">
                     <div className="px-4 lg:px-6 h-16 flex items-center justify-between">
                         {/* Left side */}
                         {isAdmin ? (
@@ -473,8 +473,8 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                         </div>
                     </div>
 
-                    <div className="lg:hidden border-t border-gray-200 bg-gray-50 overflow-x-auto">
-                        <nav className="flex gap-1 p-4">
+                    <div className="lg:hidden border-t border-gray-200 bg-gray-50/80 overflow-x-auto scrollbar-hide">
+                        <nav className="flex gap-1 px-3 py-2">
                             {topNavItems.map((item) => {
                                 const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
                                 return (
@@ -482,9 +482,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                                         key={item.href}
                                         href={item.href}
                                         onClick={(e) => handleNavClick(e, item.href)}
-                                        className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
+                                        className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
                                             isActive
-                                                ? 'text-[#862733] bg-white font-semibold'
+                                                ? 'text-white bg-[#862733] shadow-sm'
                                                 : 'text-gray-600 hover:text-[#862733] hover:bg-white'
                                         }`}
                                     >
@@ -539,11 +539,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 )}
 
                 {/* Page Content */}
-                <main className="p-4 lg:p-6">
-                    <div className="mx-auto max-w-7xl w-full">
-                        <div className={`bg-white/90 dark:bg-[#0b0b0b]/80 rounded-2xl shadow-sm p-6 motion-reduce:transition-none transition-all duration-500 ease-[cubic-bezier(.2,.9,.2,1)] transform will-change-transform will-change-opacity ${contentVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 -translate-y-2 scale-98'}`}>
-                            {children}
-                        </div>
+                <main className="flex-1 min-h-0 overflow-y-auto px-4 py-3 sm:px-5 sm:py-4 lg:px-6 lg:py-5">
+                    <div className={`h-full motion-reduce:transition-none transition-all duration-500 ease-[cubic-bezier(.2,.9,.2,1)] transform will-change-transform will-change-opacity ${contentVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 -translate-y-2 scale-98'}`}>
+                        {children}
                     </div>
                 </main>
             </div>

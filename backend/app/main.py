@@ -8,8 +8,9 @@ import uuid
 from app.core.config import settings
 from app.core.database import engine, Base, SessionLocal
 from app.core.logging import logger, set_request_id
+from app.core.security import get_password_hash
 from app.api.v1.api import api_router
-from app.models import Language, DEFAULT_LANGUAGES
+from app.models import Language, DEFAULT_LANGUAGES, User, UserRole
 
 
 def seed_languages():
@@ -17,10 +18,8 @@ def seed_languages():
     db = SessionLocal()
     try:
         for lang_data in DEFAULT_LANGUAGES:
-            # Check if language already exists
             existing = db.query(Language).filter(Language.name == lang_data.get("name")).first()
             if not existing:
-                # Filter to only include Language model fields
                 allowed_fields = {
                     "name", "display_name", "version", "file_extension",
                     "compile_command", "run_command", "docker_image",
@@ -29,10 +28,34 @@ def seed_languages():
                 filtered_data = {k: v for k, v in lang_data.items() if k in allowed_fields}
                 lang = Language(**filtered_data)
                 db.add(lang)
-                logger.info(f"✅ Added language: {lang_data.get('display_name')}")
+                logger.info(f"Added language: {lang_data.get('display_name')}")
         db.commit()
     except Exception as e:
         logger.error(f"Error seeding languages: {str(e)}")
+        db.rollback()
+    finally:
+        db.close()
+
+
+def seed_admin():
+    """Create the initial admin account if it doesn't exist"""
+    db = SessionLocal()
+    try:
+        existing = db.query(User).filter(User.email == settings.INITIAL_ADMIN_EMAIL).first()
+        if not existing:
+            admin = User(
+                email=settings.INITIAL_ADMIN_EMAIL,
+                hashed_password=get_password_hash(settings.INITIAL_ADMIN_PASSWORD),
+                full_name="System Administrator",
+                role=UserRole.ADMIN,
+                is_active=True,
+                is_verified=True,
+            )
+            db.add(admin)
+            db.commit()
+            logger.info(f"Created initial admin: {settings.INITIAL_ADMIN_EMAIL}")
+    except Exception as e:
+        logger.error(f"Error seeding admin: {str(e)}")
         db.rollback()
     finally:
         db.close()
@@ -51,6 +74,9 @@ async def lifespan(app: FastAPI):
     # Seed programming languages
     logger.info("Ensuring programming languages are available...")
     seed_languages()
+
+    # Seed initial admin
+    seed_admin()
     
     yield
     

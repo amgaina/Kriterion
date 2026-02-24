@@ -3,8 +3,6 @@
 import React, { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { DashboardLayout } from '@/components/layouts/DashboardLayout';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -164,30 +162,22 @@ export default function CourseDetailPage() {
 
     if (courseLoading) {
         return (
-            <ProtectedRoute allowedRoles={["FACULTY"]}>
-                <DashboardLayout>
-                    <div className="flex items-center justify-center h-96">
-                        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                    </div>
-                </DashboardLayout>
-            </ProtectedRoute>
+            <div className="flex items-center justify-center h-96">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
         );
     }
 
     if (courseError || !course) {
         return (
-            <ProtectedRoute allowedRoles={["FACULTY"]}>
-                <DashboardLayout>
-                    <div className="text-center py-20">
-                        <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-                        <h2 className="text-xl font-semibold text-gray-900 mb-2">Failed to load course</h2>
-                        <p className="text-gray-500 mb-6">{(courseError as any)?.message || 'Course not found.'}</p>
-                        <Button onClick={() => router.push('/faculty/courses')} className="gap-2">
-                            <ArrowLeft className="w-4 h-4" /> Back to Courses
-                        </Button>
-                    </div>
-                </DashboardLayout>
-            </ProtectedRoute>
+            <div className="text-center py-20">
+                <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+                <h2 className="text-xl font-semibold text-gray-900 mb-2">Failed to load course</h2>
+                <p className="text-gray-500 mb-6">{(courseError as any)?.message || 'Course not found.'}</p>
+                <Button onClick={() => router.push('/faculty/courses')} className="gap-2">
+                    <ArrowLeft className="w-4 h-4" /> Back to Courses
+                </Button>
+            </div>
         );
     }
 
@@ -244,9 +234,8 @@ export default function CourseDetailPage() {
     ];
 
     return (
-        <ProtectedRoute allowedRoles={["FACULTY"]}>
-            <DashboardLayout>
-                <div className="space-y-6 pb-8">
+        <>
+            <div className="space-y-6 pb-8">
                     {/* Notification */}
                     {notification && (
                         <div className={`rounded-lg border p-4 flex items-start gap-3 ${
@@ -552,7 +541,6 @@ export default function CourseDetailPage() {
                         </Button>
                     </div>
                 </Modal>
-            </DashboardLayout>
-        </ProtectedRoute>
+        </>
     );
 }

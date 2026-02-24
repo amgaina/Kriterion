@@ -16,8 +16,6 @@
 
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { DashboardLayout } from '@/components/layouts/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
@@ -61,11 +59,11 @@ interface Course {
     section: string | null;
     semester: string;
     year: number;
+    start_date?: string | null;
+    end_date?: string | null;
     instructor_id: number;
     is_active: boolean;
     status: CourseStatus;
-    students_count: number;
-    assignments_count: number;
     created_at: string;
     color?: string | null;
     allow_late_submissions?: boolean;
@@ -81,6 +79,8 @@ interface NewCourse {
     section: string;
     semester: string;
     year: number;
+    start_date?: string;
+    end_date?: string;
 }
 
 /** Bulk enrollment response from backend */
@@ -166,21 +166,11 @@ export default function FacultyCoursesPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [statusFilter, setStatusFilter] = useState<CourseStatus | 'all'>('all');
-    const [createModal, setCreateModal] = useState(false);
     const [enrollModal, setEnrollModal] = useState<{ open: boolean; course?: Course }>({ open: false });
     const [bulkEnrollModal, setBulkEnrollModal] = useState<{ open: boolean; course?: Course }>({ open: false });
     const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
     // ========== Form State ==========
-    const [newCourse, setNewCourse] = useState<NewCourse>({
-        code: '',
-        name: '',
-        description: '',
-        section: '',
-        semester: 'Spring',
-        year: new Date().getFullYear(),
-    });
-    const [editCourseId, setEditCourseId] = useState<number | null>(null);
     const [enrollEmail, setEnrollEmail] = useState('');
     const [bulkEmails, setBulkEmails] = useState('');
 
@@ -203,55 +193,13 @@ export default function FacultyCoursesPage() {
 
     // ========== Mutations ==========
 
-    /** Create new course mutation */
-    const createMutation = useMutation({
-        mutationFn: (data: NewCourse) => apiClient.createCourse(data),
-        onSuccess: (newCourse) => {
-            queryClient.setQueryData<Course[]>(QUERY_KEYS.facultyCourses, (old = []) => {
-                return [...old, { ...newCourse, students_count: 0, assignments_count: 0 }];
-            });
-            queryClient.invalidateQueries({ queryKey: QUERY_KEYS.facultyCourses });
-            setCreateModal(false);
-            resetNewCourseForm();
-            showNotification('success', 'Course created successfully!');
-        },
-        onError: (error: any) => {
-            showNotification('error', error.response?.data?.detail || 'Failed to create course');
-        },
-    });
-
-    const updateMutation = useMutation({
-        mutationFn: ({ id, data }: { id: number; data: NewCourse }) => apiClient.updateCourse(id, data),
-        onSuccess: (updated: any) => {
-            queryClient.invalidateQueries({ queryKey: QUERY_KEYS.facultyCourses });
-            setCreateModal(false);
-            setEditCourseId(null);
-            resetNewCourseForm();
-            showNotification('success', 'Course updated successfully');
-        },
-        onError: (err: any) => {
-            showNotification('error', err.response?.data?.detail || 'Failed to update course');
-        }
-    });
-
-    const deleteMutation = useMutation({
-        mutationFn: (id: number) => apiClient.deleteCourse(id),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: QUERY_KEYS.facultyCourses });
-            showNotification('success', 'Course deleted');
-        },
-        onError: (err: any) => showNotification('error', err.response?.data?.detail || 'Failed to delete course')
-    });
-
     /** Enroll single student mutation */
     const enrollMutation = useMutation({
         mutationFn: async ({ courseId, email }: { courseId: number; email: string }) => {
             return apiClient.enrollStudentByEmail(courseId, email);
         },
         onSuccess: (_, { courseId }) => {
-            queryClient.setQueryData<Course[]>(QUERY_KEYS.facultyCourses, (old = []) => {
-                return old.map(c => c.id === courseId ? { ...c, students_count: c.students_count + 1 } : c);
-            });
+            queryClient.invalidateQueries({ queryKey: QUERY_KEYS.facultyCourses });
             setEnrollModal({ open: false });
             setEnrollEmail('');
             showNotification('success', 'Student enrolled successfully!');
@@ -267,9 +215,7 @@ export default function FacultyCoursesPage() {
             return apiClient.bulkEnrollStudents(courseId, emails) as Promise<BulkEnrollResponse>;
         },
         onSuccess: (data, { courseId }) => {
-            queryClient.setQueryData<Course[]>(QUERY_KEYS.facultyCourses, (old = []) => {
-                return old.map(c => c.id === courseId ? { ...c, students_count: c.students_count + data.enrolled } : c);
-            });
+            queryClient.invalidateQueries({ queryKey: QUERY_KEYS.facultyCourses });
             setBulkEnrollModal({ open: false });
             setBulkEmails('');
             const message = data.failed > 0
@@ -287,17 +233,6 @@ export default function FacultyCoursesPage() {
     const showNotification = (type: 'success' | 'error', message: string) => {
         setNotification({ type, message });
         setTimeout(() => setNotification(null), 5000);
-    };
-
-    const resetNewCourseForm = () => {
-        setNewCourse({
-            code: '',
-            name: '',
-            description: '',
-            section: '',
-            semester: 'Spring',
-            year: new Date().getFullYear(),
-        });
     };
 
     const handleRefresh = () => {
@@ -345,16 +280,6 @@ export default function FacultyCoursesPage() {
         return result;
     }, [courses, searchQuery, statusFilter]);
 
-    /** Calculate statistics */
-    const stats = useMemo(() => ({
-        totalCourses: courses.length,
-        totalStudents: courses.reduce((acc, c) => acc + c.students_count, 0),
-        totalAssignments: courses.reduce((acc, c) => acc + c.assignments_count, 0),
-        activeCourses: courses.filter(c => c.status === 'active' && c.is_active).length,
-        draftCourses: courses.filter(c => c.status === 'draft').length,
-        archivedCourses: courses.filter(c => c.status === 'archived').length,
-    }), [courses]);
-
     /** Get status badge component */
     const getStatusBadge = (course: Course) => {
         if (!course.is_active) {
@@ -372,8 +297,7 @@ export default function FacultyCoursesPage() {
     // ========== Render ==========
 
     return (
-        <ProtectedRoute allowedRoles={['FACULTY']}>
-            <DashboardLayout>
+        <>
                 <div className="space-y-6 pb-8">
 
                     {/* ==================== Notification ==================== */}
@@ -420,10 +344,6 @@ export default function FacultyCoursesPage() {
                                 <RefreshCw className={`w-4 h-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
                                 <span className="hidden sm:inline">Refresh</span>
                             </Button>
-                            <Button onClick={() => setCreateModal(true)} className="h-9">
-                                <Plus className="w-4 h-4 mr-2" />
-                                Create Course
-                            </Button>
                         </div>
                     </div>
 
@@ -444,68 +364,7 @@ export default function FacultyCoursesPage() {
                         </div>
                     )}
 
-                    {/* ==================== Statistics Cards ==================== */}
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-                        {/* Total Courses */}
-                        <Card className="hover:shadow-md transition-shadow">
-                            <CardContent className="p-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-blue-100 flex items-center justify-center">
-                                        <BookOpen className="w-5 h-5 md:w-6 md:h-6 text-blue-600" />
-                                    </div>
-                                    <div>
-                                        <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.totalCourses}</p>
-                                        <p className="text-xs md:text-sm text-gray-500">Total Courses</p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-
-                        {/* Total Students */}
-                        <Card className="hover:shadow-md transition-shadow">
-                            <CardContent className="p-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-green-100 flex items-center justify-center">
-                                        <Users className="w-5 h-5 md:w-6 md:h-6 text-green-600" />
-                                    </div>
-                                    <div>
-                                        <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.totalStudents}</p>
-                                        <p className="text-xs md:text-sm text-gray-500">Total Students</p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-
-                        {/* Total Assignments */}
-                        <Card className="hover:shadow-md transition-shadow">
-                            <CardContent className="p-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-purple-100 flex items-center justify-center">
-                                        <FileText className="w-5 h-5 md:w-6 md:h-6 text-purple-600" />
-                                    </div>
-                                    <div>
-                                        <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.totalAssignments}</p>
-                                        <p className="text-xs md:text-sm text-gray-500">Assignments</p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-
-                        {/* Active Courses */}
-                        <Card className="hover:shadow-md transition-shadow">
-                            <CardContent className="p-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-emerald-100 flex items-center justify-center">
-                                        <CheckCircle2 className="w-5 h-5 md:w-6 md:h-6 text-emerald-600" />
-                                    </div>
-                                    <div>
-                                        <p className="text-xl md:text-2xl font-bold text-gray-900">{stats.activeCourses}</p>
-                                        <p className="text-xs md:text-sm text-gray-500">Active</p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    </div>
+                    {/* ==================== Search & Filters ==================== */}
 
                     {/* ==================== Search & Filters ==================== */}
                     <Card>
@@ -579,11 +438,7 @@ export default function FacultyCoursesPage() {
                                     <h3 className="text-xl font-semibold text-gray-900 mb-2">No courses yet</h3>
                                     <p className="text-gray-500 mb-6 max-w-md mx-auto">
                                         Create your first course to start managing assignments and enrolling students.
-                                    </p>
-                                    <Button onClick={() => setCreateModal(true)} size="lg">
-                                        <Plus className="w-5 h-5 mr-2" />
-                                        Create Your First Course
-                                    </Button>
+                                        </p>
                                 </div>
                             </CardContent>
                         </Card>
@@ -670,25 +525,6 @@ export default function FacultyCoursesPage() {
                                                 </p>
                                             )}
 
-                                            {/* Stats Row */}
-                                            <div className="flex items-center justify-between text-sm mb-4">
-                                                <div className="flex items-center gap-4">
-                                                    {/* Students Count */}
-                                                    <div className="flex items-center gap-1.5 text-gray-600">
-                                                        <Users className="w-4 h-4 text-gray-400" />
-                                                        <span className="font-medium">{course.students_count}</span>
-                                                        <span className="text-gray-400 hidden sm:inline">students</span>
-                                                    </div>
-
-                                                    {/* Assignments Count */}
-                                                    <div className="flex items-center gap-1.5 text-gray-600">
-                                                        <FileText className="w-4 h-4 text-gray-400" />
-                                                        <span className="font-medium">{course.assignments_count}</span>
-                                                        <span className="text-gray-400 hidden sm:inline">assignments</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-
                                             {/* Semester & Date Info */}
                                             <div className="flex items-center justify-between pt-3 border-t border-gray-100">
                                                 <div className="flex items-center gap-1.5 text-sm text-gray-500">
@@ -738,40 +574,6 @@ export default function FacultyCoursesPage() {
                                                 >
                                                     <ChevronRight className="w-4 h-4" />
                                                 </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    className="text-xs px-2"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        // open edit modal with prefilled data
-                                                        setEditCourseId(course.id);
-                                                        setNewCourse({
-                                                            code: course.code,
-                                                            name: course.name,
-                                                            description: course.description || '',
-                                                            section: course.section || '',
-                                                            semester: course.semester,
-                                                            year: course.year,
-                                                        });
-                                                        setCreateModal(true);
-                                                    }}
-                                                >
-                                                    <Edit className="w-4 h-4" />
-                                                </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    className="text-xs px-2 text-red-600"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        if (confirm(`Delete course ${course.code}? This cannot be undone.`)) {
-                                                            deleteMutation.mutate(course.id);
-                                                        }
-                                                    }}
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </Button>
                                             </div>
                                         </CardContent>
                                     </Card>
@@ -788,128 +590,6 @@ export default function FacultyCoursesPage() {
                         </div>
                     )}
                 </div>
-
-                {/* ==================== Create Course Modal ==================== */}
-                <Modal
-                    isOpen={createModal}
-                    onClose={() => { setCreateModal(false); setEditCourseId(null); resetNewCourseForm(); }}
-                    title={editCourseId ? 'Edit Course' : 'Create New Course'}
-                    size="lg"
-                >
-                    <div className="space-y-4">
-                        {/* Course Code & Section */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Course Code <span className="text-red-500">*</span>
-                                </label>
-                                <Input
-                                    placeholder="e.g., CS101"
-                                    value={newCourse.code}
-                                    onChange={(e) => setNewCourse({ ...newCourse, code: e.target.value.toUpperCase() })}
-                                />
-                                <p className="text-xs text-gray-500 mt-1">Unique identifier for the course</p>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Section
-                                </label>
-                                <Input
-                                    placeholder="e.g., A, B, 001"
-                                    value={newCourse.section}
-                                    onChange={(e) => setNewCourse({ ...newCourse, section: e.target.value })}
-                                />
-                                <p className="text-xs text-gray-500 mt-1">Optional section identifier</p>
-                            </div>
-                        </div>
-
-                        {/* Course Name */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Course Name <span className="text-red-500">*</span>
-                            </label>
-                            <Input
-                                placeholder="e.g., Introduction to Computer Science"
-                                value={newCourse.name}
-                                onChange={(e) => setNewCourse({ ...newCourse, name: e.target.value })}
-                            />
-                        </div>
-
-                        {/* Description */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Description
-                            </label>
-                            <textarea
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#862733] focus:border-transparent resize-none text-sm"
-                                rows={3}
-                                placeholder="Enter a brief description of the course content and objectives..."
-                                value={newCourse.description}
-                                onChange={(e) => setNewCourse({ ...newCourse, description: e.target.value })}
-                            />
-                        </div>
-
-                        {/* Semester & Year */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Semester <span className="text-red-500">*</span>
-                                </label>
-                                <select
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#862733] focus:border-transparent text-sm"
-                                    value={newCourse.semester}
-                                    onChange={(e) => setNewCourse({ ...newCourse, semester: e.target.value })}
-                                >
-                                    <option value="Spring">Spring</option>
-                                    <option value="Summer">Summer</option>
-                                    <option value="Fall">Fall</option>
-                                    <option value="Winter">Winter</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Year <span className="text-red-500">*</span>
-                                </label>
-                                <Input
-                                    type="number"
-                                    value={newCourse.year}
-                                    onChange={(e) => setNewCourse({ ...newCourse, year: parseInt(e.target.value) || new Date().getFullYear() })}
-                                    min={2020}
-                                    max={2035}
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Modal Footer */}
-                    <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
-                        <Button variant="outline" onClick={() => setCreateModal(false)}>
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={() => {
-                                if (editCourseId) {
-                                    updateMutation.mutate({ id: editCourseId, data: newCourse });
-                                } else {
-                                    createMutation.mutate(newCourse);
-                                }
-                            }}
-                            disabled={!newCourse.code.trim() || !newCourse.name.trim() || createMutation.isPending || updateMutation.isPending}
-                        >
-                            {(createMutation.isPending || updateMutation.isPending) ? (
-                                <>
-                                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                                    {editCourseId ? 'Updating...' : 'Creating...'}
-                                </>
-                            ) : (
-                                <>
-                                    <Plus className="w-4 h-4 mr-2" />
-                                    {editCourseId ? 'Update Course' : 'Create Course'}
-                                </>
-                            )}
-                        </Button>
-                    </div>
-                </Modal>
 
                 {/* ==================== Enroll Student Modal ==================== */}
                 <Modal
@@ -1045,7 +725,6 @@ export default function FacultyCoursesPage() {
                         </Button>
                     </div>
                 </Modal>
-            </DashboardLayout>
-        </ProtectedRoute>
+        </>
     );
 }

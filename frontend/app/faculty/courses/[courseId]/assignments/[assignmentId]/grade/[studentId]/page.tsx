@@ -4,7 +4,6 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
@@ -626,37 +625,32 @@ export default function GradingPage() {
 
     if (loadingAssignment || loadingSubs) {
         return (
-            <ProtectedRoute allowedRoles={['FACULTY']}>
-                <div className="flex items-center justify-center h-screen bg-[#1e1e1e]">
-                    <div className="text-center space-y-4">
-                        <Loader2 className="w-10 h-10 mx-auto animate-spin text-[#862733]" />
-                        <p className="text-sm text-[#858585]">Loading grading workspace...</p>
-                    </div>
+            <div className="flex items-center justify-center h-screen bg-[#1e1e1e]">
+                <div className="text-center space-y-4">
+                    <Loader2 className="w-10 h-10 mx-auto animate-spin text-[#862733]" />
+                    <p className="text-sm text-[#858585]">Loading grading workspace...</p>
                 </div>
-            </ProtectedRoute>
+            </div>
         );
     }
 
     if (!assignment || studentSubs.length === 0) {
         return (
-            <ProtectedRoute allowedRoles={['FACULTY']}>
-                <div className="flex items-center justify-center h-screen bg-[#1e1e1e]">
-                    <div className="text-center space-y-6 p-8 border border-[#3c3c3c] rounded-xl bg-[#252526] max-w-md">
-                        <AlertCircle className="w-16 h-16 mx-auto text-[#f44747]" />
-                        <h2 className="text-xl font-bold text-[#cccccc]">No Submissions Found</h2>
-                        <p className="text-sm text-[#858585]">This student hasn&apos;t submitted anything for this assignment.</p>
-                        <Button onClick={() => router.back()} className="bg-[#862733] hover:bg-[#a03040] text-white">
-                            <ArrowLeft className="w-4 h-4 mr-2" /> Go Back
-                        </Button>
-                    </div>
+            <div className="flex items-center justify-center h-screen bg-[#1e1e1e]">
+                <div className="text-center space-y-6 p-8 border border-[#3c3c3c] rounded-xl bg-[#252526] max-w-md">
+                    <AlertCircle className="w-16 h-16 mx-auto text-[#f44747]" />
+                    <h2 className="text-xl font-bold text-[#cccccc]">No Submissions Found</h2>
+                    <p className="text-sm text-[#858585]">This student hasn&apos;t submitted anything for this assignment.</p>
+                    <Button onClick={() => router.back()} className="bg-[#862733] hover:bg-[#a03040] text-white">
+                        <ArrowLeft className="w-4 h-4 mr-2" /> Go Back
+                    </Button>
                 </div>
-            </ProtectedRoute>
+            </div>
         );
     }
 
     return (
-        <ProtectedRoute allowedRoles={['FACULTY']}>
-            <div className="flex flex-col h-screen bg-[#1e1e1e] text-[#cccccc] overflow-hidden">
+        <div className="flex flex-col h-screen bg-[#1e1e1e] text-[#cccccc] overflow-hidden">
                 {/* ===== Title Bar ===== */}
                 <div className="flex items-center justify-between bg-[#323233] px-4 py-1.5 border-b border-[#3c3c3c] select-none shrink-0">
                     <div className="flex items-center gap-3 min-w-0">
@@ -2040,6 +2034,5 @@ export default function GradingPage() {
                     </div>
                 )}
             </div>
-        </ProtectedRoute>
     );
 }

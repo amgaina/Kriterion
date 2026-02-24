@@ -4,8 +4,6 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { DashboardLayout } from '@/components/layouts/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -69,9 +67,8 @@ export default function FacultyAssignmentsPage() {
     };
 
     return (
-        <ProtectedRoute allowedRoles={["FACULTY"]}>
-            <DashboardLayout>
-                <div className="space-y-6">
+        <>
+            <div className="space-y-6">
                     {/* Header */}
                     <div className="flex items-center justify-between">
                         <div>
@@ -264,7 +261,6 @@ export default function FacultyAssignmentsPage() {
                         </Card>
                     </div>
                 )}
-            </DashboardLayout>
-        </ProtectedRoute>
+        </>
     );
 }

@@ -4,8 +4,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { DashboardLayout } from '@/components/layouts/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -177,40 +175,32 @@ export default function EditAssignmentPage() {
 
     if (loadingAssignment) {
         return (
-            <ProtectedRoute allowedRoles={["FACULTY"]}>
-                <DashboardLayout>
-                    <div className="flex items-center justify-center h-96">
-                        <div className="text-center space-y-3">
-                            <Loader2 className="w-8 h-8 animate-spin text-[#862733] mx-auto" />
-                            <p className="text-sm text-gray-500">Loading assignment...</p>
-                        </div>
-                    </div>
-                </DashboardLayout>
-            </ProtectedRoute>
+            <div className="flex items-center justify-center h-96">
+                <div className="text-center space-y-3">
+                    <Loader2 className="w-8 h-8 animate-spin text-[#862733] mx-auto" />
+                    <p className="text-sm text-gray-500">Loading assignment...</p>
+                </div>
+            </div>
         );
     }
 
     if (queryError || !assignment) {
         return (
-            <ProtectedRoute allowedRoles={["FACULTY"]}>
-                <DashboardLayout>
-                    <div className="text-center py-20 max-w-md mx-auto">
-                        <div className="bg-red-50 rounded-2xl p-8 border border-red-100">
-                            <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-                            <h2 className="text-xl font-semibold text-gray-900 mb-2">
-                                {queryError ? 'Failed to load assignment' : 'Assignment not found'}
-                            </h2>
-                            <p className="text-gray-500 mb-6 text-sm">
-                                {queryError ? (queryError as any)?.message || 'Unknown error' : 'Check if you have access.'}
-                            </p>
-                            <Button onClick={() => router.push(`/faculty/courses/${courseId}/assignments`)}
-                                className="bg-[#862733] hover:bg-[#a03040] text-white">
-                                <ArrowLeft className="w-4 h-4 mr-2" /> Back to Assignments
-                            </Button>
-                        </div>
-                    </div>
-                </DashboardLayout>
-            </ProtectedRoute>
+            <div className="text-center py-20 max-w-md mx-auto">
+                <div className="bg-red-50 rounded-2xl p-8 border border-red-100">
+                    <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+                    <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                        {queryError ? 'Failed to load assignment' : 'Assignment not found'}
+                    </h2>
+                    <p className="text-gray-500 mb-6 text-sm">
+                        {queryError ? (queryError as any)?.message || 'Unknown error' : 'Check if you have access.'}
+                    </p>
+                    <Button onClick={() => router.push(`/faculty/courses/${courseId}/assignments`)}
+                        className="bg-[#862733] hover:bg-[#a03040] text-white">
+                        <ArrowLeft className="w-4 h-4 mr-2" /> Back to Assignments
+                    </Button>
+                </div>
+            </div>
         );
     }
 
@@ -227,9 +217,7 @@ export default function EditAssignmentPage() {
     );
 
     return (
-        <ProtectedRoute allowedRoles={["FACULTY"]}>
-            <DashboardLayout>
-                <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
                     {/* Header */}
                     <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                         <div className="flex items-center gap-3">
@@ -491,7 +479,5 @@ export default function EditAssignmentPage() {
                         </div>
                     )}
                 </div>
-            </DashboardLayout>
-        </ProtectedRoute>
     );
 }

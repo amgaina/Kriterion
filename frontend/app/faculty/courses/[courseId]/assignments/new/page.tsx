@@ -2,8 +2,6 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { DashboardLayout } from '@/components/layouts/DashboardLayout';
 import apiClient from '@/lib/api-client';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -481,9 +479,7 @@ export default function NewAssignmentPage() {
     const completionPct = Math.round((completedCount / completionSteps.length) * 100);
 
     return (
-        <ProtectedRoute allowedRoles={["FACULTY"]}>
-            <DashboardLayout>
-                <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                     {/* ─── Header ─── */}
                     <div className="mb-8">
                         <div className="flex items-center justify-between flex-wrap gap-4">
@@ -1584,7 +1580,5 @@ export default function NewAssignmentPage() {
                         </div>
                     </form>
                 </div>
-            </DashboardLayout>
-        </ProtectedRoute>
     );
 }

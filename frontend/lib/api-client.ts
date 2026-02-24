@@ -93,14 +93,26 @@ class ApiClient {
         if (typeof window !== 'undefined') {
             localStorage.removeItem('access_token');
             localStorage.removeItem('refresh_token');
+            document.cookie = 'kriterion_role=; path=/; max-age=0';
+            document.cookie = 'kriterion_auth=; path=/; max-age=0';
         }
     }
 
-    // Auth endpoints
+    private setRoleCookie(role: string) {
+        if (typeof window !== 'undefined') {
+            const maxAge = 60 * 60 * 24 * 7; // 7 days
+            document.cookie = `kriterion_role=${role}; path=/; max-age=${maxAge}; SameSite=Lax`;
+            document.cookie = `kriterion_auth=1; path=/; max-age=${maxAge}; SameSite=Lax`;
+        }
+    }
+
     async login(email: string, password: string) {
         const response = await this.client.post('/auth/login', { email, password });
-        const { access_token, refresh_token } = response.data;
+        const { access_token, refresh_token, user } = response.data;
         this.setTokens(access_token, refresh_token);
+        if (user?.role) {
+            this.setRoleCookie(user.role);
+        }
         return response.data;
     }
 
@@ -320,6 +332,27 @@ class ApiClient {
         return response.data;
     }
 
+    // Faculty-specific endpoints
+    async getFacultyDashboard() {
+        const response = await this.client.get('/faculty/dashboard');
+        return response.data;
+    }
+
+    async getFacultyUpcomingEvents() {
+        const response = await this.client.get('/faculty/upcoming-events');
+        return response.data;
+    }
+
+    async getFacultyCourses() {
+        const response = await this.client.get('/faculty/courses');
+        return response.data;
+    }
+
+    async getFacultyLanguages() {
+        const response = await this.client.get('/faculty/languages');
+        return response.data;
+    }
+
     // Reports endpoints
     async getDashboardStats(courseId?: number) {
         const params = courseId ? { course_id: courseId } : {};
@@ -430,7 +463,36 @@ class ApiClient {
         await this.client.delete(`/languages/${id}`);
     }
 
-    // Settings endpoints
+    // Profile endpoints
+    async getProfile() {
+        const response = await this.client.get('/settings/profile');
+        return response.data;
+    }
+
+    async updateProfile(data: { full_name?: string; phone?: string; bio?: string; github_url?: string; linkedin_url?: string }) {
+        const response = await this.client.put('/settings/profile', data);
+        return response.data;
+    }
+
+    async changePassword(currentPassword: string, newPassword: string) {
+        const response = await this.client.put('/settings/profile/password', {
+            current_password: currentPassword,
+            new_password: newPassword,
+        });
+        return response.data;
+    }
+
+    async getNotificationSettings() {
+        const response = await this.client.get('/settings/notifications/settings');
+        return response.data;
+    }
+
+    async updateNotificationSettings(data: Record<string, boolean>) {
+        const response = await this.client.put('/settings/notifications/settings', data);
+        return response.data;
+    }
+
+    // Admin settings endpoints
     async getSettings() {
         const response = await this.client.get('/admin/settings');
         return response.data;

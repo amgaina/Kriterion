@@ -1,8 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { DashboardLayout } from '@/components/layouts/DashboardLayout';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -192,9 +190,7 @@ def fizzbuzz(n):
     const totalPending = mockAssignments.reduce((acc, a) => acc + a.pending_count, 0);
 
     return (
-        <ProtectedRoute allowedRoles={['FACULTY']}>
-            <DashboardLayout>
-                <div className="space-y-6">
+        <div className="space-y-6">
                     {successMessage && (
                         <Alert type="success" title="Success">
                             {successMessage}
@@ -471,7 +467,5 @@ def fizzbuzz(n):
                         </div>
                     </div>
                 </div>
-            </DashboardLayout>
-        </ProtectedRoute>
     );
 }

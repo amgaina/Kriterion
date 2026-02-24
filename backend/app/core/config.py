@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     
     # Admin
-    INITIAL_ADMIN_EMAIL: str = "admin@kriterion.edu"
+    INITIAL_ADMIN_EMAIL: str = "admin@ulm.edu"
     INITIAL_ADMIN_PASSWORD: str = "Admin@123456"
     
     class Config:

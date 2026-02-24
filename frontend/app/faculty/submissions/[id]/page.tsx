@@ -2,8 +2,6 @@
 
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { DashboardLayout } from '@/components/layouts/DashboardLayout';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -186,20 +184,14 @@ def calculate_grade(score):
 
     if (isLoading) {
         return (
-            <ProtectedRoute allowedRoles={['FACULTY']}>
-                <DashboardLayout>
-                    <div className="flex items-center justify-center h-64">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#862733]"></div>
-                    </div>
-                </DashboardLayout>
-            </ProtectedRoute>
+            <div className="flex items-center justify-center h-64">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#862733]"></div>
+            </div>
         );
     }
 
     return (
-        <ProtectedRoute allowedRoles={['FACULTY']}>
-            <DashboardLayout>
-                <div className="space-y-6">
+        <div className="space-y-6">
                     {successMessage && (
                         <Alert type="success" title="Success">
                             {successMessage}
@@ -461,7 +453,5 @@ def calculate_grade(score):
                         </div>
                     </div>
                 </div>
-            </DashboardLayout>
-        </ProtectedRoute>
     );
 }

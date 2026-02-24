@@ -11,6 +11,8 @@ class CourseBase(BaseModel):
     section: Optional[str] = None
     semester: str
     year: int
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
     color: Optional[str] = None
 
 
@@ -26,6 +28,8 @@ class CourseUpdate(BaseModel):
     section: Optional[str] = None
     semester: Optional[str] = None
     year: Optional[int] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
     status: Optional[CourseStatus] = None
     is_active: Optional[bool] = None
     color: Optional[str] = None
@@ -38,6 +42,8 @@ class Course(CourseBase):
     instructor_id: int
     status: CourseStatus
     is_active: bool
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
     allow_late_submissions: bool
     default_late_penalty: float
     created_at: datetime

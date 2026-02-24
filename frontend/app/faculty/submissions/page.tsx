@@ -1,8 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { DashboardLayout } from '@/components/layouts/DashboardLayout';
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -305,9 +303,7 @@ export default function FacultySubmissionsPage() {
     const errorCount = displaySubmissions.filter((s: Submission) => s.status === 'error').length;
 
     return (
-        <ProtectedRoute allowedRoles={['FACULTY']}>
-            <DashboardLayout>
-                <div className="space-y-6">
+        <div className="space-y-6">
                     {/* Header */}
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div>
@@ -437,7 +433,5 @@ export default function FacultySubmissionsPage() {
                         </CardContent>
                     </Card>
                 </div>
-            </DashboardLayout>
-        </ProtectedRoute>
     );
 }

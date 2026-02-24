@@ -1,165 +1,201 @@
-import React, { useState } from 'react';
-import { format } from 'date-fns';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Clock, ChevronLeft, ChevronRight } from 'lucide-react';
+'use client';
+
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { format, isSameDay, isToday } from 'date-fns';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
+
+export type CalendarEvent = {
+    date: string;
+    event_type: string;
+};
 
 type DashboardCalendarProps = {
-    // Array of date strings (e.g. ISO) representing days that have assignments/events
     highlightDates?: string[];
+    events?: CalendarEvent[];
     selectedDate?: Date | null;
     onSelectDate?: (date: Date | null) => void;
 };
 
 export function DashboardCalendar({
     highlightDates = [],
+    events = [],
     selectedDate = null,
     onSelectDate,
 }: DashboardCalendarProps) {
-    // Track which month is currently being viewed
-    const [currentMonth, setCurrentMonth] = useState<Date>(() => {
-        const base = selectedDate ?? new Date();
-        return new Date(base.getFullYear(), base.getMonth(), 1);
-    });
+    const [currentMonth, setCurrentMonth] = useState<Date>(
+        () => new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+    );
+    const didAutoNav = useRef(false);
 
-    const currentMonthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
-    const currentMonthEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
-    const startWeekday = currentMonthStart.getDay(); // 0 (Sun) - 6 (Sat)
-    const daysInMonth = currentMonthEnd.getDate();
+    // Auto-navigate to nearest upcoming event month once data loads
+    useEffect(() => {
+        if (didAutoNav.current || highlightDates.length === 0) return;
+        didAutoNav.current = true;
 
-    const highlightSet = new Set(
-        highlightDates
-            .map((d) => {
-                const date = new Date(d);
-                if (isNaN(date.getTime())) return null;
-                return date.toISOString().slice(0, 10); // YYYY-MM-DD
-            })
-            .filter((d): d is string => Boolean(d))
+        const now = new Date();
+        const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const nowMonthKey = todayKey.slice(0, 7);
+
+        const hasEventsThisMonth = highlightDates.some((d) => d.startsWith(nowMonthKey));
+        if (hasEventsThisMonth) return; // already showing current month
+
+        const nearest = highlightDates
+            .filter((d) => d >= todayKey)
+            .sort()[0];
+
+        if (nearest) {
+            const [y, m] = nearest.split('-').map(Number);
+            setCurrentMonth(new Date(y, m - 1, 1));
+        }
+    }, [highlightDates]);
+
+    const eventsByDate = useMemo(() => {
+        const map = new Map<string, Set<string>>();
+        for (const ev of events) {
+            const key = ev.date.slice(0, 10);
+            if (!map.has(key)) map.set(key, new Set());
+            map.get(key)!.add(ev.event_type);
+        }
+        return map;
+    }, [events]);
+
+    const highlightSet = useMemo(
+        () => new Set(highlightDates.map((d) => d.slice(0, 10))),
+        [highlightDates],
     );
 
+    const startWeekday = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay();
+    const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
+
     const calendarDays: (number | null)[] = [];
-    for (let i = 0; i < startWeekday; i++) {
-        calendarDays.push(null);
-    }
-    for (let day = 1; day <= daysInMonth; day++) {
-        calendarDays.push(day);
-    }
-    while (calendarDays.length % 7 !== 0) {
-        calendarDays.push(null);
-    }
+    for (let i = 0; i < startWeekday; i++) calendarDays.push(null);
+    for (let day = 1; day <= daysInMonth; day++) calendarDays.push(day);
+    while (calendarDays.length % 7 !== 0) calendarDays.push(null);
 
-    const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-    const goToPreviousMonth = () => {
-        setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
-    };
-
-    const goToNextMonth = () => {
-        setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
-    };
+    const weekdayLabels = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
     return (
-        <Card>
-            <CardHeader className="pb-2">
-                <CardTitle className="flex items-center justify-between">
-                    <span className="flex items-center gap-2">
-                        <Clock className="w-5 h-5 text-[#862733]" />
+        <Card className="border-0 shadow-sm">
+            <CardHeader className="pb-3 px-4 pt-4">
+                <CardTitle className="flex items-center justify-between text-sm">
+                    <span className="flex items-center gap-2 font-semibold text-gray-700">
+                        <CalendarDays className="w-4 h-4 text-primary" />
                         Calendar
                     </span>
-                    <span className="flex items-center gap-1 text-sm text-gray-500">
+                    <span className="flex items-center gap-0.5 text-gray-500">
                         <button
                             type="button"
-                            onClick={goToPreviousMonth}
-                            className="p-1 rounded-full hover:bg-gray-100 transition-colors"
+                            onClick={() => setCurrentMonth((p) => new Date(p.getFullYear(), p.getMonth() - 1, 1))}
+                            className="p-1 rounded-md hover:bg-gray-100 transition-colors"
                             aria-label="Previous month"
                         >
-                            <ChevronLeft className="w-4 h-4" />
+                            <ChevronLeft className="w-3.5 h-3.5" />
                         </button>
-                        <span className="min-w-[7rem] text-center">
+                        <span className="min-w-[6rem] text-center text-xs font-medium">
                             {format(currentMonth, 'MMMM yyyy')}
                         </span>
                         <button
                             type="button"
-                            onClick={goToNextMonth}
-                            className="p-1 rounded-full hover:bg-gray-100 transition-colors"
+                            onClick={() => setCurrentMonth((p) => new Date(p.getFullYear(), p.getMonth() + 1, 1))}
+                            className="p-1 rounded-md hover:bg-gray-100 transition-colors"
                             aria-label="Next month"
                         >
-                            <ChevronRight className="w-4 h-4" />
+                            <ChevronRight className="w-3.5 h-3.5" />
                         </button>
                     </span>
                 </CardTitle>
-                <CardDescription>Assignment schedule overview</CardDescription>
             </CardHeader>
-            <CardContent>
-                <div className="grid grid-cols-7 gap-2 text-xs text-gray-500 mb-2">
+            <CardContent className="px-4 pb-4">
+                <div className="grid grid-cols-7 gap-1 mb-1">
                     {weekdayLabels.map((day) => (
-                        <div key={day} className="text-center font-medium">
+                        <div
+                            key={day}
+                            className="text-center text-[10px] font-semibold uppercase tracking-wider text-gray-400 py-1"
+                        >
                             {day}
                         </div>
                     ))}
                 </div>
-                <div className="grid grid-cols-7 gap-2 text-sm">
+
+                <div className="grid grid-cols-7 gap-1">
                     {calendarDays.map((day, index) => {
-                        if (!day) {
-                            return <div key={index} />;
+                        if (!day) return <div key={index} className="aspect-square" />;
+
+                        const y = currentMonth.getFullYear();
+                        const m = currentMonth.getMonth();
+                        const dateObj = new Date(y, m, day);
+                        const dateKey = `${y}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+                        const types = eventsByDate.get(dateKey);
+                        const hasDeadline = types?.has('deadline') || types?.has('grading');
+                        const hasCourseEvent = types?.has('course_start') || types?.has('course_end');
+                        const hasEvent = hasDeadline || hasCourseEvent;
+
+                        const isSelected = !!selectedDate && isSameDay(selectedDate, dateObj);
+                        const today = isToday(dateObj);
+
+                        let cellClass = 'text-gray-700 hover:bg-gray-100';
+                        if (isSelected) {
+                            cellClass = 'bg-primary text-white shadow-sm ring-2 ring-primary/20';
+                        } else if (hasDeadline) {
+                            cellClass = 'bg-red-50 text-red-700 font-bold ring-1 ring-red-200 hover:bg-red-100';
+                        } else if (hasCourseEvent) {
+                            cellClass = 'bg-blue-50 text-blue-700 font-semibold ring-1 ring-blue-200 hover:bg-blue-100';
+                        } else if (today) {
+                            cellClass = 'bg-primary/10 text-primary font-bold';
                         }
-
-                        const dateObj = new Date(
-                            currentMonth.getFullYear(),
-                            currentMonth.getMonth(),
-                            day
-                        );
-                        const dateKey = dateObj.toISOString().slice(0, 10);
-                        const hasEvent = highlightSet.has(dateKey);
-                        const isSelected =
-                            !!selectedDate &&
-                            selectedDate.toDateString() === dateObj.toDateString();
-
-                        const baseClasses =
-                            'h-10 rounded-lg flex flex-col items-center justify-center cursor-pointer transition-colors';
-                        const visualClasses = isSelected
-                            ? 'bg-[#862733] text-white'
-                            : 'bg-gray-50 text-gray-900';
 
                         return (
                             <button
                                 key={index}
                                 type="button"
-                                className={`${baseClasses} ${visualClasses}`}
-                                onClick={() =>
-                                    onSelectDate?.(isSelected ? null : dateObj)
-                                }
+                                className={`
+                                    aspect-square rounded-lg flex flex-col items-center justify-center
+                                    text-xs font-medium transition-all duration-150 ${cellClass}
+                                `}
+                                onClick={() => onSelectDate?.(isSelected ? null : dateObj)}
                                 title={
                                     hasEvent
-                                        ? `Assignments due on ${format(
-                                              dateObj,
-                                              'MMM d, yyyy'
-                                          )}`
-                                        : undefined
+                                        ? `Events on ${format(dateObj, 'MMM d, yyyy')}`
+                                        : format(dateObj, 'MMM d, yyyy')
                                 }
                             >
-                                <span>{day}</span>
+                                <span className="leading-none">{day}</span>
                                 {hasEvent && (
-                                    <span
-                                        className={`mt-0.5 w-1.5 h-1.5 rounded-full ${
-                                            isSelected ? 'bg-white' : 'bg-[#862733]'
-                                        }`}
-                                    />
+                                    <div className="flex gap-0.5 mt-0.5">
+                                        {hasDeadline && (
+                                            <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-red-500'}`} />
+                                        )}
+                                        {hasCourseEvent && (
+                                            <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-blue-500'}`} />
+                                        )}
+                                    </div>
                                 )}
                             </button>
                         );
                     })}
                 </div>
-                <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+
+                <div className="mt-3 flex items-center gap-4 text-[10px] text-gray-400">
                     <div className="flex items-center gap-1">
-                        <span className="inline-block w-2 h-2 rounded-full bg-[#862733]" />
-                        <span>Assignment due</span>
+                        <span className="w-2 h-2 rounded-full bg-red-500" />
+                        <span>Due date</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-blue-500" />
+                        <span>Course</span>
                     </div>
                     {selectedDate && (
-                        <span>{format(selectedDate, 'MMM d, yyyy')} selected</span>
+                        <button
+                            onClick={() => onSelectDate?.(null)}
+                            className="ml-auto text-primary hover:underline"
+                        >
+                            Clear
+                        </button>
                     )}
                 </div>
             </CardContent>
         </Card>
     );
 }
-
