@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { InnerHeaderDesign } from '@/components/InnerHeaderDesign';
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -99,23 +100,29 @@ export default function FacultyReportsPage() {
 
     return (
         <div className="space-y-6">
-                    {/* Header */}
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                        <div>
-                            <h1 className="text-2xl font-bold text-gray-900">Reports & Analytics</h1>
-                            <p className="text-gray-500 mt-1">Track student performance and course metrics</p>
-                        </div>
-                        <div className="flex gap-2">
-                            <Button variant="outline" onClick={handleExportGrades}>
-                                <Download className="w-4 h-4 mr-2" />
-                                Export Grades
-                            </Button>
-                            <Button onClick={handleExportReport}>
-                                <FileCode className="w-4 h-4 mr-2" />
-                                Generate Report
-                            </Button>
-                        </div>
-                    </div>
+                    <InnerHeaderDesign
+                        title="Reports & Analytics"
+                        subtitle="Track student performance and course metrics"
+                        actions={
+                            <>
+                                <Button
+                                    variant="outline"
+                                    onClick={handleExportGrades}
+                                    className="border-white/30 text-white hover:bg-white/20 hover:text-white"
+                                >
+                                    <Download className="w-4 h-4 mr-2" />
+                                    Export Grades
+                                </Button>
+                                <Button
+                                    onClick={handleExportReport}
+                                    className="bg-white/20 hover:bg-white/30 text-white border border-white/30"
+                                >
+                                    <FileCode className="w-4 h-4 mr-2" />
+                                    Generate Report
+                                </Button>
+                            </>
+                        }
+                    />
 
                     {/* Filters */}
                     <Card>

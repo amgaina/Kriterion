@@ -1,14 +1,18 @@
 'use client';
 
-import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { DashboardLayout } from '@/components/layouts/DashboardLayout';
+import RoleDashboardLayout, { CalendarEvent } from '@/components/layouts/RoleDashboardLayout';
 
 export default function AssistantLayout({ children }: { children: React.ReactNode }) {
     return (
-        <ProtectedRoute allowedRoles={['ASSISTANT']}>
-            <DashboardLayout>
-                {children}
-            </DashboardLayout>
-        </ProtectedRoute>
+        <RoleDashboardLayout
+            allowedRoles={['ASSISTANT']}
+            eventsQuery={{
+                queryKey: ['assistant-upcoming-events'],
+                queryFn: async () => [] as CalendarEvent[],
+            }}
+            getEventHref={() => '#'}
+        >
+            {children}
+        </RoleDashboardLayout>
     );
 }

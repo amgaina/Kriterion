@@ -1,11 +1,18 @@
 'use client';
 
-import { ProtectedRoute } from '@/components/ProtectedRoute';
+import RoleDashboardLayout, { CalendarEvent } from '@/components/layouts/RoleDashboardLayout';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
     return (
-        <ProtectedRoute allowedRoles={['ADMIN']}>
+        <RoleDashboardLayout
+            allowedRoles={['ADMIN']}
+            eventsQuery={{
+                queryKey: ['admin-upcoming-events'],
+                queryFn: async () => [] as CalendarEvent[],
+            }}
+            getEventHref={() => '#'}
+        >
             {children}
-        </ProtectedRoute>
+        </RoleDashboardLayout>
     );
 }

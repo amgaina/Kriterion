@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { InnerHeaderDesign } from '@/components/InnerHeaderDesign';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
@@ -67,13 +68,10 @@ export default function FacultySettingsPage() {
 
     return (
         <div className="space-y-6">
-                        {/* Header */}
-                        <div>
-                            <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-                            <p className="text-sm text-gray-500 mt-1">
-                                Manage your profile, security, and notification preferences.
-                            </p>
-                        </div>
+                        <InnerHeaderDesign
+                            title="Settings"
+                            subtitle="Manage your profile, security, and notification preferences."
+                        />
 
                         {/* Success toast */}
                         {successMessage && (

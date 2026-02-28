@@ -155,9 +155,7 @@ const getTopNavItems = (role: UserRole) => {
             { label: 'Dashboard', href: '/student/dashboard' },
             { label: 'My Courses', href: '/student/courses' },
             { label: 'Assignments', href: '/student/assignments' },
-            { label: 'Grades', href: '/student/grades' },
-            { label: 'Progress', href: '/student/progress' },
-            { label: 'Schedule', href: '/student/schedule' },
+            { label: 'Grades', href: '/student/grades' }
         ];
     }
 

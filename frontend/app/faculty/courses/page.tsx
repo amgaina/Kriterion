@@ -21,29 +21,22 @@ import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { Modal } from '@/components/ui/modal';
-import { CourseLoadingSkeleton, CourseLoadingSpinner } from '@/components/course/CourseLoading';
+import { CourseLoadingSkeleton } from '@/components/course/CourseLoading';
 import { EnrollStudentModal } from '@/components/course/EnrollStudentModal';
 import { BulkEnrollModal } from '@/components/course/BulkEnrollModal';
+import { CourseCard, CourseCardGrid } from '@/components/course/CourseCard';
+import { InnerHeaderDesign } from '@/components/InnerHeaderDesign';
 import {
     Plus,
     Search,
-    Calendar,
-    Clock,
-    UserPlus,
-    Upload,
-    RefreshCw,
     AlertCircle,
     AlertTriangle,
     CheckCircle2,
-    ChevronRight,
     GraduationCap,
-    ArrowRight,
-    Edit,
 } from 'lucide-react';
 
 // ============================================================================
@@ -121,50 +114,6 @@ const CACHE_CONFIG = {
     refetchOnMount: false,         // Use cached data on mount
 };
 
-/** Course card color schemes based on status */
-const COURSE_COLORS = {
-    active: {
-        bg: 'bg-gradient-to-br from-emerald-500 to-teal-600',
-        light: 'bg-emerald-50',
-        text: 'text-emerald-700',
-        border: 'border-emerald-200'
-    },
-    draft: {
-        bg: 'bg-gradient-to-br from-amber-500 to-orange-600',
-        light: 'bg-amber-50',
-        text: 'text-amber-700',
-        border: 'border-amber-200'
-    },
-    archived: {
-        bg: 'bg-gradient-to-br from-gray-400 to-gray-600',
-        light: 'bg-gray-50',
-        text: 'text-gray-700',
-        border: 'border-gray-200'
-    }
-};
-
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
-
-/**
- * Format date string to readable format
- */
-const formatDate = (dateString: string): string => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric'
-    });
-};
-
-/**
- * Get initials from course code for avatar
- */
-const getCourseInitials = (code: string): string => {
-    return code.replace(/[^A-Z]/g, '').slice(0, 2) || code.slice(0, 2).toUpperCase();
-};
 
 // ============================================================================
 // MAIN COMPONENT
@@ -235,20 +184,6 @@ export default function FacultyCoursesPage() {
         return result;
     }, [courses, searchQuery, statusFilter]);
 
-    /** Get status badge component */
-    const getStatusBadge = (course: Course) => {
-        if (!course.is_active) {
-            return <Badge variant="default" className="text-xs">Inactive</Badge>;
-        }
-        const variants: Record<CourseStatus, { variant: 'success' | 'warning' | 'default'; label: string }> = {
-            active: { variant: 'success', label: 'Active' },
-            draft: { variant: 'warning', label: 'Draft' },
-            archived: { variant: 'default', label: 'Archived' }
-        };
-        const config = variants[course.status] || variants.active;
-        return <Badge variant={config.variant} className="text-xs">{config.label}</Badge>;
-    };
-
     // ========== Render ==========
 
     return (
@@ -291,25 +226,19 @@ export default function FacultyCoursesPage() {
                 </AnimatePresence>
 
                 {/* ==================== Page Header ==================== */}
-                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                    <div>
-                        <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
-                            My Courses
-                        </h1>
-                        <p className="text-gray-500 mt-1">
-                            Manage your courses, assignments, and enrolled students
-                        </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
+                <InnerHeaderDesign
+                    title="My Courses"
+                    subtitle="Manage your courses, assignments, and enrolled students"
+                    actions={
                         <Link
                             href="/faculty/courses/new"
-                            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#862733] hover:bg-[#a03040] text-white text-sm font-medium shadow-sm hover:shadow transition-all duration-200"
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium border border-white/30 transition-all duration-200"
                         >
                             <Plus className="w-4 h-4" />
                             Create Course
                         </Link>
-                    </div>
-                </div>
+                    }
+                />
 
                 {/* ==================== Error State ==================== */}
                 {isError && (
@@ -412,137 +341,22 @@ export default function FacultyCoursesPage() {
 
                 {/* ==================== Course Cards Grid ==================== */}
                 {!isLoading && filteredCourses.length > 0 && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
-                        {filteredCourses.map((course) => {
-                            const colorScheme = COURSE_COLORS[course.status] || COURSE_COLORS.active;
-                            const headerStyle = course.color
-                                ? { backgroundColor: course.color }
-                                : undefined;
-                            const headerClass = `p-4 md:p-5 text-white relative overflow-hidden ${!course.color ? colorScheme.bg : ''}`;
-
-                            return (
-                                <Card
-                                    key={course.id}
-                                    className="group overflow-hidden hover:shadow-lg transition-all duration-300 cursor-pointer border-0 shadow-md"
-                                    onClick={() => navigateToCourse(course.id)}
-                                >
-                                    {/* Course Header - use course color when set */}
-                                    <div className={headerClass} style={headerStyle}>
-                                        {/* Background Pattern */}
-                                        <div className="absolute inset-0 opacity-10">
-                                            <div className="absolute -right-8 -top-8 w-32 h-32 rounded-full bg-white/20" />
-                                            <div className="absolute -right-4 -bottom-4 w-24 h-24 rounded-full bg-white/10" />
-                                        </div>
-
-                                        <div className="relative z-10">
-                                            <div className="flex items-start justify-between mb-3">
-                                                {/* Course Code Badge */}
-                                                <div className="flex items-center gap-2">
-                                                    <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center font-bold text-sm">
-                                                        {getCourseInitials(course.code)}
-                                                    </div>
-                                                    <div>
-                                                        <p className="font-semibold text-white/90 text-sm">
-                                                            {course.code}
-                                                        </p>
-                                                        {course.section && (
-                                                            <p className="text-xs text-white/70">
-                                                                Section {course.section}
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                </div>
-
-                                                {/* Status Badge */}
-                                                <div className="bg-white/20 px-2 py-1 rounded-full text-xs font-medium">
-                                                    {course.status.charAt(0).toUpperCase() + course.status.slice(1)}
-                                                </div>
-                                            </div>
-
-                                            {/* Course Name */}
-                                            <h3 className="font-bold text-lg leading-tight line-clamp-2 group-hover:underline decoration-white/50">
-                                                {course.name}
-                                            </h3>
-                                        </div>
-
-                                        {/* Hover Arrow */}
-                                        <div className="absolute right-4 bottom-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <ArrowRight className="w-5 h-5" />
-                                        </div>
-                                    </div>
-
-                                    {/* Course Body */}
-                                    <CardContent className="p-4 md:p-5">
-                                        {/* Description */}
-                                        {course.description && (
-                                            <p className="text-sm text-gray-600 line-clamp-2 mb-4">
-                                                {course.description}
-                                            </p>
-                                        )}
-
-                                        {/* Semester & Date Info */}
-                                        <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                                            <div className="flex items-center gap-1.5 text-sm text-gray-500">
-                                                <Calendar className="w-4 h-4" />
-                                                <span>{course.semester} {course.year}</span>
-                                            </div>
-                                            <div className="flex items-center gap-1.5 text-xs text-gray-400">
-                                                <Clock className="w-3.5 h-3.5" />
-                                                <span>Created {formatDate(course.created_at)}</span>
-                                            </div>
-                                        </div>
-
-                                        {/* Action Buttons - Prevent event propagation */}
-                                        <div className="flex items-center gap-2 mt-4 pt-3 border-t border-gray-100">
-                                            <Link
-                                                href={`/faculty/courses/new?edit=${course.id}`}
-                                                onClick={(e) => e.stopPropagation()}
-                                            >
-                                                <Button variant="outline" size="sm" className="text-xs px-2" type="button">
-                                                    <Edit className="w-3.5 h-3.5" />
-                                                </Button>
-                                            </Link>
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                className="flex-1 text-xs"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setEnrollModal({ open: true, course });
-                                                }}
-                                            >
-                                                <UserPlus className="w-3.5 h-3.5 mr-1.5" />
-                                                Enroll
-                                            </Button>
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                className="flex-1 text-xs"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setBulkEnrollModal({ open: true, course });
-                                                }}
-                                            >
-                                                <Upload className="w-3.5 h-3.5 mr-1.5" />
-                                                Bulk
-                                            </Button>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                className="text-xs px-2"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    navigateToCourse(course.id);
-                                                }}
-                                            >
-                                                <ChevronRight className="w-4 h-4" />
-                                            </Button>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            );
-                        })}
-                    </div>
+                    <CourseCardGrid>
+                        {filteredCourses.map((course) => (
+                            <CourseCard
+                                key={course.id}
+                                course={course}
+                                variant="faculty"
+                                basePath="/faculty/courses"
+                                actions={{
+                                    onEnroll: () => setEnrollModal({ open: true, course }),
+                                    onBulkEnroll: () => setBulkEnrollModal({ open: true, course }),
+                                    onEdit: () => {},
+                                    onView: () => navigateToCourse(course.id),
+                                }}
+                            />
+                        ))}
+                    </CourseCardGrid>
                 )}
 
             </div>

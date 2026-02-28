@@ -374,6 +374,21 @@ class ApiClient {
         return response.data;
     }
 
+    /** Transform assignments to calendar events for student layout sidebar */
+    async getStudentUpcomingEvents() {
+        const assignments = await this.getAssignments();
+        return (assignments || [])
+            .filter((a: { is_published?: boolean; due_date?: string }) => a.is_published !== false && a.due_date)
+            .map((a: { id: number; title: string; due_date: string; course?: { code?: string; name?: string } }) => ({
+                id: a.id,
+                title: a.title,
+                date: (a.due_date || '').slice(0, 10),
+                event_type: 'deadline',
+                course_code: a.course?.code,
+                course_name: a.course?.name,
+            }));
+    }
+
     async getFacultyCourses() {
         const response = await this.client.get('/faculty/courses');
         return response.data;
