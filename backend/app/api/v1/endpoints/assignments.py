@@ -12,7 +12,7 @@ import asyncio
 
 from app.api.deps import get_db, get_current_user, require_role
 from app.models import (
-    User, UserRole, Assignment, Course, Enrollment, EnrollmentStatus,
+    User, UserRole, Assignment, Course, CourseAssistant, Enrollment, EnrollmentStatus,
     Rubric, RubricCategory, RubricItem, TestCase, AuditLog, Language
 )
 from app.schemas.assignment import (
@@ -111,6 +111,34 @@ def list_assignments(
         ).all()
         enrolled_course_ids = [cid[0] for cid in enrolled_courses_query]
         query = query.filter(Assignment.course_id.in_(enrolled_course_ids))
+    elif current_user.role == UserRole.FACULTY:
+        # Faculty only see assignments from their courses
+        taught_course_ids = [c.id for c in db.query(Course).filter(Course.instructor_id == current_user.id).all()]
+        if taught_course_ids:
+            query = query.filter(Assignment.course_id.in_(taught_course_ids))
+        else:
+            query = query.filter(Assignment.course_id == -1)
+    elif current_user.role == UserRole.ASSISTANT:
+        # Assistants only see assignments from courses they're assigned to
+        ca_list = db.query(CourseAssistant).filter(CourseAssistant.assistant_id == current_user.id).all()
+        assisted_course_ids = [ca.course_id for ca in ca_list]
+        if assisted_course_ids:
+            query = query.filter(Assignment.course_id.in_(assisted_course_ids))
+        else:
+            query = query.filter(Assignment.course_id == -1)
+
+    if course_id and current_user.role in (UserRole.FACULTY, UserRole.ASSISTANT):
+        course = db.query(Course).filter(Course.id == course_id).first()
+        if course:
+            if current_user.role == UserRole.FACULTY and course.instructor_id != current_user.id:
+                raise HTTPException(status_code=403, detail="Not authorized for this course")
+            if current_user.role == UserRole.ASSISTANT:
+                ca = db.query(CourseAssistant).filter(
+                    CourseAssistant.course_id == course_id,
+                    CourseAssistant.assistant_id == current_user.id
+                ).first()
+                if not ca:
+                    raise HTTPException(status_code=403, detail="Not authorized for this course")
     
     assignments = query.all()
     
@@ -155,78 +183,132 @@ from fastapi import UploadFile, File as FastAPIFile
 from typing import List
 import io
 
+def _upload_bytes_to_s3(
+    file_content: bytes,
+    filename: str,
+    s3_prefix: str,
+    assignment_id: int,
+    user_id: int,
+    content_type: str = "application/octet-stream",
+) -> dict:
+    """Upload bytes to S3 and return metadata dict."""
+    file_stream = io.BytesIO(file_content)
+    s3_key = s3_prefix + filename
+    s3_service.s3_client.upload_fileobj(
+        file_stream,
+        s3_service.bucket_name,
+        s3_key,
+        ExtraArgs={
+            "ContentType": content_type,
+            "Metadata": {
+                "assignment_id": str(assignment_id),
+                "faculty_id": str(user_id),
+                "original_filename": filename,
+            },
+        },
+    )
+    s3_url = f"https://{s3_service.bucket_name}.s3.{s3_service.s3_client.meta.region_name}.amazonaws.com/{s3_key}"
+    return {
+        "filename": filename,
+        "s3_key": s3_key,
+        "s3_url": s3_url,
+        "size": len(file_content),
+        "content_type": content_type,
+    }
+
+
+async def _upload_file_to_s3(upload_file: UploadFile, s3_prefix: str, assignment_id: int, user_id: int) -> tuple[dict, bytes]:
+    """Upload a file to S3 and return (metadata dict, raw file bytes)."""
+    file_content = await upload_file.read()
+    ct = upload_file.content_type or "application/octet-stream"
+    meta = _upload_bytes_to_s3(
+        file_content,
+        upload_file.filename,
+        s3_prefix,
+        assignment_id,
+        user_id,
+        content_type=ct,
+    )
+    return meta, file_content
+
+
 @router.post("", response_model=AssignmentSchema, status_code=status.HTTP_201_CREATED)
 async def create_assignment(
     assignment_data: str = Form(...),
+    starter_file: Optional[UploadFile] = FastAPIFile(None),
+    solution_file: Optional[UploadFile] = FastAPIFile(None),
     files: List[UploadFile] = FastAPIFile([]),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.FACULTY, UserRole.ADMIN]))
 ):
-    """Create a new assignment (faculty only, with file upload to S3)"""
+    """
+    Create a new assignment (faculty only).
+    - starter_file, solution_file: uploaded to assignments/{user_id}/{assignment_id}/code/
+    - files (supplementary): uploaded to assignments/{user_id}/{assignment_id}/supplementary/
+    """
     import json
     try:
-        # Parse assignment data
         assignment_in = AssignmentCreate(**json.loads(assignment_data))
 
-        # Verify course ownership
         course = db.query(Course).filter(Course.id == assignment_in.course_id).first()
         if not course:
             raise HTTPException(status_code=404, detail="Course not found")
         if current_user.role == UserRole.FACULTY and course.instructor_id != current_user.id:
             raise HTTPException(status_code=403, detail="Not authorized for this course")
 
-        # Verify language exists
         language_obj = db.query(Language).filter(Language.id == assignment_in.language_id).first()
         if not language_obj:
             raise HTTPException(status_code=422, detail="Language not found")
 
-        # Get available columns from the model directly
         available_columns = {c.name for c in Assignment.__table__.columns}
         assignment_data_in = assignment_in.model_dump(exclude={"rubric", "test_cases", "test_suites"})
         assignment_data = {key: value for key, value in assignment_data_in.items() if key in available_columns}
         if 'difficulty' in assignment_data:
             assignment_data['difficulty'] = str(assignment_data['difficulty']).lower()
 
-        # Create assignment
         assignment = Assignment(**assignment_data)
         db.add(assignment)
-        db.flush()  # Get assignment.id
+        db.flush()
 
-        # --- S3 file upload (store refs in starter_code as JSON) ---
-        if files:
-            s3_file_infos = []
-            s3_prefix = f"assignments/{current_user.id}/{assignment.id}/"
-            for upload_file in files:
-                file_content = await upload_file.read()
-                file_size = len(file_content)
-                file_stream = io.BytesIO(file_content)
-                s3_key = s3_prefix + upload_file.filename
-                s3_service.s3_client.upload_fileobj(
-                    file_stream,
-                    s3_service.bucket_name,
-                    s3_key,
-                    ExtraArgs={
-                        'ContentType': upload_file.content_type or 'application/octet-stream',
-                        'Metadata': {
-                            'assignment_id': str(assignment.id),
-                            'faculty_id': str(current_user.id),
-                            'original_filename': upload_file.filename
-                        }
-                    }
+        base_prefix = f"assignments/{current_user.id}/{assignment.id}/"
+        code_prefix = base_prefix + "code/"
+        supp_prefix = base_prefix + "supplementary/"
+
+        code_files = []
+        solution_files = []
+        supplementary = []
+        starter_code_text = (assignment.starter_code or "") if isinstance(assignment.starter_code, str) else ""
+
+        if starter_file and starter_file.filename:
+            meta, raw = await _upload_file_to_s3(
+                starter_file, code_prefix + "starter_", assignment.id, current_user.id
+            )
+            code_files.append(meta)
+            try:
+                starter_code_text = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                pass  # Binary file; keep existing or empty
+        if solution_file and solution_file.filename:
+            meta, _ = await _upload_file_to_s3(
+                solution_file, code_prefix + "solution_", assignment.id, current_user.id
+            )
+            solution_files.append(meta)
+        for upload_file in files:
+            if upload_file.filename:
+                meta, _ = await _upload_file_to_s3(
+                    upload_file, supp_prefix, assignment.id, current_user.id
                 )
-                s3_url = f"https://{s3_service.bucket_name}.s3.{s3_service.s3_client.meta.region_name}.amazonaws.com/{s3_key}"
-                s3_file_infos.append({
-                    'filename': upload_file.filename,
-                    's3_key': s3_key,
-                    's3_url': s3_url,
-                    'size': file_size,
-                    'content_type': upload_file.content_type or 'application/octet-stream'
-                })
-            existing_code = assignment.starter_code or ""
-            assignment.starter_code = json.dumps({
-                "code": existing_code,
-                "attachments": s3_file_infos
-            })
+                supplementary.append(meta)
+
+        if code_files or solution_files or supplementary:
+            payload = {"code": starter_code_text}
+            if code_files:
+                payload["code_files"] = code_files
+            if solution_files:
+                payload["solution_files"] = solution_files
+            if supplementary:
+                payload["supplementary"] = supplementary
+            assignment.starter_code = json.dumps(payload)
 
         # Create test cases if provided
         if assignment_in.test_cases:
@@ -247,19 +329,38 @@ async def create_assignment(
                 )
                 db.add(test_case)
 
-        # Create default rubric if provided
+        # Create rubric if provided
+        # total_points = max_score * (rubric_weight/100)
+        # Category weights are % (0-100), must sum to 100
+        # Each category gets: total_points * (weight/100); items' max_points must sum to that
         if assignment_in.rubric:
             rubric_data = assignment_in.rubric
-            rubric = Rubric(
-                assignment_id=assignment.id,
-                total_points=rubric_data.total_points
+            total_rubric_points = (
+                rubric_data.total_points
+                if rubric_data.total_points is not None
+                else round(assignment.max_score * (assignment.rubric_weight or 30) / 100, 2)
             )
+            cat_weight_sum = sum(c.weight for c in rubric_data.categories)
+            if abs(cat_weight_sum - 100.0) > 0.01:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Rubric category weights must sum to 100% (got {cat_weight_sum})"
+                )
+            rubric = Rubric(assignment_id=assignment.id, total_points=total_rubric_points)
             db.add(rubric)
             db.flush()
             for cat_data in rubric_data.categories:
+                cat_points = round(total_rubric_points * (cat_data.weight / 100), 2)
+                item_sum = sum(i.max_points for i in cat_data.items)
+                if abs(item_sum - cat_points) > 0.01:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Category '{cat_data.name}': items must sum to {cat_points} pts (got {item_sum})"
+                    )
                 category = RubricCategory(
                     rubric_id=rubric.id,
                     name=cat_data.name,
+                    description=cat_data.description,
                     weight=cat_data.weight,
                     order=cat_data.order
                 )

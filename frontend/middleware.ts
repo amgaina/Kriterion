@@ -15,12 +15,14 @@ import { NextRequest, NextResponse } from 'next/server';
 const ROLE_PREFIX: Record<string, string> = {
   STUDENT: '/student',
   FACULTY: '/faculty',
+  ASSISTANT: '/assistant',
   ADMIN: '/admin',
 };
 
 const ROLE_HOME: Record<string, string> = {
   STUDENT: '/student/dashboard',
   FACULTY: '/faculty/dashboard',
+  ASSISTANT: '/assistant/dashboard',
   ADMIN: '/admin/dashboard',
 };
 
@@ -51,6 +53,7 @@ function isProtectedPath(pathname: string): boolean {
   return (
     pathname.startsWith('/student') ||
     pathname.startsWith('/faculty') ||
+    pathname.startsWith('/assistant') ||
     pathname.startsWith('/admin')
   );
 }

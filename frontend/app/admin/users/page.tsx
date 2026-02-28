@@ -122,7 +122,8 @@ export default function UsersPage() {
             cell: (user: User) => (
                 <Badge variant={
                     user.role === 'ADMIN' ? 'danger' :
-                        user.role === 'FACULTY' ? 'primary' : 'default'
+                        user.role === 'FACULTY' ? 'primary' :
+                        user.role === 'ASSISTANT' ? 'warning' : 'default'
                 }>
                     {user.role}
                 </Badge>
@@ -264,6 +265,7 @@ export default function UsersPage() {
                                         { value: '', label: 'All Roles' },
                                         { value: 'ADMIN', label: 'Admin' },
                                         { value: 'FACULTY', label: 'Faculty' },
+                                        { value: 'ASSISTANT', label: 'Assistant' },
                                         { value: 'STUDENT', label: 'Student' },
                                     ]}
                                     className="md:w-40"

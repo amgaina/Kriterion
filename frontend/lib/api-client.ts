@@ -177,15 +177,34 @@ class ApiClient {
         return response.data;
     }
 
-    async getCourseAssignments(courseId: number, includeUnpublished: boolean = false) {
-        const response = await this.client.get(`/courses/${courseId}/assignments`, {
-            params: { include_unpublished: includeUnpublished }
-        });
+    async getCourseAssignments(
+        courseId: number,
+        includeUnpublished: boolean = false,
+        status?: 'all' | 'published' | 'draft' | 'closed'
+    ) {
+        const params: Record<string, unknown> = { include_unpublished: includeUnpublished };
+        if (status && status !== 'all') params.status = status;
+        const response = await this.client.get(`/courses/${courseId}/assignments`, { params });
         return response.data;
     }
 
     async unenrollStudent(courseId: number, studentId: number) {
         const response = await this.client.delete(`/courses/${courseId}/students/${studentId}`);
+        return response.data;
+    }
+
+    async getCourseAssistants(courseId: number) {
+        const response = await this.client.get(`/courses/${courseId}/assistants`);
+        return response.data;
+    }
+
+    async addCourseAssistant(courseId: number, email: string) {
+        const response = await this.client.post(`/courses/${courseId}/assistants`, { email });
+        return response.data;
+    }
+
+    async removeCourseAssistant(courseId: number, assistantId: number) {
+        const response = await this.client.delete(`/courses/${courseId}/assistants/${assistantId}`);
         return response.data;
     }
 
@@ -201,12 +220,24 @@ class ApiClient {
         return response.data;
     }
 
-    async createAssignment(data: any, files?: File[]) {
+    async createAssignment(
+        data: any,
+        options?: {
+            starterFile?: File | null;
+            solutionFile?: File | null;
+            supplementaryFiles?: File[];
+        }
+    ) {
         const formData = new FormData();
         formData.append('assignment_data', JSON.stringify(data));
-        if (files && files.length > 0) {
-            files.forEach((file) => formData.append('files', file));
+        if (options?.starterFile) {
+            formData.append('starter_file', options.starterFile);
         }
+        if (options?.solutionFile) {
+            formData.append('solution_file', options.solutionFile);
+        }
+        const supp = options?.supplementaryFiles ?? [];
+        supp.forEach((f) => formData.append('files', f));
         const response = await this.client.post('/assignments', formData, {
             headers: { 'Content-Type': undefined as unknown as string },
         });

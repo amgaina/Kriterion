@@ -32,6 +32,7 @@ export default function LoginPage() {
                 switch (user.role) {
                     case 'STUDENT': router.replace('/student/dashboard'); break;
                     case 'FACULTY': router.replace('/faculty/dashboard'); break;
+                    case 'ASSISTANT': router.replace('/assistant/dashboard'); break;
                     case 'ADMIN': router.replace('/admin/dashboard'); break;
                     default: router.replace('/');
                 }

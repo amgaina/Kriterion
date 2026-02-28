@@ -138,7 +138,7 @@ export const assignmentCreateSchema = z.object({
     message: 'Passing score cannot exceed max score',
     path: ['passing_score'],
 })
-.refine((data: any) => data.test_weight + data.rubric_weight === 100, {
+.refine((data: any) => Math.abs((data.test_weight ?? 0) + (data.rubric_weight ?? 0) - 100) < 0.01, {
     message: 'Test weight and manual weight must sum to 100%',
     path: ['rubric_weight'],
 });

@@ -10,7 +10,7 @@ from pathlib import Path
 
 from app.api.deps import get_db, get_current_user, require_role
 from app.models import (
-    User, UserRole, Assignment, Course, Submission, SubmissionFile, TestResult, RubricScore,
+    User, UserRole, Assignment, Course, CourseAssistant, Submission, SubmissionFile, TestResult, RubricScore,
     Enrollment, EnrollmentStatus, Group, GroupMembership, AuditLog
 )
 from app.models.assignment import Rubric, RubricCategory, RubricItem, TestCase
@@ -31,6 +31,23 @@ from app.services.s3_storage import s3_service
 router = APIRouter()
 
 
+def _can_grade_for_course(db: Session, user: User, course_id: int) -> bool:
+    """Check if user can grade submissions for this course (instructor, admin, or assigned assistant)."""
+    if user.role == UserRole.ADMIN:
+        return True
+    course = db.query(Course).filter(Course.id == course_id).first()
+    if not course:
+        return False
+    if user.role == UserRole.FACULTY and course.instructor_id == user.id:
+        return True
+    if user.role == UserRole.ASSISTANT:
+        return db.query(CourseAssistant).filter(
+            CourseAssistant.course_id == course_id,
+            CourseAssistant.assistant_id == user.id
+        ).first() is not None
+    return False
+
+
 @router.get("", response_model=List[SubmissionSchema])
 def list_submissions(
     assignment_id: Optional[int] = None,
@@ -38,7 +55,7 @@ def list_submissions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """List submissions - students see their own, faculty see all for their courses"""
+    """List submissions - students see their own, faculty/assistant see submissions from their courses"""
     query = db.query(Submission)
     
     if current_user.role == UserRole.STUDENT:
@@ -46,13 +63,34 @@ def list_submissions(
         query = query.filter(Submission.student_id == current_user.id)
     elif current_user.role == UserRole.FACULTY:
         # Faculty see submissions from their courses
-        if assignment_id:
-            assignment = db.query(Assignment).filter(Assignment.id == assignment_id).first()
-            if assignment and assignment.course.instructor_id != current_user.id:
-                raise HTTPException(status_code=403, detail="Not authorized")
+        course_ids = [c.id for c in db.query(Course).filter(Course.instructor_id == current_user.id).all()]
+        if course_ids:
+            assignment_ids = [a.id for a in db.query(Assignment).filter(Assignment.course_id.in_(course_ids)).all()]
+            if assignment_ids:
+                query = query.filter(Submission.assignment_id.in_(assignment_ids))
+            else:
+                query = query.filter(Submission.assignment_id == -1)  # No assignments
+        else:
+            query = query.filter(Submission.assignment_id == -1)
+    elif current_user.role == UserRole.ASSISTANT:
+        # Assistants see submissions from courses they're assigned to
+        ca_list = db.query(CourseAssistant).filter(CourseAssistant.assistant_id == current_user.id).all()
+        course_ids = [ca.course_id for ca in ca_list]
+        if course_ids:
+            assignment_ids = [a.id for a in db.query(Assignment).filter(Assignment.course_id.in_(course_ids)).all()]
+            if assignment_ids:
+                query = query.filter(Submission.assignment_id.in_(assignment_ids))
+            else:
+                query = query.filter(Submission.assignment_id == -1)
+        else:
+            query = query.filter(Submission.assignment_id == -1)
     
     if assignment_id:
         query = query.filter(Submission.assignment_id == assignment_id)
+        if current_user.role in (UserRole.FACULTY, UserRole.ASSISTANT):
+            assignment = db.query(Assignment).options(joinedload(Assignment.course)).filter(Assignment.id == assignment_id).first()
+            if assignment and not _can_grade_for_course(db, current_user, assignment.course_id):
+                raise HTTPException(status_code=403, detail="Not authorized")
     
     if student_id and current_user.role != UserRole.STUDENT:
         query = query.filter(Submission.student_id == student_id)
@@ -65,16 +103,15 @@ def list_submissions(
 def list_assignment_submissions(
     assignment_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.FACULTY, UserRole.ADMIN]))
+    current_user: User = Depends(require_role([UserRole.FACULTY, UserRole.ADMIN, UserRole.ASSISTANT]))
 ):
-    """Faculty/Admin: list all submissions for an assignment with student info"""
-    assignment = db.query(Assignment).filter(Assignment.id == assignment_id).first()
+    """Faculty/Admin/Assistant: list all submissions for an assignment with student info"""
+    assignment = db.query(Assignment).options(joinedload(Assignment.course)).filter(Assignment.id == assignment_id).first()
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
 
-    if current_user.role == UserRole.FACULTY:
-        if assignment.course.instructor_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Not authorized")
+    if not _can_grade_for_course(db, current_user, assignment.course_id):
+        raise HTTPException(status_code=403, detail="Not authorized")
 
     submissions = (
         db.query(Submission)
@@ -95,7 +132,13 @@ def get_submission(
     """Get submission details including test results"""
     submission = (
         db.query(Submission)
-        .options(joinedload(Submission.student), joinedload(Submission.files), joinedload(Submission.test_results), joinedload(Submission.plagiarism_matches))
+        .options(
+            joinedload(Submission.student),
+            joinedload(Submission.files),
+            joinedload(Submission.test_results),
+            joinedload(Submission.plagiarism_matches),
+            joinedload(Submission.assignment).joinedload(Assignment.course),
+        )
         .filter(Submission.id == submission_id)
         .first()
     )
@@ -117,8 +160,8 @@ def get_submission(
                     raise HTTPException(status_code=403, detail="Access denied")
             else:
                 raise HTTPException(status_code=403, detail="Access denied")
-    elif current_user.role == UserRole.FACULTY:
-        if submission.assignment.course.instructor_id != current_user.id:
+    elif current_user.role in (UserRole.FACULTY, UserRole.ASSISTANT):
+        if not _can_grade_for_course(db, current_user, submission.assignment.course_id):
             raise HTTPException(status_code=403, detail="Access denied")
     
     return submission
@@ -374,17 +417,15 @@ async def create_submission(
 async def grade_submission(
     submission_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.FACULTY, UserRole.ADMIN]))
+    current_user: User = Depends(require_role([UserRole.FACULTY, UserRole.ADMIN, UserRole.ASSISTANT]))
 ):
     """Trigger autograding for a submission"""
-    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+    submission = db.query(Submission).options(joinedload(Submission.assignment).joinedload(Assignment.course)).filter(Submission.id == submission_id).first()
     if not submission:
         raise HTTPException(status_code=404, detail="Submission not found")
     
-    # Check ownership
-    if current_user.role == UserRole.FACULTY:
-        if submission.assignment.course.instructor_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Not authorized")
+    if not _can_grade_for_course(db, current_user, submission.assignment.course_id):
+        raise HTTPException(status_code=403, detail="Not authorized")
     
     # Run grading
     grading_service = GradingService(db)
@@ -412,17 +453,15 @@ def override_score(
     new_score: float = Form(...),
     reason: str = Form(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.FACULTY, UserRole.ADMIN]))
+    current_user: User = Depends(require_role([UserRole.FACULTY, UserRole.ADMIN, UserRole.ASSISTANT]))
 ):
-    """Override submission score (faculty only)"""
-    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+    """Override submission score"""
+    submission = db.query(Submission).options(joinedload(Submission.assignment).joinedload(Assignment.course)).filter(Submission.id == submission_id).first()
     if not submission:
         raise HTTPException(status_code=404, detail="Submission not found")
     
-    # Check ownership
-    if current_user.role == UserRole.FACULTY:
-        if submission.assignment.course.instructor_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Not authorized")
+    if not _can_grade_for_course(db, current_user, submission.assignment.course_id):
+        raise HTTPException(status_code=403, detail="Not authorized")
     
     old_score = submission.final_score
     submission.final_score = new_score
@@ -452,7 +491,7 @@ async def download_submission(
     current_user: User = Depends(get_current_user)
 ):
     """Download submission files as zip"""
-    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+    submission = db.query(Submission).options(joinedload(Submission.assignment), joinedload(Submission.files)).filter(Submission.id == submission_id).first()
     if not submission:
         raise HTTPException(status_code=404, detail="Submission not found")
     
@@ -460,8 +499,8 @@ async def download_submission(
     can_access = False
     if current_user.role == UserRole.ADMIN:
         can_access = True
-    elif current_user.role == UserRole.FACULTY:
-        can_access = submission.assignment.course.instructor_id == current_user.id
+    elif current_user.role in (UserRole.FACULTY, UserRole.ASSISTANT):
+        can_access = _can_grade_for_course(db, current_user, submission.assignment.course_id)
     elif current_user.role == UserRole.STUDENT:
         can_access = submission.student_id == current_user.id
         if submission.group_id:
@@ -506,15 +545,15 @@ def get_file_content(
     current_user: User = Depends(get_current_user)
 ):
     """Read the content of a submitted file"""
-    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+    submission = db.query(Submission).options(joinedload(Submission.assignment)).filter(Submission.id == submission_id).first()
     if not submission:
         raise HTTPException(status_code=404, detail="Submission not found")
 
     can_access = False
     if current_user.role == UserRole.ADMIN:
         can_access = True
-    elif current_user.role == UserRole.FACULTY:
-        can_access = submission.assignment.course.instructor_id == current_user.id
+    elif current_user.role in (UserRole.FACULTY, UserRole.ASSISTANT):
+        can_access = _can_grade_for_course(db, current_user, submission.assignment.course_id)
     elif current_user.role == UserRole.STUDENT:
         can_access = submission.student_id == current_user.id
 
@@ -562,7 +601,7 @@ def get_file_content(
 def save_manual_grade(
     submission_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.FACULTY, UserRole.ADMIN])),
+    current_user: User = Depends(require_role([UserRole.FACULTY, UserRole.ADMIN, UserRole.ASSISTANT])),
     final_score: Optional[float] = Form(None),
     feedback: Optional[str] = Form(None),
     rubric_scores_json: Optional[str] = Form(None),
@@ -570,13 +609,12 @@ def save_manual_grade(
 ):
     """Save manual grading: feedback, rubric scores, test overrides, final score"""
     import json as json_lib
-    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+    submission = db.query(Submission).options(joinedload(Submission.assignment)).filter(Submission.id == submission_id).first()
     if not submission:
         raise HTTPException(status_code=404, detail="Submission not found")
 
-    if current_user.role == UserRole.FACULTY:
-        if submission.assignment.course.instructor_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Not authorized")
+    if not _can_grade_for_course(db, current_user, submission.assignment.course_id):
+        raise HTTPException(status_code=403, detail="Not authorized")
 
     if feedback is not None:
         submission.feedback = feedback
@@ -654,7 +692,7 @@ def save_manual_grade(
 def check_plagiarism(
     submission_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.FACULTY, UserRole.ADMIN]))
+    current_user: User = Depends(require_role([UserRole.FACULTY, UserRole.ADMIN, UserRole.ASSISTANT]))
 ):
     """Trigger plagiarism check for a single submission"""
     submission = (
@@ -666,9 +704,8 @@ def check_plagiarism(
     if not submission:
         raise HTTPException(status_code=404, detail="Submission not found")
 
-    if current_user.role == UserRole.FACULTY:
-        if submission.assignment.course.instructor_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Not authorized")
+    if not _can_grade_for_course(db, current_user, submission.assignment.course_id):
+        raise HTTPException(status_code=403, detail="Not authorized")
 
     from app.services.plagiarism import PlagiarismService
     service = PlagiarismService(db)
@@ -692,7 +729,7 @@ def check_plagiarism(
 def check_plagiarism_all(
     assignment_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.FACULTY, UserRole.ADMIN]))
+    current_user: User = Depends(require_role([UserRole.FACULTY, UserRole.ADMIN, UserRole.ASSISTANT]))
 ):
     """Run plagiarism check on ALL submissions for an assignment"""
     assignment = (
@@ -703,9 +740,8 @@ def check_plagiarism_all(
     )
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
-    if current_user.role == UserRole.FACULTY:
-        if assignment.course.instructor_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Not authorized")
+    if not _can_grade_for_course(db, current_user, assignment.course_id):
+        raise HTTPException(status_code=403, detail="Not authorized")
 
     from app.services.plagiarism import PlagiarismService
     service = PlagiarismService(db)

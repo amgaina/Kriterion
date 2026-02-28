@@ -91,7 +91,7 @@ const CloseIcon = () => (
 );
 
 const getNavItems = (role: UserRole): NavItem[] => {
-    const baseUrl = role === 'STUDENT' ? '/student' : role === 'FACULTY' ? '/faculty' : '/admin';
+    const baseUrl = role === 'STUDENT' ? '/student' : role === 'FACULTY' ? '/faculty' : role === 'ASSISTANT' ? '/assistant' : '/admin';
 
     if (role === 'STUDENT') {
         return [
@@ -117,6 +117,14 @@ const getNavItems = (role: UserRole): NavItem[] => {
         ];
     }
 
+    if (role === 'ASSISTANT') {
+        return [
+            { label: 'Dashboard', href: `${baseUrl}/dashboard`, icon: <DashboardIcon /> },
+            { label: 'My Courses', href: `${baseUrl}/courses`, icon: <BookIcon /> },
+            { label: 'Grading', href: `${baseUrl}/grading`, icon: <GradeIcon /> },
+        ];
+    }
+
     // ADMIN
     return [
         { label: 'Dashboard', href: `${baseUrl}/dashboard`, icon: <DashboardIcon /> },
@@ -135,6 +143,8 @@ const getRoleBadgeColor = (role: UserRole) => {
             return 'bg-red-100 text-red-800';
         case 'FACULTY':
             return 'bg-blue-100 text-blue-800';
+        case 'ASSISTANT':
+            return 'bg-amber-100 text-amber-800';
         case 'STUDENT':
             return 'bg-green-100 text-green-800';
         default:
@@ -162,6 +172,14 @@ const getTopNavItems = (role: UserRole) => {
             { label: 'Submissions', href: '/faculty/submissions' },
             { label: 'Grading', href: '/faculty/grading' },
             { label: 'Reports', href: '/faculty/reports' },
+        ];
+    }
+
+    if (role === 'ASSISTANT') {
+        return [
+            { label: 'Dashboard', href: '/assistant/dashboard' },
+            { label: 'My Courses', href: '/assistant/courses' },
+            { label: 'Grading', href: '/assistant/grading' },
         ];
     }
 

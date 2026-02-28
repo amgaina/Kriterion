@@ -9,6 +9,7 @@ from app.models.user import User, UserRole
 # Course Models
 from app.models.course import (
     Course, CourseStatus,
+    CourseAssistant,
     Enrollment, EnrollmentStatus,
     Group, GroupMembership,
     Announcement
@@ -68,6 +69,7 @@ __all__ = [
     
     # Course
     "Course", "CourseStatus",
+    "CourseAssistant",
     "Enrollment", "EnrollmentStatus",
     "Group", "GroupMembership",
     "Announcement",

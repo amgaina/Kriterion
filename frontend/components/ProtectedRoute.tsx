@@ -26,6 +26,8 @@ const getDashboardPath = (role: UserRole): string => {
             return '/student/dashboard';
         case 'FACULTY':
             return '/faculty/dashboard';
+        case 'ASSISTANT':
+            return '/assistant/dashboard';
         case 'ADMIN':
             return '/admin/dashboard';
         default:

@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, Rea
 import { useRouter, usePathname } from 'next/navigation';
 import apiClient from '@/lib/api-client';
 
-export type UserRole = 'STUDENT' | 'FACULTY' | 'ADMIN';
+export type UserRole = 'STUDENT' | 'FACULTY' | 'ASSISTANT' | 'ADMIN';
 
 export interface User {
     id: number;
@@ -30,6 +30,7 @@ interface AuthContextType {
 const ROLE_HOME: Record<UserRole, string> = {
     STUDENT: '/student/dashboard',
     FACULTY: '/faculty/dashboard',
+    ASSISTANT: '/assistant/dashboard',
     ADMIN: '/admin/dashboard',
 };
 

@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Alert } from '@/components/ui/alert';
+import { Modal, ModalFooter } from '@/components/ui/modal';
 import { cn } from '@/lib/utils';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -44,12 +44,14 @@ import {
     File as FileIcon,
     BookOpen,
     Layers,
+    PartyPopper,
 } from 'lucide-react';
 
 type Language = {
     id: number;
     name: string;
     version?: string;
+    allowed_extensions?: string[];
 };
 
 type TestCase = {
@@ -97,7 +99,8 @@ export default function NewAssignmentPage() {
     const [languages, setLanguages] = useState<Language[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [successMsg, setSuccessMsg] = useState<string | null>(null);
+    const [errorModalOpen, setErrorModalOpen] = useState(false);
+    const [successModalOpen, setSuccessModalOpen] = useState(false);
     const [expandedSections, setExpandedSections] = useState<Set<string>>(
         new Set(['basic', 'timing'])
     );
@@ -116,10 +119,11 @@ export default function NewAssignmentPage() {
     const [isDragging, setIsDragging] = useState(false);
     const attachmentInputRef = useRef<HTMLInputElement>(null);
 
-    const { register, handleSubmit, formState: { errors }, watch } = useForm<AssignmentCreateForm>({
+    const { register, handleSubmit, formState: { errors }, watch, setValue } = useForm<AssignmentCreateForm>({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         resolver: zodResolver(assignmentCreateSchema) as any,
         defaultValues: {
+            course_id: courseId,
             title: '',
             language_id: undefined as unknown as number,
             description: '',
@@ -162,6 +166,21 @@ export default function NewAssignmentPage() {
         loadLanguages();
     }, []);
 
+    useEffect(() => {
+        if (courseId > 0) setValue('course_id', courseId);
+    }, [courseId, setValue]);
+
+    const watchLangId = watch('language_id');
+    useEffect(() => {
+        const langId = watchLangId ? Number(watchLangId) : undefined;
+        if (!langId || languages.length === 0) return;
+        const lang = languages.find((l) => Number(l.id) === langId);
+        if (lang?.allowed_extensions?.length) {
+            const extStr = lang.allowed_extensions.join(', ');
+            setValue('allowedExtensionsStr', extStr, { shouldValidate: false });
+        }
+    }, [watchLangId, languages, setValue]);
+
     // ─── Test Case Management ───
     const addTestCase = () => {
         setTestCases(prev => [...prev, {
@@ -193,18 +212,40 @@ export default function NewAssignmentPage() {
     };
 
     // ─── Rubric Management ───
+    const maxScore = watch('max_score') ?? 100;
+    const rubricWeightPct = watch('rubric_weight') ?? 30;
+    const totalRubricPoints = Math.round(maxScore * (rubricWeightPct / 100) * 100) / 100;
+
     const addRubricCategory = () => {
-        setRubricCategories(prev => [...prev, {
-            name: `Category ${prev.length + 1}`,
-            description: '',
-            weight: 1.0,
-            order: prev.length,
-            items: [{ name: 'Criterion 1', description: '', max_points: 5, order: 0 }],
-        }]);
+        setRubricCategories(prev => {
+            const n = prev.length + 1;
+            const baseWeight = Math.round((100 / n) * 10) / 10;
+            const lastWeight = 100 - baseWeight * (n - 1);
+            const rebalanced = prev.map((c) => ({ ...c, weight: baseWeight }));
+            const newCatWeight = n === 1 ? 100 : lastWeight;
+            const catPoints = Math.round(totalRubricPoints * (newCatWeight / 100) * 100) / 100;
+            rebalanced.push({
+                name: `Category ${n}`,
+                description: '',
+                weight: newCatWeight,
+                order: n - 1,
+                items: [{ name: 'Criterion 1', description: '', max_points: Math.max(1, Math.round(catPoints)), order: 0 }],
+            });
+            return rebalanced;
+        });
     };
 
     const removeRubricCategory = (catIndex: number) => {
-        setRubricCategories(prev => prev.filter((_, i) => i !== catIndex));
+        setRubricCategories(prev => {
+            const next = prev.filter((_, i) => i !== catIndex);
+            if (next.length === 0) return next;
+            const baseWeight = Math.round((100 / next.length) * 10) / 10;
+            const lastWeight = 100 - baseWeight * (next.length - 1);
+            return next.map((c, i) => ({
+                ...c,
+                weight: i === next.length - 1 ? lastWeight : baseWeight,
+            }));
+        });
     };
 
     const updateRubricCategory = (catIndex: number, field: keyof Omit<RubricCategory, 'items'>, value: string | number) => {
@@ -219,10 +260,14 @@ export default function NewAssignmentPage() {
         setRubricCategories(prev => {
             const updated = [...prev];
             const cat = { ...updated[catIndex] };
+            const catPoints = Math.round(totalRubricPoints * ((cat.weight || 0) / 100) * 100) / 100;
+            const currentSum = cat.items.reduce((s, i) => s + (i.max_points || 0), 0);
+            const remaining = Math.max(0, Math.round((catPoints - currentSum) * 100) / 100);
+            const defaultPts = cat.items.length === 0 ? catPoints : (remaining > 0 ? remaining : 0);
             cat.items = [...cat.items, {
                 name: `Criterion ${cat.items.length + 1}`,
                 description: '',
-                max_points: 5,
+                max_points: defaultPts,
                 order: cat.items.length,
             }];
             updated[catIndex] = cat;
@@ -288,26 +333,13 @@ export default function NewAssignmentPage() {
         return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     };
 
-    // ─── File Reader ───
-    const readFileAsText = (file: File): Promise<string> => {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsText(file);
-        });
-    };
-
     // ─── Computed totals ───
     const totalTestPoints = testCases.reduce((sum, tc) => sum + (tc.points || 0), 0);
-    const totalRubricPoints = rubricCategories.reduce((sum, cat) =>
-        sum + cat.items.reduce((s, item) => s + (item.max_points || 0), 0), 0
-    );
 
     // ─── Form Submit ───
     const onSubmit = async (values: AssignmentCreateForm) => {
         setError(null);
-        setSuccessMsg(null);
+        setErrorModalOpen(false);
         setLoading(true);
         try {
             const dueDateISO = new Date(values.due_date).toISOString();
@@ -315,22 +347,44 @@ export default function NewAssignmentPage() {
             const selectedLanguage = languages.find(lang => String(lang.id) === String(values.language_id));
             if (!selectedLanguage) {
                 setError('Please select a valid programming language.');
+                setErrorModalOpen(true);
                 setLoading(false);
                 return;
             }
 
-            let starter_code: string | undefined;
-            let solution_code: string | undefined;
+            const maxScore = values.max_score ?? 100;
+            const rubricPct = values.rubric_weight ?? 30;
+            const totalRubricPts = Math.round(maxScore * (rubricPct / 100) * 100) / 100;
 
-            if (starterFile) {
-                try { starter_code = await readFileAsText(starterFile); }
-                catch { setError('Failed to read starter code file.'); setLoading(false); return; }
+            if ((values.test_weight ?? 0) > 0 && testCases.length === 0) {
+                setError('Add at least one test case when test case weight is greater than 0%.');
+                setErrorModalOpen(true);
+                setLoading(false);
+                return;
             }
 
-            if (solutionFile) {
-                try { solution_code = await readFileAsText(solutionFile); }
-                catch { setError('Failed to read solution code file.'); setLoading(false); return; }
+            if (rubricEnabled && rubricCategories.length > 0) {
+                const weightSum = rubricCategories.reduce((s, c) => s + (c.weight || 0), 0);
+                if (Math.abs(weightSum - 100) > 0.01) {
+                    setError(`Rubric category weights must sum to 100% (current: ${weightSum.toFixed(1)}%).`);
+                    setErrorModalOpen(true);
+                    setLoading(false);
+                    return;
+                }
+                for (const cat of rubricCategories) {
+                    const catPoints = Math.round(totalRubricPts * ((cat.weight || 0) / 100) * 100) / 100;
+                    const itemSum = cat.items.reduce((s, i) => s + (i.max_points || 0), 0);
+                    if (Math.abs(itemSum - catPoints) > 0.01) {
+                        setError(`Category "${cat.name}": criteria points must sum to ${catPoints} (got ${itemSum}).`);
+                        setErrorModalOpen(true);
+                        setLoading(false);
+                        return;
+                    }
+                }
             }
+
+            const starter_code = '';
+            const solution_code = '';
 
             const allowed_file_extensions = (values.allowedExtensionsStr || '')
                 .split(',').map(s => s.trim()).filter(Boolean)
@@ -384,9 +438,10 @@ export default function NewAssignmentPage() {
 
             if (rubricEnabled && rubricCategories.length > 0) {
                 payload.rubric = {
-                    total_points: totalRubricPoints,
+                    total_points: totalRubricPts,
                     categories: rubricCategories.map((cat, ci) => ({
                         name: cat.name,
+                        description: cat.description || null,
                         weight: cat.weight,
                         order: ci,
                         items: cat.items.map((item, ii) => ({
@@ -399,13 +454,14 @@ export default function NewAssignmentPage() {
                 };
             }
 
-            const filesToUpload = attachmentFiles.map(af => af.file);
-            await apiClient.createAssignment(payload, filesToUpload.length > 0 ? filesToUpload : undefined);
+            const supplementaryFiles = attachmentFiles.map(af => af.file);
+            await apiClient.createAssignment(payload, {
+                starterFile: starterFile ?? undefined,
+                solutionFile: solutionFile ?? undefined,
+                supplementaryFiles: supplementaryFiles.length > 0 ? supplementaryFiles : undefined,
+            });
 
-            setSuccessMsg('Assignment created successfully! Redirecting...');
-            setTimeout(() => {
-                router.push(`/faculty/courses/${courseId}/assignments`);
-            }, 1200);
+            setSuccessModalOpen(true);
         } catch (err: unknown) {
             const axiosErr = err as { response?: { data?: { detail?: string | { msg?: string }[] } }; message?: string };
             console.error('Create assignment failed', err);
@@ -419,6 +475,7 @@ export default function NewAssignmentPage() {
                 msg = axiosErr.message;
             }
             setError(msg);
+            setErrorModalOpen(true);
         } finally {
             setLoading(false);
         }
@@ -465,7 +522,6 @@ export default function NewAssignmentPage() {
     // ─── Completion indicator ───
     const watchTitle = watch('title');
     const watchDesc = watch('description');
-    const watchLangId = watch('language_id');
     const watchDueDate = watch('due_date');
 
     const completionSteps = [
@@ -473,7 +529,7 @@ export default function NewAssignmentPage() {
         { label: 'Language', done: !!watchLangId },
         { label: 'Description', done: !!watchDesc?.trim() },
         { label: 'Due Date', done: !!watchDueDate },
-        { label: 'Test Cases', done: testCases.length > 0 },
+        ...((watchTestWeight ?? 0) > 0 ? [{ label: 'Test Cases', done: testCases.length > 0 }] : []),
     ];
     const completedCount = completionSteps.filter(s => s.done).length;
     const completionPct = Math.round((completedCount / completionSteps.length) * 100);
@@ -531,35 +587,88 @@ export default function NewAssignmentPage() {
                         </div>
                     </div>
 
-                    {/* ─── Alerts ─── */}
-                    {error && (
-                        <Alert className="mb-6 bg-red-50 border-red-200">
-                            <div className="flex items-start gap-3">
-                                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                                <div className="flex-1">
-                                    <h4 className="font-semibold text-red-900">Error</h4>
-                                    <p className="text-sm text-red-700 mt-1">{error}</p>
+                    {/* ─── Error Modal ─── */}
+                    <Modal
+                        isOpen={errorModalOpen}
+                        onClose={() => { setErrorModalOpen(false); setError(null); }}
+                        title="Error Creating Assignment"
+                        description="Something went wrong. Please fix the issues below and try again."
+                        size="md"
+                    >
+                        <div className="space-y-4">
+                            <div className="flex items-start gap-4 rounded-xl bg-red-50 border border-red-200 p-4">
+                                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                                    <AlertCircle className="w-5 h-5 text-red-600" />
                                 </div>
-                                <button type="button" onClick={() => setError(null)} className="text-red-400 hover:text-red-600">
-                                    <X className="w-4 h-4" />
-                                </button>
-                            </div>
-                        </Alert>
-                    )}
-                    {successMsg && (
-                        <Alert className="mb-6 bg-green-50 border-green-200">
-                            <div className="flex items-start gap-3">
-                                <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-                                <div className="flex-1">
-                                    <h4 className="font-semibold text-green-900">Success</h4>
-                                    <p className="text-sm text-green-700 mt-1">{successMsg}</p>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-red-900">What went wrong</p>
+                                    <p className="mt-1 text-sm text-red-700">{error}</p>
                                 </div>
                             </div>
-                        </Alert>
-                    )}
+                            <ModalFooter>
+                                <Button
+                                    type="button"
+                                    onClick={() => { setErrorModalOpen(false); setError(null); }}
+                                    className="bg-primary hover:bg-primary/90 text-white px-6"
+                                >
+                                    Got it
+                                </Button>
+                            </ModalFooter>
+                        </div>
+                    </Modal>
+
+                    {/* ─── Success Modal ─── */}
+                    <Modal
+                        isOpen={successModalOpen}
+                        onClose={() => {
+                            setSuccessModalOpen(false);
+                            router.push(`/faculty/courses/${courseId}/assignments`);
+                        }}
+                        size="md"
+                    >
+                        <div className="py-2">
+                            <div className="flex flex-col items-center text-center space-y-6">
+                                <div className="relative">
+                                    <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center animate-in zoom-in-50 duration-500">
+                                        <CheckCircle2 className="w-10 h-10 text-green-600" />
+                                    </div>
+                                    <div className="absolute -top-1 -right-1">
+                                        <PartyPopper className="w-8 h-8 text-amber-500 animate-in spin-in-180 duration-700" />
+                                    </div>
+                                </div>
+                                <div className="space-y-1">
+                                    <h3 className="text-xl font-bold text-gray-900">Assignment created successfully!</h3>
+                                    <p className="text-sm text-gray-600 max-w-sm">
+                                        Your assignment has been saved. Students will see it once you publish it.
+                                    </p>
+                                </div>
+                                <ModalFooter className="border-t-0 pt-0 justify-center">
+                                    <Button
+                                        type="button"
+                                        onClick={() => {
+                                            setSuccessModalOpen(false);
+                                            router.push(`/faculty/courses/${courseId}/assignments`);
+                                        }}
+                                        className="bg-primary hover:bg-primary/90 text-white px-8 gap-2"
+                                    >
+                                        <FileText className="w-4 h-4" />
+                                        View Assignments
+                                    </Button>
+                                </ModalFooter>
+                            </div>
+                        </div>
+                    </Modal>
 
                     {/* ─── Form ─── */}
-                    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+                    <form
+                        onSubmit={handleSubmit(onSubmit, (err) => {
+                            const msgs = Object.entries(err).map(([, v]) => (v as { message?: string })?.message).filter(Boolean);
+                            setError(msgs.length ? msgs.join('. ') : 'Please fix the form errors before submitting.');
+                            setErrorModalOpen(true);
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                        })}
+                        className="space-y-5"
+                    >
 
                         {/* ━━━ 1. Basic Information ━━━ */}
                         <Card className="overflow-hidden border-gray-200 shadow-sm">
@@ -828,10 +937,16 @@ export default function NewAssignmentPage() {
                                         <div className="text-center py-10 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50/50">
                                             <FlaskConical className="w-10 h-10 text-gray-400 mx-auto mb-3" />
                                             <p className="text-sm text-gray-600 mb-1">No test cases yet</p>
-                                            <p className="text-xs text-gray-400 mb-4">Add test cases to enable automated grading</p>
-                                            <Button type="button" onClick={addTestCase} className="gap-2 h-9 rounded-md px-3">
-                                                <Plus className="w-4 h-4" /> Add First Test Case
-                                            </Button>
+                                            {(watchTestWeight ?? 0) === 0 ? (
+                                                <p className="text-xs text-amber-600">Set Test Case Weight &gt; 0% above to add test cases</p>
+                                            ) : (
+                                                <>
+                                                    <p className="text-xs text-gray-400 mb-4">Add test cases to enable automated grading</p>
+                                                    <Button type="button" onClick={addTestCase} className="gap-2 h-9 rounded-md px-3">
+                                                        <Plus className="w-4 h-4" /> Add First Test Case
+                                                    </Button>
+                                                </>
+                                            )}
                                         </div>
                                     ) : (
                                         <div className="space-y-4">
@@ -1002,7 +1117,8 @@ export default function NewAssignmentPage() {
                                             <Button
                                                 type="button"
                                                 onClick={addTestCase}
-                                                className="w-full gap-2 border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                                                disabled={(watchTestWeight ?? 0) === 0}
+                                                className="w-full gap-2 border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                                             >
                                                 <Plus className="w-4 h-4" /> Add Another Test Case
                                             </Button>
@@ -1022,7 +1138,7 @@ export default function NewAssignmentPage() {
                                     subtitle="Define criteria for manual evaluation beyond automated tests"
                                     badge={rubricEnabled && rubricCategories.length > 0 ? (
                                         <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-medium bg-[#862733]/10 text-[#862733]">
-                                            {rubricCategories.length} categor{rubricCategories.length !== 1 ? 'ies' : 'y'} &middot; {totalRubricPoints} pts
+                                            {rubricCategories.length} categor{rubricCategories.length !== 1 ? 'ies' : 'y'} &middot; {totalRubricPoints} pts ({rubricWeightPct}%)
                                         </span>
                                     ) : undefined}
                                 />
@@ -1047,7 +1163,7 @@ export default function NewAssignmentPage() {
                                             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
                                                 <p className="text-xs text-amber-700 flex items-start gap-2">
                                                     <BookOpen className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                                                    Define categories (e.g., Code Quality, Documentation) and grading criteria within each. Points are used for manual grading by TAs or faculty.
+                                                    Category weights must sum to 100%. Total rubric points = {totalRubricPoints} (max score × rubric weight {rubricWeightPct}%). Item points per category must sum to that category&apos;s share.
                                                 </p>
                                             </div>
 
@@ -1081,7 +1197,7 @@ export default function NewAssignmentPage() {
 
                                                             <div className="p-4 space-y-4">
                                                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                                                    <div className="md:col-span-2">
+                                                                    <div>
                                                                         <label className="block text-sm font-medium text-gray-700 mb-1.5">Category Name</label>
                                                                         <input
                                                                             type="text"
@@ -1092,15 +1208,29 @@ export default function NewAssignmentPage() {
                                                                         />
                                                                     </div>
                                                                     <div>
-                                                                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Weight</label>
+                                                                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Description</label>
+                                                                        <input
+                                                                            type="text"
+                                                                            value={cat.description ?? ''}
+                                                                            onChange={(e) => updateRubricCategory(catIndex, 'description', e.target.value)}
+                                                                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                                                                            placeholder="Optional"
+                                                                        />
+                                                                    </div>
+                                                                    <div className="md:col-span-1">
+                                                                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Weight (%)</label>
                                                                         <input
                                                                             type="number"
                                                                             min={0}
+                                                                            max={100}
                                                                             step={0.1}
                                                                             value={cat.weight}
                                                                             onChange={(e) => updateRubricCategory(catIndex, 'weight', parseFloat(e.target.value) || 0)}
                                                                             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                                                                         />
+                                                                        <p className="text-xs text-gray-500 mt-1">
+                                                                            {Math.round(totalRubricPoints * (cat.weight / 100) * 100) / 100} pts
+                                                                        </p>
                                                                     </div>
                                                                 </div>
 
@@ -1215,7 +1345,7 @@ export default function NewAssignmentPage() {
                                             {...register('allowedExtensionsStr')}
                                             error={errors.allowedExtensionsStr?.message}
                                             placeholder=".py, .txt, .md"
-                                            helpText="Comma-separated (leave blank for any)"
+                                            helpText="Auto-filled from language. Add more comma-separated (e.g. .py, .txt)"
                                         />
                                         <Input
                                             label="Required Files"
@@ -1541,7 +1671,7 @@ export default function NewAssignmentPage() {
                         </Card>
 
                         {/* ━━━ Action Buttons ━━━ */}
-                        <div className="sticky bottom-0 bg-white/90 backdrop-blur-sm border-t border-gray-200 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-4 mt-8 rounded-b-lg">
+                        <div className="sticky bottom-0 bg-white/90 backdrop-blur-sm border-t border-gray-200 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-4 mt-8 rounded-b-lg transition-opacity duration-300">
                             <div className="flex items-center justify-between max-w-5xl mx-auto">
                                 <p className="text-xs text-gray-500 hidden sm:block">
                                     {testCases.length} test case{testCases.length !== 1 ? 's' : ''}
@@ -1553,7 +1683,7 @@ export default function NewAssignmentPage() {
                                         type="button"
                                         onClick={() => router.back()}
                                         disabled={loading}
-                                        className="gap-2 border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                                        className="gap-2 border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.98]"
                                     >
                                         <X className="w-4 h-4" />
                                         Cancel
@@ -1561,18 +1691,21 @@ export default function NewAssignmentPage() {
                                     <Button
                                         type="submit"
                                         disabled={loading}
-                                        className="bg-primary hover:bg-primary/90 text-white px-8 gap-2 shadow-lg shadow-primary/20"
+                                        className="relative overflow-hidden bg-primary hover:bg-primary/90 text-white px-8 py-2.5 gap-2.5 rounded-lg shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 transition-all duration-300 ease-out hover:scale-[1.02] active:scale-[0.98] disabled:hover:scale-100 disabled:opacity-90 disabled:cursor-wait"
                                     >
+                                        {loading && (
+                                            <span className="absolute inset-0 bg-primary/20 animate-pulse" aria-hidden />
+                                        )}
                                         {loading ? (
-                                            <>
+                                            <span className="relative flex items-center gap-2.5">
                                                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                                Creating...
-                                            </>
+                                                <span className="animate-pulse">Creating...</span>
+                                            </span>
                                         ) : (
-                                            <>
+                                            <span className="relative flex items-center gap-2.5">
                                                 <Save className="w-4 h-4" />
                                                 Create Assignment
-                                            </>
+                                            </span>
                                         )}
                                     </Button>
                                 </div>

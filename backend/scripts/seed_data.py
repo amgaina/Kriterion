@@ -16,7 +16,7 @@ from app.core.security import get_password_hash
 from app.core.config import settings
 from app.models import (
     User, UserRole,
-    Course, CourseStatus, Enrollment, EnrollmentStatus,
+    Course, CourseStatus, CourseAssistant, Enrollment, EnrollmentStatus,
     Assignment, DifficultyLevel, TestCase,
     Rubric, RubricCategory, RubricItem,
     Language, DEFAULT_LANGUAGES,
@@ -48,6 +48,15 @@ FACULTY_USERS = [
         "email": "mwilson@ulm.edu",
         "password": "Faculty@123",
         "full_name": "Dr. Mark Wilson",
+    },
+]
+
+ASSISTANT_USERS = [
+    {
+        "email": "assistant@ulm.edu",
+        "password": "Assistant@123",
+        "full_name": "Grading Assistant",
+        "assistant_courses": ["CS1010", "CS2010"],
     },
 ]
 
@@ -392,6 +401,17 @@ def seed_database():
                 db.add(UserPreferences(user_id=fac.id))
                 db.commit()
 
+        # ── Assistant Users ──
+        print("\n[4b/7] Assistant Users")
+        assistant_map = {}
+        for u in ASSISTANT_USERS:
+            ast = _get_or_create_user(db, u["email"], u["password"], u["full_name"], UserRole.ASSISTANT)
+            assistant_map[u["email"]] = ast
+            if not db.query(NotificationSettings).filter(NotificationSettings.user_id == ast.id).first():
+                db.add(NotificationSettings(user_id=ast.id))
+                db.add(UserPreferences(user_id=ast.id))
+            db.commit()
+
         # ── Student Users ──
         print("\n[5/7] Student Users")
         student_map = {}
@@ -466,6 +486,23 @@ def seed_database():
                     ))
         db.commit()
         print("  + Enrollments created")
+
+        # Course Assistants (assign assistants to courses)
+        for u in ASSISTANT_USERS:
+            ast = assistant_map.get(u["email"])
+            if not ast:
+                continue
+            for code in u.get("assistant_courses", []):
+                crs = course_map.get(code)
+                if not crs:
+                    continue
+                if not db.query(CourseAssistant).filter(
+                    CourseAssistant.course_id == crs.id,
+                    CourseAssistant.assistant_id == ast.id,
+                ).first():
+                    db.add(CourseAssistant(course_id=crs.id, assistant_id=ast.id))
+        db.commit()
+        print("  + Course assistants assigned")
 
         # ── Assignments + Test Cases + Rubrics ──
         print("\n[7/7] Assignments")
