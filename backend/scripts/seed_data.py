@@ -1,348 +1,603 @@
 #!/usr/bin/env python3
 """
-Seed database with initial data for Kriterion
+Seed database with realistic data for Kriterion @ ULM.
+
+Usage:
+    docker-compose exec backend python scripts/seed_data.py
 """
 import sys
 import os
 
-# Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from datetime import datetime, timedelta
 from app.core.database import SessionLocal
 from app.core.security import get_password_hash
 from app.core.config import settings
-
-# Import all models
 from app.models import (
     User, UserRole,
-    Course, CourseStatus, Enrollment, EnrollmentStatus,
+    Course, CourseStatus, CourseAssistant, Enrollment, EnrollmentStatus,
     Assignment, DifficultyLevel, TestCase,
     Rubric, RubricCategory, RubricItem,
     Language, DEFAULT_LANGUAGES,
     Achievement, Skill, StudentProgress,
     DEFAULT_ACHIEVEMENTS, DEFAULT_SKILLS,
-    NotificationSettings, UserPreferences
+    NotificationSettings, UserPreferences,
+    FacultyLanguagePermission,
 )
+
+# ──────────────────────────────────────────────
+# Seed data definitions
+# ──────────────────────────────────────────────
+
+ADMIN_USERS = [
+    {
+        "email": "admin@ulm.edu",
+        "password": "Admin@123456",
+        "full_name": "System Administrator",
+    },
+]
+
+FACULTY_USERS = [
+    {
+        "email": "jsmith@ulm.edu",
+        "password": "Faculty@123",
+        "full_name": "Dr. Jane Smith",
+    },
+    {
+        "email": "mwilson@ulm.edu",
+        "password": "Faculty@123",
+        "full_name": "Dr. Mark Wilson",
+    },
+]
+
+ASSISTANT_USERS = [
+    {
+        "email": "assistant@ulm.edu",
+        "password": "Assistant@123",
+        "full_name": "Grading Assistant",
+        "assistant_courses": ["CS1010", "CS2010"],
+    },
+]
+
+STUDENT_USERS = [
+    {"email": "aamgain@warhawks.ulm.edu",   "password": "Student@123", "full_name": "Abhishek Amgain",  "student_id": "S10001"},
+    {"email": "amainali@warhawks.ulm.edu",   "password": "Student@123", "full_name": "Aryan Mainali",    "student_id": "S10002"},
+    {"email": "sdhakal@warhawks.ulm.edu",    "password": "Student@123", "full_name": "Sulav Dhakal",     "student_id": "S10003"},
+    {"email": "ntulachan@warhawks.ulm.edu",  "password": "Student@123", "full_name": "Niraj Tulachan",   "student_id": "S10004"},
+    {"email": "jdoe@warhawks.ulm.edu",       "password": "Student@123", "full_name": "John Doe",         "student_id": "S10005"},
+    {"email": "agarcia@warhawks.ulm.edu",    "password": "Student@123", "full_name": "Ana Garcia",       "student_id": "S10006"},
+    {"email": "blee@warhawks.ulm.edu",       "password": "Student@123", "full_name": "Brian Lee",        "student_id": "S10007"},
+    {"email": "cjohnson@warhawks.ulm.edu",   "password": "Student@123", "full_name": "Claire Johnson",   "student_id": "S10008"},
+]
+
+COURSES = [
+    {
+        "code": "CS1010",
+        "name": "Computer Science I",
+        "description": "Introduction to programming using Python. Covers variables, control structures, functions, and basic data structures.",
+        "section": "A",
+        "semester": "Spring",
+        "year": 2026,
+        "start_date": datetime(2026, 1, 12),
+        "end_date": datetime(2026, 5, 8),
+        "faculty_email": "jsmith@ulm.edu",
+        "color": "#862733",
+        "languages": ["python"],
+    },
+    {
+        "code": "CS2010",
+        "name": "Computer Science II",
+        "description": "Continuation of CS I. Object-oriented programming, recursion, sorting algorithms, and linked lists using Java.",
+        "section": "A",
+        "semester": "Spring",
+        "year": 2026,
+        "start_date": datetime(2026, 1, 12),
+        "end_date": datetime(2026, 5, 8),
+        "faculty_email": "jsmith@ulm.edu",
+        "color": "#1E40AF",
+        "languages": ["java", "python"],
+    },
+    {
+        "code": "CS3030",
+        "name": "Data Structures & Algorithms",
+        "description": "Trees, graphs, heaps, hash tables, and algorithm analysis. Implementations in C++.",
+        "section": "B",
+        "semester": "Spring",
+        "year": 2026,
+        "start_date": datetime(2026, 1, 12),
+        "end_date": datetime(2026, 5, 8),
+        "faculty_email": "mwilson@ulm.edu",
+        "color": "#065F46",
+        "languages": ["cpp", "python"],
+    },
+]
+
+# Which students enroll in which courses (by student email → list of course codes)
+ENROLLMENTS = {
+    "aamgain@warhawks.ulm.edu":   ["CS1010", "CS2010", "CS3030"],
+    "amainali@warhawks.ulm.edu":  ["CS1010", "CS2010", "CS3030"],
+    "sdhakal@warhawks.ulm.edu":   ["CS1010", "CS2010"],
+    "ntulachan@warhawks.ulm.edu": ["CS1010", "CS2010"],
+    "jdoe@warhawks.ulm.edu":      ["CS1010"],
+    "agarcia@warhawks.ulm.edu":   ["CS1010", "CS3030"],
+    "blee@warhawks.ulm.edu":      ["CS2010", "CS3030"],
+    "cjohnson@warhawks.ulm.edu":  ["CS1010", "CS2010"],
+}
+
+ASSIGNMENTS = [
+    # ── CS1010 ──
+    {
+        "course_code": "CS1010",
+        "title": "Hello World",
+        "description": "Write a Python program that prints 'Hello, World!' to the console.",
+        "instructions": (
+            "## Objective\n"
+            "Write a Python program that prints a greeting message.\n\n"
+            "## Requirements\n"
+            "1. Create a file named `main.py`\n"
+            "2. Print exactly: `Hello, World!`\n\n"
+            "## Submission\n"
+            "Submit your `main.py` file before the deadline."
+        ),
+        "language": "python",
+        "starter_code": "# Write your code here\n\n",
+        "solution_code": 'print("Hello, World!")\n',
+        "max_score": 100.0,
+        "passing_score": 60.0,
+        "difficulty": DifficultyLevel.EASY,
+        "due_days": 7,
+        "test_cases": [
+            {"name": "Basic Output", "input_data": "", "expected_output": "Hello, World!", "points": 50.0, "is_hidden": False, "is_sample": True, "order": 1},
+            {"name": "Exact Match", "input_data": "", "expected_output": "Hello, World!", "points": 30.0, "is_hidden": True, "is_sample": False, "order": 2},
+            {"name": "No Extra Output", "input_data": "", "expected_output": "Hello, World!", "points": 20.0, "is_hidden": True, "is_sample": False, "ignore_whitespace": True, "order": 3},
+        ],
+        "rubric_categories": [
+            {
+                "name": "Code Quality",
+                "description": "Code style and organization",
+                "weight": 0.6,
+                "items": [
+                    {"name": "Proper indentation", "max_points": 5.0},
+                    {"name": "No unnecessary code", "max_points": 5.0},
+                ],
+            },
+            {
+                "name": "Documentation",
+                "description": "Comments and readability",
+                "weight": 0.4,
+                "items": [
+                    {"name": "File header comment", "max_points": 5.0},
+                    {"name": "Clear code structure", "max_points": 5.0},
+                ],
+            },
+        ],
+    },
+    {
+        "course_code": "CS1010",
+        "title": "Fibonacci Sequence",
+        "description": "Write a function that returns the nth Fibonacci number using iteration.",
+        "instructions": (
+            "## Objective\n"
+            "Implement `fibonacci(n)` that returns the nth Fibonacci number.\n\n"
+            "## Input\n"
+            "A single integer `n` read from stdin.\n\n"
+            "## Output\n"
+            "Print the nth Fibonacci number.\n\n"
+            "## Examples\n"
+            "- Input: `0` → Output: `0`\n"
+            "- Input: `5` → Output: `5`\n"
+            "- Input: `10` → Output: `55`\n"
+        ),
+        "language": "python",
+        "starter_code": "def fibonacci(n):\n    # Your code here\n    pass\n\nn = int(input())\nprint(fibonacci(n))\n",
+        "solution_code": "def fibonacci(n):\n    if n <= 1:\n        return n\n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b\n    return b\n\nn = int(input())\nprint(fibonacci(n))\n",
+        "max_score": 100.0,
+        "passing_score": 60.0,
+        "difficulty": DifficultyLevel.MEDIUM,
+        "due_days": 14,
+        "test_cases": [
+            {"name": "fib(0)", "input_data": "0", "expected_output": "0", "points": 20.0, "is_hidden": False, "is_sample": True, "order": 1},
+            {"name": "fib(1)", "input_data": "1", "expected_output": "1", "points": 20.0, "is_hidden": False, "is_sample": True, "order": 2},
+            {"name": "fib(5)", "input_data": "5", "expected_output": "5", "points": 20.0, "is_hidden": True, "is_sample": False, "order": 3},
+            {"name": "fib(10)", "input_data": "10", "expected_output": "55", "points": 20.0, "is_hidden": True, "is_sample": False, "order": 4},
+            {"name": "fib(20)", "input_data": "20", "expected_output": "6765", "points": 20.0, "is_hidden": True, "is_sample": False, "order": 5},
+        ],
+        "rubric_categories": [
+            {
+                "name": "Correctness",
+                "description": "Does the algorithm work for all cases?",
+                "weight": 0.7,
+                "items": [
+                    {"name": "Handles base cases", "max_points": 10.0},
+                    {"name": "Iterative approach (no stack overflow)", "max_points": 10.0},
+                ],
+            },
+            {
+                "name": "Style",
+                "description": "Code readability",
+                "weight": 0.3,
+                "items": [
+                    {"name": "Meaningful variable names", "max_points": 5.0},
+                    {"name": "Clean loop structure", "max_points": 5.0},
+                ],
+            },
+        ],
+    },
+    # ── CS2010 ──
+    {
+        "course_code": "CS2010",
+        "title": "Stack Implementation",
+        "description": "Implement a Stack class in Java with push, pop, peek, and isEmpty operations.",
+        "instructions": (
+            "## Objective\n"
+            "Create a `Stack` class that uses an array internally.\n\n"
+            "## Requirements\n"
+            "- `push(int val)` - adds to top\n"
+            "- `pop()` - removes and returns top\n"
+            "- `peek()` - returns top without removing\n"
+            "- `isEmpty()` - returns boolean\n\n"
+            "## Input\n"
+            "Read commands from stdin, one per line: `push X`, `pop`, `peek`, `isEmpty`.\n"
+            "Print the result of each command that returns a value.\n"
+        ),
+        "language": "java",
+        "starter_code": "import java.util.Scanner;\n\npublic class Main {\n    // Implement your Stack here\n\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        // Read commands and operate\n    }\n}\n",
+        "solution_code": "",
+        "max_score": 100.0,
+        "passing_score": 60.0,
+        "difficulty": DifficultyLevel.MEDIUM,
+        "due_days": 14,
+        "test_cases": [
+            {"name": "Push & Peek", "input_data": "push 10\npeek\n", "expected_output": "10", "points": 25.0, "is_hidden": False, "is_sample": True, "order": 1},
+            {"name": "Push & Pop", "input_data": "push 5\npush 10\npop\n", "expected_output": "10", "points": 25.0, "is_hidden": False, "is_sample": True, "order": 2},
+            {"name": "isEmpty true", "input_data": "isEmpty\n", "expected_output": "true", "points": 25.0, "is_hidden": True, "is_sample": False, "order": 3},
+            {"name": "Mixed ops", "input_data": "push 1\npush 2\npush 3\npop\npeek\n", "expected_output": "3\n2", "points": 25.0, "is_hidden": True, "is_sample": False, "order": 4},
+        ],
+        "rubric_categories": [
+            {
+                "name": "Implementation",
+                "description": "Correct data structure implementation",
+                "weight": 0.7,
+                "items": [
+                    {"name": "Array-backed storage", "max_points": 10.0},
+                    {"name": "All four methods implemented", "max_points": 10.0},
+                    {"name": "Edge case handling (empty stack)", "max_points": 10.0},
+                ],
+            },
+            {
+                "name": "Code Quality",
+                "description": "Style and documentation",
+                "weight": 0.3,
+                "items": [
+                    {"name": "Proper encapsulation", "max_points": 5.0},
+                    {"name": "Comments and naming", "max_points": 5.0},
+                ],
+            },
+        ],
+    },
+    # ── CS3030 ──
+    {
+        "course_code": "CS3030",
+        "title": "Binary Search",
+        "description": "Implement binary search on a sorted array in C++. Return the index of the target or -1 if not found.",
+        "instructions": (
+            "## Input\n"
+            "First line: N (size of array)\n"
+            "Second line: N space-separated sorted integers\n"
+            "Third line: target integer\n\n"
+            "## Output\n"
+            "Print the 0-based index of the target, or -1 if not found.\n"
+        ),
+        "language": "cpp",
+        "starter_code": "#include <iostream>\nusing namespace std;\n\nint binarySearch(int arr[], int n, int target) {\n    // Your code here\n    return -1;\n}\n\nint main() {\n    int n;\n    cin >> n;\n    int arr[n];\n    for(int i=0;i<n;i++) cin >> arr[i];\n    int target;\n    cin >> target;\n    cout << binarySearch(arr, n, target) << endl;\n    return 0;\n}\n",
+        "solution_code": "",
+        "max_score": 100.0,
+        "passing_score": 60.0,
+        "difficulty": DifficultyLevel.MEDIUM,
+        "due_days": 10,
+        "test_cases": [
+            {"name": "Found middle", "input_data": "5\n1 3 5 7 9\n5", "expected_output": "2", "points": 25.0, "is_hidden": False, "is_sample": True, "order": 1},
+            {"name": "Found first", "input_data": "5\n1 3 5 7 9\n1", "expected_output": "0", "points": 25.0, "is_hidden": False, "is_sample": True, "order": 2},
+            {"name": "Not found", "input_data": "5\n1 3 5 7 9\n4", "expected_output": "-1", "points": 25.0, "is_hidden": True, "is_sample": False, "order": 3},
+            {"name": "Single element", "input_data": "1\n42\n42", "expected_output": "0", "points": 25.0, "is_hidden": True, "is_sample": False, "order": 4},
+        ],
+        "rubric_categories": [
+            {
+                "name": "Algorithm",
+                "description": "Correct O(log n) binary search",
+                "weight": 0.8,
+                "items": [
+                    {"name": "O(log n) time complexity", "max_points": 15.0},
+                    {"name": "Correct boundary handling", "max_points": 10.0},
+                    {"name": "Returns -1 when not found", "max_points": 5.0},
+                ],
+            },
+            {
+                "name": "Style",
+                "description": "Code quality",
+                "weight": 0.2,
+                "items": [
+                    {"name": "Clean variable names", "max_points": 5.0},
+                    {"name": "No unnecessary includes", "max_points": 5.0},
+                ],
+            },
+        ],
+    },
+]
+
+
+# ──────────────────────────────────────────────
+# Seed logic
+# ──────────────────────────────────────────────
+
+def _get_or_create_user(db, email, password, full_name, role, student_id=None):
+    user = db.query(User).filter(User.email == email).first()
+    if user:
+        print(f"  [exists] {email}")
+        return user
+    user = User(
+        email=email,
+        hashed_password=get_password_hash(password),
+        full_name=full_name,
+        role=role,
+        student_id=student_id,
+        is_active=True,
+        is_verified=True,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    print(f"  + {role.value}: {email}")
+    return user
 
 
 def seed_database():
-    """Seed database with initial data"""
     db = SessionLocal()
-    
+
     try:
-        print("🌱 Seeding database...")
-        
-        # ========== 1. Create Languages ==========
-        print("\n Creating programming languages...")
-        allowed_lang_keys = {
+        print("=" * 56)
+        print("  KRITERION - DATABASE SEED")
+        print("=" * 56)
+
+        # ── Languages ──
+        print("\n[1/7] Languages")
+        allowed_keys = {
             "name", "display_name", "file_extension",
             "compile_command", "run_command", "docker_image",
-            "default_timeout_seconds", "default_memory_mb", "is_active"
+            "default_timeout_seconds", "default_memory_mb", "is_active",
         }
         for lang_data in DEFAULT_LANGUAGES:
-            lang = db.query(Language).filter(Language.name == lang_data["name"]).first()
-            if not lang:
-                filtered = {k: v for k, v in lang_data.items() if k in allowed_lang_keys}
-                # Remove 'version' if present, since Language model does not accept it
-                filtered.pop('version', None)
-                lang = Language(**filtered)
-                db.add(lang)
-                print(f"  ✅ Created language: {filtered.get('display_name', lang_data['name'])}")
-            else:
-                print(f"  ℹ️  Language already exists: {lang_data['display_name']}")
+            if not db.query(Language).filter(Language.name == lang_data["name"]).first():
+                filtered = {k: v for k, v in lang_data.items() if k in allowed_keys}
+                db.add(Language(**filtered))
+                print(f"  + {filtered.get('display_name', lang_data['name'])}")
         db.commit()
-        
-        # Get Python language for assignments
-        python_lang = db.query(Language).filter(Language.name == "python").first()
-        
-        # (Removed) System settings seeding – no SystemSettings model in current schema
-        
-        # ========== 3. Create Achievements ==========
-        print("\n🏆 Creating achievements...")
-        for ach_data in DEFAULT_ACHIEVEMENTS:
-            ach = db.query(Achievement).filter(Achievement.name == ach_data["name"]).first()
-            if not ach:
-                ach = Achievement(**ach_data)
-                db.add(ach)
-                print(f"  ✅ Created achievement: {ach_data['title']}")
+
+        # ── Achievements & Skills ──
+        print("\n[2/7] Achievements & Skills")
+        for ach in DEFAULT_ACHIEVEMENTS:
+            if not db.query(Achievement).filter(Achievement.name == ach["name"]).first():
+                db.add(Achievement(**ach))
+        for sk in DEFAULT_SKILLS:
+            if not db.query(Skill).filter(Skill.name == sk["name"]).first():
+                db.add(Skill(**sk))
         db.commit()
-        
-        # ========== 4. Create Skills ==========
-        print("\n💡 Creating skills...")
-        for skill_data in DEFAULT_SKILLS:
-            skill = db.query(Skill).filter(Skill.name == skill_data["name"]).first()
-            if not skill:
-                skill = Skill(**skill_data)
-                db.add(skill)
-        db.commit()
-        print("  ✅ Skills created")
-        
-        # ========== 5. Create Admin User ==========
-        print("\n👤 Creating users...")
-        admin = db.query(User).filter(User.email == settings.INITIAL_ADMIN_EMAIL).first()
-        if not admin:
-            admin = User(
-                email=settings.INITIAL_ADMIN_EMAIL,
-                hashed_password=get_password_hash(settings.INITIAL_ADMIN_PASSWORD),
-                full_name="System Administrator",
-                role=UserRole.ADMIN,
-                is_active=True,
-                is_verified=True
-            )
-            db.add(admin)
+        print("  + seeded")
+
+        # ── Admin Users ──
+        print("\n[3/7] Admin Users")
+        for u in ADMIN_USERS:
+            _get_or_create_user(db, u["email"], u["password"], u["full_name"], UserRole.ADMIN)
+
+        # ── Faculty Users ──
+        print("\n[4/7] Faculty Users")
+        faculty_map = {}
+        for u in FACULTY_USERS:
+            fac = _get_or_create_user(db, u["email"], u["password"], u["full_name"], UserRole.FACULTY)
+            faculty_map[u["email"]] = fac
+            if not db.query(NotificationSettings).filter(NotificationSettings.user_id == fac.id).first():
+                db.add(NotificationSettings(user_id=fac.id))
+                db.add(UserPreferences(user_id=fac.id))
+                db.commit()
+
+        # ── Assistant Users ──
+        print("\n[4b/7] Assistant Users")
+        assistant_map = {}
+        for u in ASSISTANT_USERS:
+            ast = _get_or_create_user(db, u["email"], u["password"], u["full_name"], UserRole.ASSISTANT)
+            assistant_map[u["email"]] = ast
+            if not db.query(NotificationSettings).filter(NotificationSettings.user_id == ast.id).first():
+                db.add(NotificationSettings(user_id=ast.id))
+                db.add(UserPreferences(user_id=ast.id))
             db.commit()
-            print(f"  ✅ Created admin: {admin.email}")
-        else:
-            print(f"  ℹ️  Admin already exists: {admin.email}")
-        
-        # ========== 6. Create Faculty User ==========
-        faculty = db.query(User).filter(User.email == "faculty@kriterion.edu").first()
-        if not faculty:
-            faculty = User(
-                email="faculty@kriterion.edu",
-                hashed_password=get_password_hash("Faculty@123"),
-                full_name="Dr. Jane Smith",
-                role=UserRole.FACULTY,
-                is_active=True,
-                is_verified=True
-            )
-            db.add(faculty)
+
+        # ── Student Users ──
+        print("\n[5/7] Student Users")
+        student_map = {}
+        for u in STUDENT_USERS:
+            stu = _get_or_create_user(db, u["email"], u["password"], u["full_name"], UserRole.STUDENT, u["student_id"])
+            student_map[u["email"]] = stu
+            if not db.query(StudentProgress).filter(StudentProgress.student_id == stu.id).first():
+                db.add(StudentProgress(student_id=stu.id))
+            if not db.query(NotificationSettings).filter(NotificationSettings.user_id == stu.id).first():
+                db.add(NotificationSettings(user_id=stu.id))
+                db.add(UserPreferences(user_id=stu.id))
             db.commit()
-            print(f"  ✅ Created faculty: {faculty.email}")
-            
-            # Create notification settings and preferences for faculty
-            faculty_notif = NotificationSettings(user_id=faculty.id)
-            faculty_pref = UserPreferences(user_id=faculty.id)
-            db.add(faculty_notif)
-            db.add(faculty_pref)
-            db.commit()
-        else:
-            print(f"  ℹ️  Faculty already exists: {faculty.email}")
-        
-        # ========== 7. Create Student Users ==========
-        students = []
-        for i in range(1, 6):
-            email = f"student{i}@kriterion.edu"
-            student = db.query(User).filter(User.email == email).first()
-            if not student:
-                student = User(
-                    email=email,
-                    hashed_password=get_password_hash(f"Student{i}@123"),
-                    full_name=f"Student {i}",
-                    role=UserRole.STUDENT,
-                    student_id=f"S{1000 + i}",
+
+        # ── Courses + Enrollments + Language Permissions ──
+        print("\n[6/7] Courses & Enrollments")
+        course_map = {}
+        for c in COURSES:
+            course = db.query(Course).filter(Course.code == c["code"], Course.year == c["year"]).first()
+            if not course:
+                fac = faculty_map.get(c["faculty_email"])
+                course = Course(
+                    code=c["code"],
+                    name=c["name"],
+                    description=c["description"],
+                    section=c["section"],
+                    semester=c["semester"],
+                    year=c["year"],
+                    start_date=c.get("start_date"),
+                    end_date=c.get("end_date"),
+                    instructor_id=fac.id if fac else 1,
+                    status=CourseStatus.ACTIVE,
                     is_active=True,
-                    is_verified=True
+                    color=c.get("color"),
                 )
-                db.add(student)
+                db.add(course)
                 db.commit()
-                print(f"  ✅ Created student: {student.email}")
-                
-                # Create progress tracking
-                progress = StudentProgress(student_id=student.id)
-                db.add(progress)
-                
-                # Create notification settings and preferences
-                notif = NotificationSettings(user_id=student.id)
-                pref = UserPreferences(user_id=student.id)
-                db.add(notif)
-                db.add(pref)
+                db.refresh(course)
+                print(f"  + Course: {course.code} - {course.name}")
+
+                # Grant language permissions to the faculty for this course's languages
+                for lang_name in c.get("languages", []):
+                    lang = db.query(Language).filter(Language.name == lang_name).first()
+                    if lang and fac:
+                        exists = db.query(FacultyLanguagePermission).filter(
+                            FacultyLanguagePermission.faculty_id == fac.id,
+                            FacultyLanguagePermission.language_id == lang.id,
+                        ).first()
+                        if not exists:
+                            db.add(FacultyLanguagePermission(faculty_id=fac.id, language_id=lang.id))
                 db.commit()
             else:
-                print(f"  ℹ️  Student already exists: {student.email}")
-            students.append(student)
-        
-        # ========== 8. Create Sample Course ==========
-        print("\n📚 Creating courses...")
-        course = db.query(Course).filter(Course.code == "CS101").first()
-        if not course:
-            course = Course(
-                code="CS101",
-                name="Introduction to Computer Science",
-                description="Foundational course in computer science covering programming basics, data structures, and algorithms.",
-                section="A",
-                semester="Spring",
-                year=2026,
-                instructor_id=faculty.id,
-                status=CourseStatus.ACTIVE,
-                is_active=True,
-                color="#862733"
-            )
-            db.add(course)
-            db.commit()
-            print(f"  ✅ Created course: {course.code} - {course.name}")
-            
-            # Enroll students
-            for student in students:
-                enrollment = Enrollment(
-                    student_id=student.id,
-                    course_id=course.id,
-                    status=EnrollmentStatus.ACTIVE,
-                    progress_percentage=0.0
-                )
-                db.add(enrollment)
-            db.commit()
-            print(f"  ✅ Enrolled {len(students)} students in {course.code}")
-        else:
-            print(f"  ℹ️  Course already exists: {course.code}")
-        
-        # ========== 9. Create Sample Assignment ==========
-        print("\n📝 Creating assignments...")
-        assignment = db.query(Assignment).filter(
-            Assignment.course_id == course.id,
-            Assignment.title == "Hello World"
-        ).first()
-        
-        if not assignment:
-            assignment = Assignment(
-                course_id=course.id,
-                title="Hello World",
-                description="Write a simple Python program that prints 'Hello, World!' to the console.",
-                instructions="""## Objective
-Write a Python program that prints the greeting message.
+                print(f"  [exists] {c['code']}")
+            course_map[c["code"]] = course
 
-## Requirements
-1. Create a file named `main.py`
-2. The program should print exactly: `Hello, World!`
-3. Use the `print()` function
+        # Enrollments
+        for stu_email, codes in ENROLLMENTS.items():
+            stu = student_map.get(stu_email)
+            if not stu:
+                continue
+            for code in codes:
+                crs = course_map.get(code)
+                if not crs:
+                    continue
+                if not db.query(Enrollment).filter(
+                    Enrollment.student_id == stu.id, Enrollment.course_id == crs.id
+                ).first():
+                    db.add(Enrollment(
+                        student_id=stu.id,
+                        course_id=crs.id,
+                        status=EnrollmentStatus.ACTIVE,
+                        progress_percentage=0.0,
+                    ))
+        db.commit()
+        print("  + Enrollments created")
 
-## Example Output
-```
-Hello, World!
-```
+        # Course Assistants (assign assistants to courses)
+        for u in ASSISTANT_USERS:
+            ast = assistant_map.get(u["email"])
+            if not ast:
+                continue
+            for code in u.get("assistant_courses", []):
+                crs = course_map.get(code)
+                if not crs:
+                    continue
+                if not db.query(CourseAssistant).filter(
+                    CourseAssistant.course_id == crs.id,
+                    CourseAssistant.assistant_id == ast.id,
+                ).first():
+                    db.add(CourseAssistant(course_id=crs.id, assistant_id=ast.id))
+        db.commit()
+        print("  + Course assistants assigned")
 
-## Submission
-Submit your `main.py` file before the deadline.
-""",
-                language_id=python_lang.id if python_lang else 1,
-                starter_code='# Write your code here\n\n',
-                solution_code='print("Hello, World!")\n',
-                max_score=100.0,
-                passing_score=60.0,
-                difficulty=DifficultyLevel.EASY,
-                due_date=datetime.utcnow() + timedelta(days=7),
+        # ── Assignments + Test Cases + Rubrics ──
+        print("\n[7/7] Assignments")
+        for a in ASSIGNMENTS:
+            crs = course_map.get(a["course_code"])
+            if not crs:
+                continue
+            existing = db.query(Assignment).filter(
+                Assignment.course_id == crs.id, Assignment.title == a["title"]
+            ).first()
+            if existing:
+                print(f"  [exists] {a['title']}")
+                continue
+
+            lang = db.query(Language).filter(Language.name == a["language"]).first()
+            asgn = Assignment(
+                course_id=crs.id,
+                title=a["title"],
+                description=a["description"],
+                instructions=a["instructions"],
+                language_id=lang.id if lang else 1,
+                starter_code=a.get("starter_code", ""),
+                solution_code=a.get("solution_code", ""),
+                max_score=a["max_score"],
+                passing_score=a["passing_score"],
+                difficulty=a["difficulty"],
+                due_date=datetime.utcnow() + timedelta(days=a["due_days"]),
                 allow_late=True,
                 late_penalty_per_day=10.0,
                 max_late_days=3,
                 max_attempts=5,
                 enable_plagiarism_check=True,
                 plagiarism_threshold=30.0,
-                enable_ai_detection=True,
-                ai_detection_threshold=50.0,
                 test_weight=70.0,
                 rubric_weight=30.0,
                 is_published=True,
             )
-            db.add(assignment)
+            db.add(asgn)
             db.commit()
-            print(f"  ✅ Created assignment: {assignment.title}")
-            
-            # Create test cases
-            test_cases = [
-                TestCase(
-                    assignment_id=assignment.id,
-                    name="Basic Output Test",
-                    description="Check if program outputs 'Hello, World!'",
-                    input_data="",
-                    expected_output="Hello, World!",
-                    points=50.0,
-                    is_hidden=False,
-                    is_sample=True,
-                    order=1
-                ),
-                TestCase(
-                    assignment_id=assignment.id,
-                    name="Exact Match Test",
-                    description="Verify exact string match",
-                    input_data="",
-                    expected_output="Hello, World!",
-                    points=30.0,
-                    is_hidden=True,
-                    is_sample=False,
-                    order=2
-                ),
-                TestCase(
-                    assignment_id=assignment.id,
-                    name="No Extra Output",
-                    description="Ensure no additional output",
-                    input_data="",
-                    expected_output="Hello, World!",
-                    points=20.0,
-                    is_hidden=True,
-                    is_sample=False,
-                    ignore_whitespace=True,
-                    order=3
+            db.refresh(asgn)
+            print(f"  + {crs.code}: {asgn.title}")
+
+            # Test cases
+            for tc in a.get("test_cases", []):
+                db.add(TestCase(assignment_id=asgn.id, **tc))
+            db.commit()
+
+            # Rubric
+            cats = a.get("rubric_categories", [])
+            if cats:
+                rubric_total = sum(
+                    item["max_points"]
+                    for cat in cats
+                    for item in cat.get("items", [])
                 )
-            ]
-            for tc in test_cases:
-                db.add(tc)
-            db.commit()
-            print(f"  ✅ Created {len(test_cases)} test cases")
-            
-            # Create rubric
-            rubric = Rubric(
-                assignment_id=assignment.id,
-                total_points=30.0
-            )
-            db.add(rubric)
-            db.commit()
-            
-            # Create rubric categories and items
-            category1 = RubricCategory(
-                rubric_id=rubric.id,
-                name="Code Quality",
-                description="Code style and organization",
-                weight=0.5,
-                order=1
-            )
-            db.add(category1)
-            db.commit()
-            
-            items1 = [
-                RubricItem(category_id=category1.id, name="Proper indentation", max_points=5.0, order=1),
-                RubricItem(category_id=category1.id, name="Meaningful variable names", max_points=5.0, order=2),
-                RubricItem(category_id=category1.id, name="No unnecessary code", max_points=5.0, order=3)
-            ]
-            for item in items1:
-                db.add(item)
-            
-            category2 = RubricCategory(
-                rubric_id=rubric.id,
-                name="Documentation",
-                description="Code comments and documentation",
-                weight=0.5,
-                order=2
-            )
-            db.add(category2)
-            db.commit()
-            
-            items2 = [
-                RubricItem(category_id=category2.id, name="File header comment", max_points=5.0, order=1),
-                RubricItem(category_id=category2.id, name="Inline comments where needed", max_points=5.0, order=2),
-                RubricItem(category_id=category2.id, name="Clear code structure", max_points=5.0, order=3)
-            ]
-            for item in items2:
-                db.add(item)
-            db.commit()
-            print("  ✅ Created rubric with categories")
-        else:
-            print(f"  ℹ️  Assignment already exists: {assignment.title}")
-        
-        print("\n" + "="*50)
-        print("✨ Database seeding complete!")
-        print("="*50)
-        
-        print("\n📋 Default Credentials:")
-        print(f"   Admin: {settings.INITIAL_ADMIN_EMAIL} / {settings.INITIAL_ADMIN_PASSWORD}")
-        print("   Faculty: faculty@kriterion.edu / Faculty@123")
-        for i in range(1, 6):
-            print(f"   Student {i}: student{i}@kriterion.edu / Student{i}@123")
-        
-        print("\n⚠️  Change these passwords in production!")
-        
+                rubric = Rubric(assignment_id=asgn.id, total_points=rubric_total)
+                db.add(rubric)
+                db.commit()
+                db.refresh(rubric)
+
+                for ci, cat in enumerate(cats, 1):
+                    rc = RubricCategory(
+                        rubric_id=rubric.id,
+                        name=cat["name"],
+                        description=cat.get("description", ""),
+                        weight=cat.get("weight", 1.0),
+                        order=ci,
+                    )
+                    db.add(rc)
+                    db.commit()
+                    db.refresh(rc)
+                    for ii, item in enumerate(cat.get("items", []), 1):
+                        db.add(RubricItem(
+                            category_id=rc.id,
+                            name=item["name"],
+                            max_points=item["max_points"],
+                            order=ii,
+                        ))
+                db.commit()
+
+        # ── Done ──
+        print("\n" + "=" * 56)
+        print("  SEED COMPLETE")
+        print("=" * 56)
+        print("\n  Credentials (password for all users below):")
+        print(f"  Admin:   admin@ulm.edu / Admin@123456")
+        print(f"  Faculty: jsmith@ulm.edu / Faculty@123")
+        print(f"           mwilson@ulm.edu / Faculty@123")
+        print(f"  Students (@warhawks.ulm.edu): Student@123")
+        for s in STUDENT_USERS:
+            print(f"    {s['student_id']}  {s['email']}")
+        print()
+
     except Exception as e:
-        print(f"\n❌ Error seeding database: {e}")
+        print(f"\n  ERROR: {e}")
         import traceback
         traceback.print_exc()
         db.rollback()

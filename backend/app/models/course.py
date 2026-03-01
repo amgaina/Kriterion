@@ -41,6 +41,10 @@ class Course(Base):
     status = Column(Enum(CourseStatus), default=CourseStatus.ACTIVE)
     is_active = Column(Boolean, default=True)
     
+    # Schedule
+    start_date = Column(DateTime, nullable=True)
+    end_date = Column(DateTime, nullable=True)
+    
     # Appearance
     color = Column(String(20), nullable=True)  # For UI card color
     
@@ -54,6 +58,7 @@ class Course(Base):
     
     # Relationships
     instructor = relationship("User", back_populates="taught_courses", foreign_keys=[instructor_id])
+    assistants = relationship("CourseAssistant", back_populates="course", cascade="all, delete-orphan")
     enrollments = relationship("Enrollment", back_populates="course", cascade="all, delete-orphan")
     assignments = relationship("Assignment", back_populates="course", cascade="all, delete-orphan")
     groups = relationship("Group", back_populates="course", cascade="all, delete-orphan")
@@ -97,6 +102,26 @@ class Enrollment(Base):
     
     def __repr__(self):
         return f"<Enrollment student={self.student_id} course={self.course_id}>"
+
+
+class CourseAssistant(Base):
+    """
+    CourseAssistant - Links assistants (grading TAs) to courses they help with.
+    """
+    __tablename__ = "course_assistants"
+
+    id = Column(Integer, primary_key=True, index=True)
+    course_id = Column(Integer, ForeignKey("courses.id"), nullable=False)
+    assistant_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    assigned_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    course = relationship("Course", back_populates="assistants")
+    assistant = relationship("User", back_populates="assistant_courses", foreign_keys=[assistant_id])
+
+    def __repr__(self):
+        return f"<CourseAssistant course={self.course_id} assistant={self.assistant_id}>"
 
 
 class Group(Base):

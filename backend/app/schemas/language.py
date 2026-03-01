@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 from pydantic import BaseModel
 
@@ -32,3 +32,8 @@ class Language(LanguageBase):
 
     class Config:
         from_attributes = True
+
+
+class LanguageWithExtensions(Language):
+    """Language with allowed_file_extensions for assignment creation"""
+    allowed_extensions: List[str] = []

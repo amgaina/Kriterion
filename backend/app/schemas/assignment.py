@@ -54,7 +54,8 @@ class RubricItem(RubricItemBase):
 
 class RubricCategoryBase(BaseModel):
     name: str
-    weight: float
+    description: Optional[str] = None
+    weight: float  # Percentage (0-100) - category's share of total rubric points
     order: int
 
 class RubricCategoryCreate(RubricCategoryBase):
@@ -69,7 +70,7 @@ class RubricCategory(RubricCategoryBase):
         from_attributes = True
 
 class RubricBase(BaseModel):
-    total_points: float
+    total_points: Optional[float] = None  # Computed as max_score * rubric_weight/100 if omitted
 
 class RubricCreate(RubricBase):
     categories: List[RubricCategoryCreate]

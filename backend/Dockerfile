@@ -21,7 +21,7 @@ RUN npm install -g typescript ts-node
 # Download JPlag v4.3.0 (JDK 17 compatible) for plagiarism detection
 RUN wget -q https://github.com/jplag/JPlag/releases/download/v4.3.0/jplag-4.3.0-jar-with-dependencies.jar \
     -O /opt/jplag.jar \
-    || echo "WARN: JPlag JAR download failed — plagiarism checks will use fallback"
+    || echo "WARN: JPlag JAR download failed - plagiarism checks will use fallback"
 
 # Copy requirements
 COPY requirements.txt .

@@ -93,14 +93,26 @@ class ApiClient {
         if (typeof window !== 'undefined') {
             localStorage.removeItem('access_token');
             localStorage.removeItem('refresh_token');
+            document.cookie = 'kriterion_role=; path=/; max-age=0';
+            document.cookie = 'kriterion_auth=; path=/; max-age=0';
         }
     }
 
-    // Auth endpoints
+    private setRoleCookie(role: string) {
+        if (typeof window !== 'undefined') {
+            const maxAge = 60 * 60 * 24 * 7; // 7 days
+            document.cookie = `kriterion_role=${role}; path=/; max-age=${maxAge}; SameSite=Lax`;
+            document.cookie = `kriterion_auth=1; path=/; max-age=${maxAge}; SameSite=Lax`;
+        }
+    }
+
     async login(email: string, password: string) {
         const response = await this.client.post('/auth/login', { email, password });
-        const { access_token, refresh_token } = response.data;
+        const { access_token, refresh_token, user } = response.data;
         this.setTokens(access_token, refresh_token);
+        if (user?.role) {
+            this.setRoleCookie(user.role);
+        }
         return response.data;
     }
 
@@ -165,15 +177,34 @@ class ApiClient {
         return response.data;
     }
 
-    async getCourseAssignments(courseId: number, includeUnpublished: boolean = false) {
-        const response = await this.client.get(`/courses/${courseId}/assignments`, {
-            params: { include_unpublished: includeUnpublished }
-        });
+    async getCourseAssignments(
+        courseId: number,
+        includeUnpublished: boolean = false,
+        status?: 'all' | 'published' | 'draft' | 'closed'
+    ) {
+        const params: Record<string, unknown> = { include_unpublished: includeUnpublished };
+        if (status && status !== 'all') params.status = status;
+        const response = await this.client.get(`/courses/${courseId}/assignments`, { params });
         return response.data;
     }
 
     async unenrollStudent(courseId: number, studentId: number) {
         const response = await this.client.delete(`/courses/${courseId}/students/${studentId}`);
+        return response.data;
+    }
+
+    async getCourseAssistants(courseId: number) {
+        const response = await this.client.get(`/courses/${courseId}/assistants`);
+        return response.data;
+    }
+
+    async addCourseAssistant(courseId: number, email: string) {
+        const response = await this.client.post(`/courses/${courseId}/assistants`, { email });
+        return response.data;
+    }
+
+    async removeCourseAssistant(courseId: number, assistantId: number) {
+        const response = await this.client.delete(`/courses/${courseId}/assistants/${assistantId}`);
         return response.data;
     }
 
@@ -189,12 +220,29 @@ class ApiClient {
         return response.data;
     }
 
-    async createAssignment(data: any, files?: File[]) {
+    async getAssignmentSupplementaryFiles(assignmentId: number) {
+        const response = await this.client.get(`/assignments/${assignmentId}/supplementary-files`);
+        return response.data as { filename: string; download_url: string; size: number }[];
+    }
+
+    async createAssignment(
+        data: any,
+        options?: {
+            starterFile?: File | null;
+            solutionFile?: File | null;
+            supplementaryFiles?: File[];
+        }
+    ) {
         const formData = new FormData();
         formData.append('assignment_data', JSON.stringify(data));
-        if (files && files.length > 0) {
-            files.forEach((file) => formData.append('files', file));
+        if (options?.starterFile) {
+            formData.append('starter_file', options.starterFile);
         }
+        if (options?.solutionFile) {
+            formData.append('solution_file', options.solutionFile);
+        }
+        const supp = options?.supplementaryFiles ?? [];
+        supp.forEach((f) => formData.append('files', f));
         const response = await this.client.post('/assignments', formData, {
             headers: { 'Content-Type': undefined as unknown as string },
         });
@@ -231,6 +279,17 @@ class ApiClient {
 
     async getAssignmentSubmissions(assignmentId: number) {
         const response = await this.client.get(`/submissions/assignment/${assignmentId}/all`);
+        return response.data;
+    }
+
+    /** Grading stats: unique students per assignment (latest submission only). pending/graded count students, not raw submissions. */
+    async getGradingStats(courseId?: number): Promise<{
+        total_pending: number;
+        total_graded: number;
+        assignments: { assignment_id: number; pending_count: number; graded_count: number }[];
+    }> {
+        const params = courseId ? { course_id: courseId } : {};
+        const response = await this.client.get('/submissions/grading-stats', { params });
         return response.data;
     }
 
@@ -317,6 +376,42 @@ class ApiClient {
             payload.test_case_ids = testCaseIds;
         }
         const response = await this.client.post(`/assignments/${assignmentId}/run`, payload);
+        return response.data;
+    }
+
+    // Faculty-specific endpoints
+    async getFacultyDashboard() {
+        const response = await this.client.get('/faculty/dashboard');
+        return response.data;
+    }
+
+    async getFacultyUpcomingEvents() {
+        const response = await this.client.get('/faculty/upcoming-events');
+        return response.data;
+    }
+
+    /** Transform assignments to calendar events for student layout sidebar */
+    async getStudentUpcomingEvents() {
+        const assignments = await this.getAssignments();
+        return (assignments || [])
+            .filter((a: { is_published?: boolean; due_date?: string }) => a.is_published !== false && a.due_date)
+            .map((a: { id: number; title: string; due_date: string; course?: { code?: string; name?: string } }) => ({
+                id: a.id,
+                title: a.title,
+                date: (a.due_date || '').slice(0, 10),
+                event_type: 'deadline',
+                course_code: a.course?.code,
+                course_name: a.course?.name,
+            }));
+    }
+
+    async getFacultyCourses() {
+        const response = await this.client.get('/faculty/courses');
+        return response.data;
+    }
+
+    async getFacultyLanguages() {
+        const response = await this.client.get('/faculty/languages');
         return response.data;
     }
 
@@ -430,7 +525,36 @@ class ApiClient {
         await this.client.delete(`/languages/${id}`);
     }
 
-    // Settings endpoints
+    // Profile endpoints
+    async getProfile() {
+        const response = await this.client.get('/settings/profile');
+        return response.data;
+    }
+
+    async updateProfile(data: { full_name?: string; phone?: string; bio?: string; github_url?: string; linkedin_url?: string }) {
+        const response = await this.client.put('/settings/profile', data);
+        return response.data;
+    }
+
+    async changePassword(currentPassword: string, newPassword: string) {
+        const response = await this.client.put('/settings/profile/password', {
+            current_password: currentPassword,
+            new_password: newPassword,
+        });
+        return response.data;
+    }
+
+    async getNotificationSettings() {
+        const response = await this.client.get('/settings/notifications/settings');
+        return response.data;
+    }
+
+    async updateNotificationSettings(data: Record<string, boolean>) {
+        const response = await this.client.put('/settings/notifications/settings', data);
+        return response.data;
+    }
+
+    // Admin settings endpoints
     async getSettings() {
         const response = await this.client.get('/admin/settings');
         return response.data;

@@ -41,6 +41,7 @@ interface Course {
     instructor_name?: string;
     semester?: string;
     year?: number;
+    section?: string;
     is_active: boolean;
     student_count?: number;
     assignment_count?: number;
@@ -429,26 +430,26 @@ export default function CoursesPage() {
                                     <Input
                                         label="Course Name"
                                         value={editFormData.name}
-                                        onChange={(e) => setEditFormData(prev => ({ ...prev, name: e.target.value }))}
+                                        onChange={(e) => setEditFormData((prev: Course) => ({ ...prev, name: e.target.value }))}
                                         placeholder="Introduction to Programming"
                                     />
                                     <Input
                                         label="Course Code"
                                         value={editFormData.code}
-                                        onChange={(e) => setEditFormData(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
+                                        onChange={(e) => setEditFormData((prev: Course) => ({ ...prev, code: e.target.value.toUpperCase() }))}
                                         placeholder="CS101"
                                     />
                                     <Input
                                         label="Section"
                                         value={editFormData.section}
-                                        onChange={(e) => setEditFormData(prev => ({ ...prev, section: e.target.value }))}
+                                        onChange={(e) => setEditFormData((prev: Course) => ({ ...prev, section: e.target.value }))}
                                         placeholder="A"
                                     />
                                 </div>
                                 <Textarea
                                     label="Description"
                                     value={editFormData.description}
-                                    onChange={(e) => setEditFormData(prev => ({ ...prev, description: e.target.value }))}
+                                    onChange={(e) => setEditFormData((prev: Course) => ({ ...prev, description: e.target.value }))}
                                     placeholder="Course description"
                                     rows={3}
                                 />
@@ -456,7 +457,7 @@ export default function CoursesPage() {
                                     <Select
                                         label="Instructor"
                                         value={editFormData.instructor_id?.toString() || ''}
-                                        onChange={(value) => setEditFormData(prev => ({ ...prev, instructor_id: parseInt(value) }))}
+                                        onChange={(e) => setEditFormData((prev: Course) => ({ ...prev, instructor_id: parseInt(e.target.value) }))}
                                         options={faculty.map((f: any) => ({
                                             value: f.id.toString(),
                                             label: f.full_name
@@ -465,7 +466,7 @@ export default function CoursesPage() {
                                     <Select
                                         label="Semester"
                                         value={editFormData.semester}
-                                        onChange={(value) => setEditFormData(prev => ({ ...prev, semester: value }))}
+                                        onChange={(e) => setEditFormData((prev: Course) => ({ ...prev, semester: e.target.value }))}
                                         options={[
                                             { value: 'Spring', label: 'Spring' },
                                             { value: 'Summer', label: 'Summer' },
@@ -479,11 +480,11 @@ export default function CoursesPage() {
                                         label="Year"
                                         type="number"
                                         value={editFormData.year?.toString()}
-                                        onChange={(e) => setEditFormData(prev => ({ ...prev, year: parseInt(e.target.value) }))}
+                                        onChange={(e) => setEditFormData((prev: Course) => ({ ...prev, year: parseInt(e.target.value) }))}
                                     />
                                     <Switch
                                         checked={editFormData.is_active}
-                                        onChange={(checked) => setEditFormData(prev => ({ ...prev, is_active: checked }))}
+                                        onChange={(checked: boolean) => setEditFormData((prev: Course) => ({ ...prev, is_active: checked }))}
                                         label="Active Course"
                                         description="Course is visible to students and faculty"
                                     />

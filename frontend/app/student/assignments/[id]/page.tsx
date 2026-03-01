@@ -29,11 +29,13 @@ import {
     Clock,
     Plus,
     PartyPopper,
+    Paperclip,
+    Download,
 } from 'lucide-react'
 
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import { Modal, ModalFooter } from '@/components/ui/modal'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/use-toast'
 
@@ -149,7 +151,7 @@ export default function StudentAssignmentPage() {
     const [explorerOpen, setExplorerOpen] = useState(true)
     const [panelOpen, setPanelOpen] = useState(true)
     const [activePanel, setActivePanel] = useState<'output' | 'tests'>('output')
-    const [rightPanel, setRightPanel] = useState<'description' | 'instructions' | 'rubric' | 'history' | null>(null)
+    const [rightPanel, setRightPanel] = useState<'description' | 'instructions' | 'rubric' | 'history' | 'supplementary' | null>(null)
 
     // API
     const { data: assignment, isLoading, error: loadError } = useQuery<Assignment>({
@@ -164,10 +166,26 @@ export default function StudentAssignmentPage() {
         enabled: !!assignment,
     })
 
-    // Derived
+    const { data: supplementaryFiles = [] } = useQuery({
+        queryKey: ['assignment-supplementary', assignmentId],
+        queryFn: () => apiClient.getAssignmentSupplementaryFiles(assignmentId),
+        enabled: !!assignmentId && !!assignment,
+    })
+
+    // Derived: normalize allowed extensions (lowercase, leading dot); fallback to language ext
+    const allowedExtensions = useMemo(() => {
+        const raw = assignment?.allowed_file_extensions
+        if (raw && Array.isArray(raw) && raw.length > 0) {
+            return raw.map((e: string) => {
+                const s = String(e).trim().toLowerCase()
+                return s.startsWith('.') ? s : '.' + s
+            }).filter(Boolean)
+        }
+        const langExt = assignment?.language?.file_extension
+        return langExt ? [langExt.startsWith('.') ? langExt : '.' + langExt] : ['.py']
+    }, [assignment?.allowed_file_extensions, assignment?.language?.file_extension])
     const maxFileSizeMB = assignment?.max_file_size_mb || 10
     const maxFileSize = maxFileSizeMB * 1024 * 1024
-    const allowedExtensions = assignment?.allowed_file_extensions || ['.py', '.java', '.cpp', '.c', '.js', '.ts', '.txt']
     const isOverdue = useMemo(() => assignment ? new Date(assignment.due_date) < new Date() : false, [assignment])
     const dueDate = useMemo(() => assignment ? new Date(assignment.due_date) : null, [assignment])
     const latestSubmission = useMemo(() => submissions.length > 0 ? submissions[0] : null, [submissions])
@@ -232,14 +250,14 @@ export default function StudentAssignmentPage() {
     }, [maxFileSize, maxFileSizeMB, allowedExtensions, toast])
 
     const handleNewFile = useCallback(() => {
-        const ext = assignment?.language?.file_extension || '.py'
+        const ext = allowedExtensions[0] || assignment?.language?.file_extension || '.py'
         let name = `file${ext}`
         let c = 1
         while (files.some(f => f.name === name)) { name = `file${c}${ext}`; c++ }
         const nf: UploadedFile = { name, content: '', size: 0 }
         setFiles(prev => [...prev, nf])
         setSelectedFile(nf)
-    }, [assignment, files])
+    }, [assignment, files, allowedExtensions])
 
     const removeFile = useCallback((name: string) => {
         setFiles((prev) => prev.filter((f) => f.name !== name))
@@ -332,6 +350,7 @@ export default function StudentAssignmentPage() {
     }
 
     const submitCode = async () => {
+        if (!assignment) return
         setIsSubmitting(true)
         setError(null)
         setSubmitPhase('loading')
@@ -344,6 +363,10 @@ export default function StudentAssignmentPage() {
             await apiClient.createSubmission(assignmentId, fileObjects)
             await queryClient.invalidateQueries({ queryKey: ['submissions', assignmentId] })
             setSubmitPhase('success')
+            // Auto-redirect to course page after 2.5s
+            setTimeout(() => {
+                router.push(`/student/courses/${assignment.course.id}`)
+            }, 2500)
         } catch (err: any) {
             const msg = err?.response?.data?.detail || 'Submission failed'
             setError(msg)
@@ -351,6 +374,15 @@ export default function StudentAssignmentPage() {
             setShowSubmitDialog(false)
         } finally {
             setIsSubmitting(false)
+        }
+    }
+
+    const goToCourse = () => {
+        setShowSubmitDialog(false)
+        if (assignment?.course?.id) {
+            router.push(`/student/courses/${assignment.course.id}`)
+        } else {
+            router.push('/student/courses')
         }
     }
 
@@ -464,6 +496,11 @@ export default function StudentAssignmentPage() {
                             <History className="w-3 h-3" /> History
                             {submissions.length > 0 && <span className="px-1 py-0 text-[9px] bg-[#505050] rounded">{submissions.length}</span>}
                         </button>
+                        <button onClick={() => setRightPanel(rightPanel === 'supplementary' ? null : 'supplementary')}
+                            className={`h-6 px-2 text-[10px] rounded flex items-center gap-1 transition-colors ${rightPanel === 'supplementary' ? 'bg-[#094771] text-white' : 'text-[#cccccc] hover:bg-[#505050]'}`}>
+                            <Paperclip className="w-3 h-3" /> Files
+                            {supplementaryFiles.length > 0 && <span className="px-1 py-0 text-[9px] bg-[#505050] rounded">{supplementaryFiles.length}</span>}
+                        </button>
                         <div className="w-px h-4 bg-[#5a5a5a] mx-1" />
                         <Button onClick={runCode} disabled={isRunning || files.length === 0} size="sm"
                             className="h-6 px-3 text-[10px] bg-[#0e639c] hover:bg-[#1177bb] text-white border-0">
@@ -512,7 +549,7 @@ export default function StudentAssignmentPage() {
                                     <button onClick={() => fileInputRef.current?.click()} className="p-0.5 rounded hover:bg-[#505050]" title="Upload"><UploadIcon className="w-3.5 h-3.5" /></button>
                                 </div>
                             </div>
-                            <input ref={fileInputRef} type="file" multiple hidden accept={allowedExtensions.join(',')} onChange={(e) => handleUpload(e.target.files)} />
+                            <input ref={fileInputRef} type="file" multiple hidden accept={allowedExtensions.join(',')} onChange={(e) => { handleUpload(e.target.files); e.target.value = '' }} />
 
                             <div className="px-2 py-1">
                                 <div className="flex items-center gap-1 px-2 py-1 text-[11px] text-[#cccccc]">
@@ -549,7 +586,8 @@ export default function StudentAssignmentPage() {
                                 )}
                             </div>
                             <div className="px-3 py-2 border-t border-[#3c3c3c] text-[10px] text-[#858585]">
-                                <p>{files.length} file{files.length !== 1 ? 's' : ''} · {allowedExtensions.join(', ')}</p>
+                                <p>{files.length} file{files.length !== 1 ? 's' : ''}</p>
+                                <p className="mt-0.5 text-[#606060]">Allowed: {allowedExtensions.join(', ')} · Max {maxFileSizeMB}MB</p>
                             </div>
                         </div>
                     )}
@@ -644,33 +682,30 @@ export default function StudentAssignmentPage() {
                                                 ) : runResult ? (
                                                     <div className="space-y-3">
                                                         {/* Compilation Status Banner */}
-                                                        <div className={`flex items-center gap-3 p-3 rounded-lg ${
-                                                            runResult.compilation_status === 'Compiled Successfully'
+                                                        <div className={`flex items-center gap-3 p-3 rounded-lg ${runResult.compilation_status === 'Compiled Successfully'
                                                                 ? 'bg-[#0d2818] border border-[#2ea04366]'
                                                                 : runResult.compilation_status === 'Time Exceeds'
-                                                                ? 'bg-[#332b00] border border-[#665500]'
-                                                                : 'bg-[#2d0000] border border-[#5c1e1e]'
-                                                        }`}>
-                                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-                                                                runResult.compilation_status === 'Compiled Successfully'
+                                                                    ? 'bg-[#332b00] border border-[#665500]'
+                                                                    : 'bg-[#2d0000] border border-[#5c1e1e]'
+                                                            }`}>
+                                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${runResult.compilation_status === 'Compiled Successfully'
                                                                     ? 'bg-[#2ea043]/20'
                                                                     : runResult.compilation_status === 'Time Exceeds'
-                                                                    ? 'bg-[#dcdcaa]/20'
-                                                                    : 'bg-[#f44747]/20'
-                                                            }`}>
+                                                                        ? 'bg-[#dcdcaa]/20'
+                                                                        : 'bg-[#f44747]/20'
+                                                                }`}>
                                                                 {runResult.compilation_status === 'Compiled Successfully'
                                                                     ? <CheckCircle2 className="w-5 h-5 text-[#4ec9b0]" />
                                                                     : runResult.compilation_status === 'Time Exceeds'
-                                                                    ? <Clock className="w-5 h-5 text-[#dcdcaa]" />
-                                                                    : <XCircle className="w-5 h-5 text-[#f44747]" />
+                                                                        ? <Clock className="w-5 h-5 text-[#dcdcaa]" />
+                                                                        : <XCircle className="w-5 h-5 text-[#f44747]" />
                                                                 }
                                                             </div>
                                                             <div>
-                                                                <p className={`text-[13px] font-semibold ${
-                                                                    runResult.compilation_status === 'Compiled Successfully' ? 'text-[#4ec9b0]'
-                                                                    : runResult.compilation_status === 'Time Exceeds' ? 'text-[#dcdcaa]'
-                                                                    : 'text-[#f44747]'
-                                                                }`}>
+                                                                <p className={`text-[13px] font-semibold ${runResult.compilation_status === 'Compiled Successfully' ? 'text-[#4ec9b0]'
+                                                                        : runResult.compilation_status === 'Time Exceeds' ? 'text-[#dcdcaa]'
+                                                                            : 'text-[#f44747]'
+                                                                    }`}>
                                                                     {runResult.compilation_status || (runResult.success ? 'Compiled Successfully' : 'Not Compiled Successfully')}
                                                                 </p>
                                                                 {runResult.results.length === 0 && runResult.compilation_status === 'Compiled Successfully' && (
@@ -737,18 +772,16 @@ export default function StudentAssignmentPage() {
                                                     </div>
                                                 ) : runResult && runResult.results.length === 0 ? (
                                                     <div className="text-center py-8 space-y-3">
-                                                        <div className={`w-14 h-14 mx-auto rounded-full flex items-center justify-center ${
-                                                            runResult.compilation_status === 'Compiled Successfully'
+                                                        <div className={`w-14 h-14 mx-auto rounded-full flex items-center justify-center ${runResult.compilation_status === 'Compiled Successfully'
                                                                 ? 'bg-[#2ea043]/20' : 'bg-[#f44747]/20'
-                                                        }`}>
+                                                            }`}>
                                                             {runResult.compilation_status === 'Compiled Successfully'
                                                                 ? <CheckCircle2 className="w-7 h-7 text-[#4ec9b0]" />
                                                                 : <XCircle className="w-7 h-7 text-[#f44747]" />
                                                             }
                                                         </div>
-                                                        <p className={`text-[13px] font-semibold ${
-                                                            runResult.compilation_status === 'Compiled Successfully' ? 'text-[#4ec9b0]' : 'text-[#f44747]'
-                                                        }`}>
+                                                        <p className={`text-[13px] font-semibold ${runResult.compilation_status === 'Compiled Successfully' ? 'text-[#4ec9b0]' : 'text-[#f44747]'
+                                                            }`}>
                                                             {runResult.compilation_status || (runResult.success ? 'Compiled Successfully' : 'Not Compiled Successfully')}
                                                         </p>
                                                         <p className="text-[11px] text-[#858585]">
@@ -782,6 +815,7 @@ export default function StudentAssignmentPage() {
                                     {rightPanel === 'instructions' && <><Info className="w-4 h-4 text-[#dcdcaa]" /> Instructions</>}
                                     {rightPanel === 'rubric' && <><ClipboardList className="w-4 h-4 text-[#c586c0]" /> Rubric</>}
                                     {rightPanel === 'history' && <><History className="w-4 h-4 text-[#4ec9b0]" /> Submissions</>}
+                                    {rightPanel === 'supplementary' && <><Paperclip className="w-4 h-4 text-[#dcdcaa]" /> Supplementary Files</>}
                                 </div>
                                 <button onClick={() => setRightPanel(null)} className="p-1 rounded hover:bg-[#505050] text-[#858585]">
                                     <X className="w-3.5 h-3.5" />
@@ -814,6 +848,12 @@ export default function StudentAssignmentPage() {
                                             <div className="bg-[#332b00] border border-[#665500] p-3 rounded">
                                                 <p className="text-[11px] font-medium text-[#dcdcaa]">Late Policy</p>
                                                 <p className="text-[11px] text-[#cccccc] mt-1">{assignment.late_penalty_per_day}% penalty/day, up to {assignment.max_late_days} days</p>
+                                            </div>
+                                        )}
+                                        {allowedExtensions.length > 0 && (
+                                            <div className="bg-[#1e1e1e] border border-[#3c3c3c] p-3 rounded">
+                                                <p className="text-[11px] font-medium text-[#569cd6]">Allowed File Types</p>
+                                                <p className="text-[11px] text-[#cccccc] mt-1">Only these extensions can be submitted: <code className="px-1 py-0.5 bg-[#333] rounded text-[#dcdcaa]">{allowedExtensions.join(', ')}</code></p>
                                             </div>
                                         )}
                                         {assignment.required_files && assignment.required_files.length > 0 && (
@@ -874,6 +914,42 @@ export default function StudentAssignmentPage() {
                                     </div>
                                 )}
 
+                                {rightPanel === 'supplementary' && (
+                                    <div>
+                                        {supplementaryFiles.length === 0 ? (
+                                            <div className="text-center py-8">
+                                                <Paperclip className="w-10 h-10 mx-auto text-[#505050] mb-3" />
+                                                <p className="text-[#858585]">No supplementary files</p>
+                                                <p className="text-[10px] text-[#606060] mt-1">Your instructor has not added any files.</p>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                <p className="text-[11px] text-[#858585] mb-3">Download reference materials from your instructor.</p>
+                                                {supplementaryFiles.map((f: { filename: string; download_url: string; size?: number }) => (
+                                                    <a
+                                                        key={f.filename}
+                                                        href={f.download_url}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="flex items-center gap-3 p-3 rounded-lg border border-[#3c3c3c] bg-[#1e1e1e] hover:bg-[#2a2d2e] hover:border-[#505050] transition-colors group"
+                                                    >
+                                                        <div className="w-9 h-9 rounded-lg bg-[#094771]/20 flex items-center justify-center shrink-0">
+                                                            <FileCode className="w-4 h-4 text-[#569cd6]" />
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="text-[12px] font-medium text-white truncate">{f.filename}</p>
+                                                            {f.size != null && f.size > 0 && (
+                                                                <p className="text-[10px] text-[#858585]">{(f.size / 1024).toFixed(1)} KB</p>
+                                                            )}
+                                                        </div>
+                                                        <Download className="w-4 h-4 text-[#858585] group-hover:text-[#569cd6] shrink-0" />
+                                                    </a>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
                                 {rightPanel === 'history' && (
                                     <div>
                                         {isLoadingSubs ? (
@@ -899,7 +975,7 @@ export default function StudentAssignmentPage() {
                                                                 {sub.is_late && <span className="text-[9px] px-1 py-0 bg-[#665500] text-[#dcdcaa] rounded">Late</span>}
                                                             </div>
                                                             <span className="text-[14px] font-bold text-white">
-                                                                {sub.final_score !== null ? sub.final_score.toFixed(1) : '—'}
+                                                                {sub.final_score !== null ? sub.final_score.toFixed(1) : '-'}
                                                                 <span className="text-[10px] text-[#858585] font-normal">/{assignment.max_score}</span>
                                                             </span>
                                                         </div>
@@ -950,106 +1026,117 @@ export default function StudentAssignmentPage() {
                 </div>
             )}
 
-            {/* ===== Submit Dialog (Confirm → Loading → Success) ===== */}
-            <Dialog open={showSubmitDialog} onOpenChange={(open) => { if (!open && submitPhase !== 'loading') setShowSubmitDialog(false) }}>
-                <DialogContent className="sm:max-w-md p-0 overflow-hidden border-0">
-                    {submitPhase === 'confirm' && (
-                        <div className="p-6 space-y-4">
-                            <DialogHeader>
-                                <DialogTitle className="text-lg flex items-center gap-2">
-                                    <Send className="w-5 h-5 text-primary" /> Confirm Submission
-                                </DialogTitle>
-                                <DialogDescription className="pt-2">
-                                    Submit <strong>{files.length} file{files.length !== 1 ? 's' : ''}</strong> for grading?
-                                    {maxAttempts > 0 && <span className="block mt-1 text-xs">This will use attempt <strong>{submissions.length + 1}</strong> of <strong>{maxAttempts}</strong>.</span>}
-                                </DialogDescription>
-                            </DialogHeader>
-                            {isOverdue && (
-                                <div className="bg-destructive/10 border border-destructive/30 p-3 rounded-lg">
-                                    <div className="flex items-center gap-2 text-destructive text-sm font-medium"><AlertCircle className="w-4 h-4" /> Late Submission</div>
-                                    <p className="text-xs text-muted-foreground mt-1">
+            {/* ===== Submit Modal (Confirm → Loading → Success) ===== */}
+            <Modal
+                isOpen={showSubmitDialog}
+                onClose={submitPhase === 'loading' ? () => { } : () => setShowSubmitDialog(false)}
+                size="sm"
+            >
+                {submitPhase === 'confirm' && (
+                    <div className="space-y-5">
+                        <div className="text-center">
+                            <div className="w-14 h-14 mx-auto rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                                <Send className="w-7 h-7 text-primary" />
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900">Confirm Submission</h3>
+                            <p className="text-sm text-gray-600 mt-2">
+                                Are you sure you want to submit <strong>{files.length} file{files.length !== 1 ? 's' : ''}</strong> for grading?
+                            </p>
+                            <div className="mt-4 p-4 rounded-lg bg-amber-50 border border-amber-200">
+                                <p className="text-sm font-medium text-amber-800">
+                                    This submission must be your own original work. No AI assistance or plagiarism is allowed.
+                                </p>
+                            </div>
+                        </div>
+                        {isOverdue && (
+                            <div className="rounded-lg bg-red-50 border border-red-200 p-3 flex items-start gap-2">
+                                <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                                <div>
+                                    <p className="text-sm font-medium text-red-800">Late Submission</p>
+                                    <p className="text-xs text-red-700 mt-0.5">
                                         Due date was {dueDate ? format(dueDate, 'MMM dd, yyyy · hh:mm a') : 'N/A'}. A {assignment.late_penalty_per_day}%/day penalty applies.
                                     </p>
                                 </div>
-                            )}
-                            <div className="space-y-2">
-                                <p className="text-sm font-medium">Files:</p>
-                                <div className="max-h-40 overflow-y-auto space-y-1">
-                                    {files.map(f => (
-                                        <div key={f.name} className="flex items-center justify-between p-2 rounded bg-muted/50 text-sm">
-                                            <div className="flex items-center gap-2">
-                                                <span>{getFileIcon(f.name)}</span>
-                                                <span className="font-mono text-xs">{f.name}</span>
-                                            </div>
-                                            <span className="text-xs text-muted-foreground">{(f.size / 1024).toFixed(1)} KB</span>
+                            </div>
+                        )}
+                        {maxAttempts > 0 && (
+                            <p className="text-xs text-gray-500 text-center">
+                                This will use attempt <strong>{submissions.length + 1}</strong> of <strong>{maxAttempts}</strong>.
+                            </p>
+                        )}
+                        <div className="space-y-2">
+                            <p className="text-sm font-medium text-gray-700">Files to submit:</p>
+                            <div className="max-h-32 overflow-y-auto space-y-1 rounded-lg border border-gray-200 p-2">
+                                {files.map(f => (
+                                    <div key={f.name} className="flex items-center justify-between px-2 py-1.5 rounded bg-gray-50 text-sm">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                            <span>{getFileIcon(f.name)}</span>
+                                            <span className="font-mono text-xs truncate">{f.name}</span>
                                         </div>
-                                    ))}
-                                </div>
-                            </div>
-                            <DialogFooter className="gap-2 pt-2">
-                                <Button variant="outline" onClick={() => setShowSubmitDialog(false)}>Cancel</Button>
-                                <Button onClick={submitCode} className="bg-[#862733] hover:bg-[#a03040] text-white">
-                                    <Send className="w-4 h-4 mr-2" /> Submit Now
-                                </Button>
-                            </DialogFooter>
-                        </div>
-                    )}
-
-                    {submitPhase === 'loading' && (
-                        <div className="flex flex-col items-center justify-center py-16 px-8 space-y-6">
-                            <div className="relative">
-                                <div className="w-20 h-20 rounded-full border-4 border-[#862733]/20 border-t-[#862733] animate-spin" />
-                                <div className="absolute inset-0 flex items-center justify-center">
-                                    <Send className="w-7 h-7 text-[#862733]" />
-                                </div>
-                            </div>
-                            <div className="text-center space-y-2">
-                                <h3 className="text-lg font-semibold">Submitting Your Code...</h3>
-                                <p className="text-sm text-muted-foreground">
-                                    Uploading {files.length} file{files.length !== 1 ? 's' : ''} for grading
-                                </p>
-                            </div>
-                            <div className="w-48 h-1.5 bg-muted rounded-full overflow-hidden">
-                                <div className="h-full bg-[#862733] rounded-full animate-pulse" style={{ width: '80%' }} />
-                            </div>
-                        </div>
-                    )}
-
-                    {submitPhase === 'success' && (
-                        <div className="flex flex-col items-center justify-center py-14 px-8 space-y-6">
-                            <div className="relative">
-                                <div className="w-24 h-24 rounded-full bg-[#862733]/10 flex items-center justify-center animate-in zoom-in-50 duration-500">
-                                    <div className="w-16 h-16 rounded-full bg-[#862733]/20 flex items-center justify-center">
-                                        <CheckCircle2 className="w-10 h-10 text-[#862733]" />
+                                        <span className="text-xs text-gray-500 shrink-0">{(f.size / 1024).toFixed(1)} KB</span>
                                     </div>
-                                </div>
-                                <div className="absolute -top-2 -right-2">
-                                    <PartyPopper className="w-8 h-8 text-[#daa520] animate-in spin-in-180 duration-700" />
-                                </div>
-                            </div>
-                            <div className="text-center space-y-2">
-                                <h3 className="text-xl font-bold">Thanks for Submission!</h3>
-                                <p className="text-sm text-muted-foreground max-w-xs">
-                                    Your code has been successfully submitted for grading. You'll see your results once grading is complete.
-                                </p>
-                            </div>
-                            {maxAttempts > 0 && (
-                                <p className="text-xs text-muted-foreground bg-muted px-3 py-1.5 rounded-full">
-                                    Attempt {submissions.length}/{maxAttempts} used
-                                </p>
-                            )}
-                            <div className="flex gap-3 pt-2">
-                                <Button onClick={() => setShowSubmitDialog(false)} className="bg-[#862733] hover:bg-[#a03040] text-white">
-                                    Continue Working
-                                </Button>
-                                <Button onClick={() => router.push('/student/courses')} variant="outline">
-                                    Back to Courses
-                                </Button>
+                                ))}
                             </div>
                         </div>
-                    )}
-                </DialogContent>
-            </Dialog>
+                        <ModalFooter className="gap-3 pt-2">
+                            <Button variant="outline" onClick={() => setShowSubmitDialog(false)}>
+                                Cancel
+                            </Button>
+                            <Button onClick={submitCode} className="bg-primary hover:bg-primary-700 text-white">
+                                <Send className="w-4 h-4 mr-2" /> Submit Now
+                            </Button>
+                        </ModalFooter>
+                    </div>
+                )}
+
+                {submitPhase === 'loading' && (
+                    <div className="flex flex-col items-center justify-center py-12 px-4 space-y-6">
+                        <div className="relative">
+                            <div className="w-16 h-16 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
+                            <div className="absolute inset-0 flex items-center justify-center">
+                                <Send className="w-6 h-6 text-primary" />
+                            </div>
+                        </div>
+                        <div className="text-center space-y-2">
+                            <h3 className="text-lg font-semibold text-gray-900">Submitting Your Code...</h3>
+                            <p className="text-sm text-gray-500">
+                                Uploading {files.length} file{files.length !== 1 ? 's' : ''} for grading
+                            </p>
+                        </div>
+                        <div className="w-40 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                            <div className="h-full bg-primary rounded-full animate-pulse" style={{ width: '75%' }} />
+                        </div>
+                    </div>
+                )}
+
+                {submitPhase === 'success' && (
+                    <div className="flex flex-col items-center justify-center py-8 px-4 space-y-5">
+                        <div className="relative">
+                            <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center">
+                                <CheckCircle2 className="w-10 h-10 text-green-600" />
+                            </div>
+                            <div className="absolute -top-1 -right-1">
+                                <PartyPopper className="w-7 h-7 text-amber-500" />
+                            </div>
+                        </div>
+                        <div className="text-center space-y-1">
+                            <h3 className="text-xl font-bold text-gray-900">Submitted Successfully</h3>
+                            <p className="text-sm text-gray-600 max-w-xs">
+                                Your code has been submitted for grading. You'll see your results once grading is complete.
+                            </p>
+                        </div>
+                        {maxAttempts > 0 && (
+                            <p className="text-xs text-gray-500 bg-gray-100 px-3 py-1.5 rounded-full">
+                                Attempt {submissions.length}/{maxAttempts} used
+                            </p>
+                        )}
+                        <p className="text-xs text-gray-400">Redirecting to course...</p>
+                        <Button onClick={goToCourse} className="bg-primary hover:bg-primary-700 text-white w-full sm:w-auto">
+                            Go to Course
+                        </Button>
+                    </div>
+                )}
+            </Modal>
         </ProtectedRoute>
     )
 }

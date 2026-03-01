@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { InnerHeaderDesign } from '@/components/InnerHeaderDesign';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { DashboardLayout } from '@/components/layouts/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
@@ -122,11 +123,10 @@ export default function StudentSettingsPage() {
         <ProtectedRoute allowedRoles={['STUDENT']}>
             <DashboardLayout>
                 <div className="space-y-6">
-                    {/* Header */}
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-                        <p className="text-gray-500 mt-1">Manage your account settings and preferences</p>
-                    </div>
+                    <InnerHeaderDesign
+                        title="Settings"
+                        subtitle="Manage your account settings and preferences"
+                    />
 
                     {successMessage && (
                         <Alert type="success" title="Success">

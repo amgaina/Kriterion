@@ -22,6 +22,38 @@ router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
 
 
+def _role_for_email(email: str) -> Optional[UserRole]:
+    """Infer allowed role from ULM email domain. Returns None for non-ULM emails."""
+    email_lower = email.lower()
+    if email_lower.endswith("@warhawks.ulm.edu"):
+        return UserRole.STUDENT
+    if email_lower.endswith("@ulm.edu"):
+        return None  # could be FACULTY or ADMIN
+    return None
+
+
+def _validate_email_role(email: str, requested_role: UserRole):
+    """Enforce ULM email-domain ↔ role rules."""
+    email_lower = email.lower()
+    if email_lower.endswith("@warhawks.ulm.edu"):
+        if requested_role != UserRole.STUDENT:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="@warhawks.ulm.edu emails must be registered as STUDENT."
+            )
+    elif email_lower.endswith("@ulm.edu"):
+        if requested_role == UserRole.STUDENT:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="@ulm.edu emails cannot be registered as STUDENT. Use @warhawks.ulm.edu for students."
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only @ulm.edu and @warhawks.ulm.edu email addresses are allowed."
+        )
+
+
 @router.post("/register", response_model=UserSchema, status_code=status.HTTP_201_CREATED)
 def register(
     user_in: UserCreate,
@@ -29,7 +61,8 @@ def register(
     current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
     """Register a new user (admin only)"""
-    # Check if user already exists
+    _validate_email_role(user_in.email, user_in.role)
+
     existing_user = db.query(User).filter(User.email == user_in.email).first()
     if existing_user:
         raise HTTPException(
@@ -37,7 +70,6 @@ def register(
             detail="Email already registered"
         )
     
-    # Check student_id uniqueness if provided
     if user_in.student_id:
         existing_student = db.query(User).filter(User.student_id == user_in.student_id).first()
         if existing_student:
@@ -46,7 +78,6 @@ def register(
                 detail="Student ID already registered"
             )
     
-    # Create user
     user = User(
         email=user_in.email,
         hashed_password=get_password_hash(user_in.password),
@@ -59,11 +90,10 @@ def register(
     db.commit()
     db.refresh(user)
     
-    # Audit log
     audit = AuditLog(
         user_id=user.id,
         event_type="user_registration",
-        description=f"User {user.email} registered"
+        description=f"User {user.email} registered as {user.role.value}"
     )
     db.add(audit)
     db.commit()
@@ -96,9 +126,9 @@ def login(
     user.last_login = datetime.utcnow()
     db.commit()
     
-    # Create tokens
-    access_token = create_access_token(data={"sub": user.id})
-    refresh_token = create_refresh_token(data={"sub": user.id})
+    # Create tokens - include role so frontend middleware can enforce route access
+    access_token = create_access_token(data={"sub": user.id, "role": user.role.value})
+    refresh_token = create_refresh_token(data={"sub": user.id, "role": user.role.value})
     
     # Audit log
     audit = AuditLog(
@@ -112,7 +142,13 @@ def login(
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
-        "token_type": "bearer"
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "role": user.role.value,
+        },
     }
 
 
@@ -144,9 +180,8 @@ def refresh_token(
             detail="User not found or inactive"
         )
     
-    # Create new tokens
-    access_token = create_access_token(data={"sub": user.id})
-    new_refresh_token = create_refresh_token(data={"sub": user.id})
+    access_token = create_access_token(data={"sub": user.id, "role": user.role.value})
+    new_refresh_token = create_refresh_token(data={"sub": user.id, "role": user.role.value})
     
     return {
         "access_token": access_token,

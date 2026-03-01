@@ -11,6 +11,7 @@ from app.core.database import Base
 class UserRole(str, PyEnum):
     STUDENT = "STUDENT"
     FACULTY = "FACULTY"
+    ASSISTANT = "ASSISTANT"
     ADMIN = "ADMIN"
 
 
@@ -44,6 +45,8 @@ class User(Base):
     enrollments = relationship("Enrollment", back_populates="student", cascade="all, delete-orphan",
                               foreign_keys="Enrollment.student_id")
     taught_courses = relationship("Course", back_populates="instructor", foreign_keys="Course.instructor_id")
+    assistant_courses = relationship("CourseAssistant", back_populates="assistant", cascade="all, delete-orphan",
+                                     foreign_keys="CourseAssistant.assistant_id")
     
     # Relationships - Submissions
     submissions = relationship("Submission", back_populates="student", foreign_keys="Submission.student_id",

@@ -91,7 +91,7 @@ const CloseIcon = () => (
 );
 
 const getNavItems = (role: UserRole): NavItem[] => {
-    const baseUrl = role === 'STUDENT' ? '/student' : role === 'FACULTY' ? '/faculty' : '/admin';
+    const baseUrl = role === 'STUDENT' ? '/student' : role === 'FACULTY' ? '/faculty' : role === 'ASSISTANT' ? '/assistant' : '/admin';
 
     if (role === 'STUDENT') {
         return [
@@ -110,10 +110,14 @@ const getNavItems = (role: UserRole): NavItem[] => {
         return [
             { label: 'Dashboard', href: `${baseUrl}/dashboard`, icon: <DashboardIcon /> },
             { label: 'Courses', href: `${baseUrl}/courses`, icon: <BookIcon /> },
-            { label: 'Assignments', href: `${baseUrl}/assignments`, icon: <AssignmentIcon /> },
-            { label: 'Submissions', href: `${baseUrl}/submissions`, icon: <SubmissionIcon /> },
-            { label: 'Grading', href: `${baseUrl}/grading`, icon: <GradeIcon /> },
             { label: 'Reports', href: `${baseUrl}/reports`, icon: <ReportIcon /> },
+        ];
+    }
+
+    if (role === 'ASSISTANT') {
+        return [
+            { label: 'Dashboard', href: `${baseUrl}/dashboard`, icon: <DashboardIcon /> },
+            { label: 'My Courses', href: `${baseUrl}/courses`, icon: <BookIcon /> },
         ];
     }
 
@@ -135,6 +139,8 @@ const getRoleBadgeColor = (role: UserRole) => {
             return 'bg-red-100 text-red-800';
         case 'FACULTY':
             return 'bg-blue-100 text-blue-800';
+        case 'ASSISTANT':
+            return 'bg-amber-100 text-amber-800';
         case 'STUDENT':
             return 'bg-green-100 text-green-800';
         default:
@@ -148,9 +154,7 @@ const getTopNavItems = (role: UserRole) => {
             { label: 'Dashboard', href: '/student/dashboard' },
             { label: 'My Courses', href: '/student/courses' },
             { label: 'Assignments', href: '/student/assignments' },
-            { label: 'Grades', href: '/student/grades' },
-            { label: 'Progress', href: '/student/progress' },
-            { label: 'Schedule', href: '/student/schedule' },
+            { label: 'Grades', href: '/student/grades' }
         ];
     }
 
@@ -158,10 +162,14 @@ const getTopNavItems = (role: UserRole) => {
         return [
             { label: 'Dashboard', href: '/faculty/dashboard' },
             { label: 'Courses', href: '/faculty/courses' },
-            { label: 'Assignments', href: '/faculty/assignments' },
-            { label: 'Submissions', href: '/faculty/submissions' },
-            { label: 'Grading', href: '/faculty/grading' },
             { label: 'Reports', href: '/faculty/reports' },
+        ];
+    }
+
+    if (role === 'ASSISTANT') {
+        return [
+            { label: 'Dashboard', href: '/assistant/dashboard' },
+            { label: 'My Courses', href: '/assistant/courses' },
         ];
     }
 
@@ -249,7 +257,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     }, [pathname]);
 
     return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
             {/* Sidebar (used only for admin; students and faculty use top nav only) */}
             {user.role === 'ADMIN' && (
                 <>
@@ -350,10 +358,10 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             )}
 
             {/* Main Content */}
-            <div className={isAdmin ? 'lg:pl-72' : ''}>
+            <div className={`flex-1 flex flex-col min-h-0 overflow-hidden ${isAdmin ? 'lg:pl-72' : ''}`}>
                 {/* Top Header */}
-                <header className="sticky top-0 z-30 bg-white border-b border-gray-200 shadow-sm">
-                    <div className="px-4 lg:px-6 h-16 flex items-center justify-between">
+                <header className="flex-shrink-0 z-30 bg-white border-b border-gray-200 shadow-sm">
+                    <div className="px-3 sm:px-4 lg:px-6 h-14 sm:h-16 flex items-center justify-between gap-2 min-w-0">
                         {/* Left side */}
                         {isAdmin ? (
                             <button
@@ -363,44 +371,46 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                                 <MenuIcon />
                             </button>
                         ) : (
-                            <Link href={`/${user.role.toLowerCase()}/dashboard`} className="flex items-center gap-3">
-                                <div className="h-10 w-10 overflow-hidden rounded-lg bg-[#862733] flex items-center justify-center">
+                            <Link href={`/${user.role.toLowerCase()}/dashboard`} className="flex items-center gap-2 sm:gap-3 min-w-0 flex-shrink-0">
+                                <div className="h-9 w-9 sm:h-10 sm:w-10 overflow-hidden rounded-lg bg-[#862733] flex items-center justify-center flex-shrink-0">
                                     <Image
                                         src="/logo.png"
                                         alt="Kriterion"
                                         width={28}
                                         height={28}
-                                        className="object-contain"
+                                        className="object-contain w-5 h-5 sm:w-7 sm:h-7"
                                     />
                                 </div>
-                                <span className="text-xl font-bold text-gray-900">Kriterion</span>
+                                <span className="text-base sm:text-xl font-bold text-gray-900 truncate">Kriterion</span>
                             </Link>
                         )}
 
-                        {/* Center - Navigation */}
-                        <nav className="hidden lg:flex items-center gap-1">
-                            {topNavItems.map((item) => {
-                                const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
-                                return (
-                                    <Link
-                                        key={item.href}
-                                        href={item.href}
-                                        onClick={(e) => handleNavClick(e, item.href)}
-                                        className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                                            isActive
-                                                ? 'text-[#862733] bg-[#862733]/10 font-semibold'
-                                                : 'text-gray-700 hover:text-[#862733] hover:bg-gray-50'
-                                        }`}
-                                    >
-                                        {item.label}
-                                    </Link>
-                                );
-                            })}
+                        {/* Center - Navigation (desktop) */}
+                        <nav className="hidden md:flex items-center flex-1 min-w-0 justify-center">
+                            <div className="flex w-full max-w-xl mx-auto">
+                                {topNavItems.map((item) => {
+                                    const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+                                    return (
+                                        <Link
+                                            key={item.href}
+                                            href={item.href}
+                                            onClick={(e) => handleNavClick(e, item.href)}
+                                            className={`flex-1 flex items-center justify-center py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+                                                isActive
+                                                    ? 'text-[#862733] bg-[#862733]/10 font-semibold'
+                                                    : 'text-gray-700 hover:text-[#862733] hover:bg-gray-50'
+                                            }`}
+                                        >
+                                            {item.label}
+                                        </Link>
+                                    );
+                                })}
+                            </div>
                         </nav>
 
                         {/* Right side */}
-                        <div className="flex items-center gap-4">
-                            <button className="relative rounded-full p-2 text-gray-500 hover:bg-gray-100 transition-colors">
+                        <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
+                            <button className="relative rounded-full p-1.5 sm:p-2 text-gray-500 hover:bg-gray-100 transition-colors" aria-label="Notifications">
                                 <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                                 </svg>
@@ -412,17 +422,17 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                                     onClick={() => setUserMenuOpen(!userMenuOpen)}
                                     className="flex items-center gap-3 rounded-lg p-2 hover:bg-gray-100 transition-colors"
                                 >
-                                    <div className="flex-1 text-right hidden sm:block min-w-0">
+                                    <div className="flex-1 text-right hidden sm:block min-w-0 max-w-[140px] md:max-w-none">
                                         <p className="text-sm font-semibold text-gray-900 truncate">{user.full_name}</p>
-                                        <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                                        <p className="text-xs text-gray-500 truncate hidden sm:block">{user.email}</p>
                                     </div>
-                                    <div className="h-10 w-10 rounded-full bg-[#862733] flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
+                                    <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-[#862733] flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
                                         {user.full_name?.charAt(0).toUpperCase() || 'U'}
                                     </div>
                                 </button>
 
                                 {userMenuOpen && (
-                                    <div className="absolute right-0 mt-2 w-72 rounded-lg border border-gray-200 bg-white shadow-lg z-50">
+                                    <div className="absolute right-0 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-lg border border-gray-200 bg-white shadow-lg z-50">
                                         <div className="p-4 text-center border-b border-gray-200">
                                             <div className="h-16 w-16 mx-auto mb-3 rounded-full bg-[#862733] flex items-center justify-center text-white text-2xl font-semibold">
                                                 {user.full_name?.charAt(0).toUpperCase() || 'U'}
@@ -430,7 +440,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                                             <p className="text-sm font-semibold text-gray-900">{user.full_name}</p>
                                             <p className="text-xs text-gray-500 mt-1 break-words">{user.email}</p>
                                             <span className="inline-block mt-3 px-3 py-1 bg-[#862733] text-white text-xs font-medium rounded-full">
-                                                {user.role === 'FACULTY' ? 'Faculty' : user.role === 'STUDENT' ? 'Student' : 'Admin'}
+                                                {user.role === 'FACULTY' ? 'Faculty' : user.role === 'STUDENT' ? 'Student' : user.role === 'ASSISTANT' ? 'Grading Assistant' : 'Admin'}
                                             </span>
                                         </div>
 
@@ -473,8 +483,11 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                         </div>
                     </div>
 
-                    <div className="lg:hidden border-t border-gray-200 bg-gray-50 overflow-x-auto">
-                        <nav className="flex gap-1 p-4">
+                    <div className="md:hidden border-t border-gray-200 bg-gray-50/80">
+                        <nav
+                            className="grid gap-2 px-3 py-2.5"
+                            style={{ gridTemplateColumns: `repeat(${topNavItems.length}, minmax(0, 1fr))` }}
+                        >
                             {topNavItems.map((item) => {
                                 const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
                                 return (
@@ -482,9 +495,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                                         key={item.href}
                                         href={item.href}
                                         onClick={(e) => handleNavClick(e, item.href)}
-                                        className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
+                                        className={`flex items-center justify-center py-2.5 px-3 rounded-lg text-xs sm:text-sm font-medium transition-all min-h-[40px] ${
                                             isActive
-                                                ? 'text-[#862733] bg-white font-semibold'
+                                                ? 'text-white bg-[#862733] shadow-sm'
                                                 : 'text-gray-600 hover:text-[#862733] hover:bg-white'
                                         }`}
                                     >
@@ -499,7 +512,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 {/* Logout Confirmation Modal */}
                 {showLogoutConfirm && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 animate-in fade-in duration-200">
-                        <div className="bg-white rounded-2xl shadow-2xl p-8 w-96 animate-in zoom-in duration-200">
+                        <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-[calc(100vw-2rem)] max-w-sm animate-in zoom-in duration-200">
                             {/* Logo/Avatar */}
                             <div className="flex justify-center mb-6">
                                 <div className="h-12 w-12 rounded-full bg-[#862733] flex items-center justify-center text-white text-lg font-bold">
@@ -539,11 +552,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 )}
 
                 {/* Page Content */}
-                <main className="p-4 lg:p-6">
-                    <div className="mx-auto max-w-7xl w-full">
-                        <div className={`bg-white/90 dark:bg-[#0b0b0b]/80 rounded-2xl shadow-sm p-6 motion-reduce:transition-none transition-all duration-500 ease-[cubic-bezier(.2,.9,.2,1)] transform will-change-transform will-change-opacity ${contentVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 -translate-y-2 scale-98'}`}>
-                            {children}
-                        </div>
+                <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 py-3 sm:px-5 sm:py-4 lg:px-6 lg:py-5">
+                    <div className={`h-full motion-reduce:transition-none transition-all duration-500 ease-[cubic-bezier(.2,.9,.2,1)] transform will-change-transform will-change-opacity ${contentVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 -translate-y-2 scale-98'}`}>
+                        {children}
                     </div>
                 </main>
             </div>

@@ -181,7 +181,7 @@ class RubricCategory(Base):
     
     name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
-    weight = Column(Float, default=1.0)  # Relative weight within rubric
+    weight = Column(Float, default=100.0)  # Relative weight within rubric
     order = Column(Integer, default=0)
     
     # Relationships

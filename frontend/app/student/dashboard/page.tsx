@@ -1,35 +1,48 @@
 'use client';
 
-import React, { useState } from 'react';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { DashboardLayout } from '@/components/layouts/DashboardLayout';
+import { useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
+import { format, isPast, isWithinInterval, addDays } from 'date-fns';
 import Link from 'next/link';
-import { format, formatDistanceToNow, isPast, isWithinInterval, addDays } from 'date-fns';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
-import { StatsCard } from '@/components/ui/stats-card';
-import { DashboardCalendar } from '@/components/dashboard/DashboardCalendar';
 import {
     BookOpen,
     FileCode,
     Award,
     Clock,
-    TrendingUp,
-    CheckCircle,
     ArrowRight,
-    Zap,
-    ChevronRight
+    CalendarDays,
+    Loader2,
 } from 'lucide-react';
+
+interface StudentCourse {
+    id: number;
+    code: string;
+    name: string;
+    semester?: string;
+    year?: number;
+    assignments_count?: number;
+}
+
+interface StudentAssignment {
+    id: number;
+    title: string;
+    due_date: string;
+    course?: { id: number; code: string; name: string };
+    course_name?: string;
+}
+
+interface DashboardStats {
+    enrolled_courses?: number;
+    total_submissions?: number;
+    pending_assignments?: number;
+    average_score?: number;
+}
 
 export default function StudentDashboardPage() {
     const { user } = useAuth();
-
-    const { data: stats, isLoading: statsLoading } = useQuery({
+    const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
         queryKey: ['student-stats'],
         queryFn: () => apiClient.getDashboardStats(),
     });
@@ -44,331 +57,294 @@ export default function StudentDashboardPage() {
         queryFn: () => apiClient.getAssignments(),
     });
 
-    // Mock data for demonstration
-    const mockStats = {
-        enrolled_courses: 4,
-        total_submissions: 28,
-        pending_assignments: 3,
-        average_score: 85,
-        streak_days: 7,
-    };
+    const firstName = user?.full_name?.split(' ')[0] || 'Student';
+    const greeting = useMemo(() => {
+        const hour = new Date().getHours();
+        if (hour < 12) return 'Good morning';
+        if (hour < 17) return 'Good afternoon';
+        return 'Good evening';
+    }, []);
 
-    const mockUpcomingAssignments = [
-        { id: 1, title: 'Binary Search Implementation', course_name: 'Data Structures', due_date: new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString(), status: 'pending' },
-        { id: 2, title: 'REST API Project', course_name: 'Web Development', due_date: new Date(Date.now() + 1000 * 60 * 60 * 48).toISOString(), status: 'pending' },
-        { id: 3, title: 'Sorting Algorithms Quiz', course_name: 'Algorithms', due_date: new Date(Date.now() + 1000 * 60 * 60 * 72).toISOString(), status: 'pending' },
-    ];
+    // Published assignments with due dates for calendar and list
+    const publishedAssignments = useMemo(() => {
+        return (assignments as StudentAssignment[]).filter((a: any) => a.is_published !== false);
+    }, [assignments]);
 
-    const mockCourses = [
-        { id: 1, name: 'Data Structures', code: 'CS201', instructor_name: 'Dr. Smith', progress: 75, assignments_completed: 6, total_assignments: 8 },
-        { id: 2, name: 'Web Development', code: 'CS301', instructor_name: 'Prof. Johnson', progress: 60, assignments_completed: 3, total_assignments: 5 },
-        { id: 3, name: 'Algorithms', code: 'CS202', instructor_name: 'Dr. Williams', progress: 45, assignments_completed: 4, total_assignments: 9 },
-        { id: 4, name: 'Database Systems', code: 'CS303', instructor_name: 'Prof. Brown', progress: 90, assignments_completed: 9, total_assignments: 10 },
-    ];
-
-    const mockRecentGrades = [
-        { id: 1, title: 'Linked List Operations', course: 'Data Structures', score: 92, max_score: 100 },
-        { id: 2, title: 'SQL Queries Lab', course: 'Database Systems', score: 88, max_score: 100 },
-        { id: 3, title: 'React Components', course: 'Web Development', score: 95, max_score: 100 },
-    ];
-
-    const displayStats = stats || mockStats;
-    const displayAssignments = assignments.length > 0 ? assignments : mockUpcomingAssignments;
-    const displayCourses = courses.length > 0 ? courses : mockCourses;
-
-    const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-
-    const highlightDates = displayAssignments
-        .map((assignment: any) => assignment.due_date)
-        .filter((date: string | undefined | null) => Boolean(date));
-
-    const filteredAssignments = selectedDate
-        ? displayAssignments.filter((assignment: any) => {
-              const raw = assignment.due_date;
-              if (!raw) return false;
-              const due = new Date(raw);
-              if (isNaN(due.getTime())) return false;
-              return due.toDateString() === selectedDate.toDateString();
-          })
-        : displayAssignments;
-
-    const assignmentsToShow = (selectedDate ? filteredAssignments : displayAssignments).slice(0, 4);
+    const pendingCount = stats?.pending_assignments ?? 0;
 
     const getTimeRemaining = (dueDate: string) => {
         const due = new Date(dueDate);
         if (isPast(due)) return { text: 'Overdue', urgent: true };
-        const distance = formatDistanceToNow(due, { addSuffix: true });
         const isUrgent = isWithinInterval(due, { start: new Date(), end: addDays(new Date(), 1) });
-        return { text: distance, urgent: isUrgent };
+        const text = format(due, 'MMM d');
+        return { text, urgent: isUrgent };
     };
 
     return (
-        <ProtectedRoute allowedRoles={['STUDENT']}>
-            <DashboardLayout>
-                <div className="space-y-6">
-                    {/* Welcome Section */}
-                    <div className="bg-gradient-to-r from-[#862733] to-[#a13040] rounded-xl p-6 text-white">
-                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                            <div>
-                                <h1 className="text-2xl font-bold">
-                                    Welcome back, {user?.full_name?.split(' ')[0] || 'Student'}! 👋
-                                </h1>
-                                <p className="text-white/80 mt-1">
-                                    You have {displayStats.pending_assignments || 3} assignments due this week.
-                                </p>
-                            </div>
-                            <div className="flex items-center gap-4">    
-                                <Link href="/student/assignments">
-                                    <Button className="bg-white text-[#862733] hover:bg-white/90">
-                                        View Assignments
-                                        <ArrowRight className="w-4 h-4 ml-2" />
-                                    </Button>
-                                </Link>
-                            </div>
-                        </div>
+        <div className="flex flex-col gap-4 h-full min-h-0">
+            {/* Welcome banner - compact, same as faculty */}
+            <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-primary to-primary-700 px-5 py-4 text-white">
+                <div className="absolute -top-8 -right-8 w-32 h-32 bg-white/5 rounded-full" />
+                <div className="relative flex items-center justify-between">
+                    <div>
+                        <h1 className="text-lg font-bold leading-tight">
+                            {greeting}, {firstName}
+                        </h1>
+                        <p className="text-xs text-white/70 mt-0.5">
+                            {statsLoading
+                                ? 'Loading...'
+                                : pendingCount > 0
+                                    ? `${pendingCount} assignment${pendingCount > 1 ? 's' : ''} due soon`
+                                    : 'No pending assignments'}
+                        </p>
                     </div>
+                    {!statsLoading && pendingCount > 0 && (
+                        <Link
+                            href="/student/assignments"
+                            className="hidden sm:flex items-center gap-1.5 text-xs bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg transition-colors"
+                        >
+                            View assignments <ArrowRight className="w-3 h-3" />
+                        </Link>
+                    )}
+                </div>
+            </div>
 
-                    {/* Stats Cards */}
-                    <div className="flex justify-center">
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-6xl">
-                            <StatsCard
-                                title="Enrolled Courses"
-                                value={statsLoading ? '...' : displayStats.enrolled_courses}
-                                icon={BookOpen}
-                                variant="primary"
-                            />
-                            <StatsCard
-                                title="Submissions"
-                                value={statsLoading ? '...' : displayStats.total_submissions}
-                                icon={FileCode}
-                                variant="success"
-                            />
-                            <StatsCard
-                                title="Pending"
-                                value={statsLoading ? '...' : displayStats.pending_assignments || 3}
-                                icon={Clock}
-                                variant="warning"
-                            />
-                            <StatsCard
-                                title="Average Score"
-                                value={statsLoading ? '...' : `${displayStats.average_score}%`}
-                                icon={Award}
-                                variant="default"
-                            />
-                        </div>
+            {/* Stats row - same layout as faculty */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+                <StatTile
+                    label="Enrolled"
+                    value={stats?.enrolled_courses ?? courses?.length ?? 0}
+                    icon={BookOpen}
+                    loading={statsLoading && coursesLoading}
+                    color="text-blue-600"
+                    bg="bg-blue-50"
+                    sub="courses"
+                />
+                <StatTile
+                    label="Assignments"
+                    value={publishedAssignments.length}
+                    icon={FileCode}
+                    loading={assignmentsLoading}
+                    color="text-emerald-600"
+                    bg="bg-emerald-50"
+                    sub="available"
+                />
+                <StatTile
+                    label="Pending"
+                    value={stats?.pending_assignments ?? 0}
+                    icon={Clock}
+                    loading={statsLoading}
+                    color="text-amber-600"
+                    bg="bg-amber-50"
+                    highlight={!!stats?.pending_assignments && stats.pending_assignments > 0}
+                    sub="to complete"
+                />
+                <StatTile
+                    label="Avg Score"
+                    value={stats?.average_score ?? 0}
+                    icon={Award}
+                    loading={statsLoading}
+                    color="text-violet-600"
+                    bg="bg-violet-50"
+                    sub="%"
+                />
+            </div>
+
+            {/* Two-column: Courses + Upcoming Assignments (same layout as faculty) */}
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 flex-1 min-h-0 overflow-hidden">
+                {/* My Courses */}
+                <div className="lg:col-span-3 rounded-xl border border-gray-100 bg-white overflow-hidden flex flex-col">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                        <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                            <BookOpen className="w-4 h-4 text-primary" />
+                            My Courses
+                        </h2>
+                        <Link
+                            href="/student/courses"
+                            className="text-[11px] text-primary hover:underline flex items-center gap-0.5"
+                        >
+                            View all <ArrowRight className="w-3 h-3" />
+                        </Link>
                     </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        {/* Upcoming Assignments */}
-                        <Card className="lg:col-span-2">
-                            <CardHeader className="flex flex-row items-center justify-between pb-2">
-                                <div>
-                                    <CardTitle className="flex items-center gap-2">
-                                        <Clock className="w-5 h-5 text-[#862733]" />
-                                        Upcoming Assignments
-                                    </CardTitle>
-                                    <CardDescription>
-                                        {selectedDate
-                                            ? `Assignments due on ${format(selectedDate, 'MMM d, yyyy')}`
-                                            : 'Assignments due soon'}
-                                    </CardDescription>
-                                </div>
-                                <Link href="/student/assignments">
-                                    <Button variant="ghost" size="sm">
-                                        View All
-                                        <ChevronRight className="w-4 h-4 ml-1" />
-                                    </Button>
-                                </Link>
-                            </CardHeader>
-                            <CardContent>
-                                {assignmentsLoading ? (
-                                    <div className="text-center py-8 text-gray-500">Loading...</div>
-                                ) : (
-                                    <div className="space-y-3">
-                                        {assignmentsToShow.map((assignment: any) => {
-                                            const timeInfo = getTimeRemaining(assignment.due_date);
-                                            return (
-                                                <Link
-                                                    key={assignment.id}
-                                                    href={`/student/assignments/${assignment.id}`}
-                                                    className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors group"
-                                                >
-                                                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${timeInfo.urgent ? 'bg-red-100' : 'bg-blue-100'}`}>
-                                                        <FileCode className={`w-5 h-5 ${timeInfo.urgent ? 'text-red-600' : 'text-blue-600'}`} />
-                                                    </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="font-medium text-gray-900 truncate">{assignment.title}</p>
-                                                        <p className="text-sm text-gray-500">{assignment.course_name || assignment.course?.name}</p>
-                                                    </div>
-                                                    <Badge variant={timeInfo.urgent ? 'danger' : 'warning'}>{timeInfo.text}</Badge>
-                                                    <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-gray-600" />
-                                                </Link>
-                                            );
-                                        })}
-                                        {(selectedDate ? filteredAssignments.length : displayAssignments.length) === 0 && (
-                                            <div className="text-center py-8 text-gray-500">
-                                                <CheckCircle className="w-12 h-12 mx-auto mb-3 text-green-500" />
-                                                <p>All caught up! No pending assignments.</p>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </CardContent>
-                        </Card>
-
-                        {/* Calendar + Recent Grades (stacked in right column) */}
-                        <div className="space-y-4">
-                            <DashboardCalendar
-                                highlightDates={highlightDates}
-                                selectedDate={selectedDate}
-                                onSelectDate={setSelectedDate}
-                            />
-
-                            {/* Recent Grades (moved below calendar) */}
-                            <Card>
-                                <CardHeader className="pb-2">
-                                    <CardTitle className="flex items-center gap-2">
-                                        <Award className="w-5 h-5 text-[#862733]" />
-                                        Recent Grades
-                                    </CardTitle>
-                                    <CardDescription>Your latest results</CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="space-y-4">
-                                        {mockRecentGrades.map((grade) => (
-                                            <div key={grade.id} className="p-3 bg-gray-50 rounded-lg">
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <p className="font-medium text-gray-900 text-sm truncate flex-1">
-                                                        {grade.title}
-                                                    </p>
-                                                    <Badge
-                                                        variant={
-                                                            grade.score >= 90
-                                                                ? 'success'
-                                                                : grade.score >= 70
-                                                                ? 'warning'
-                                                                : 'danger'
-                                                        }
-                                                    >
-                                                        {grade.score}%
-                                                    </Badge>
-                                                </div>
-                                                <p className="text-xs text-gray-500">{grade.course}</p>
-                                                <Progress
-                                                    value={grade.score}
-                                                    max={grade.max_score}
-                                                    size="sm"
-                                                    variant={
-                                                        grade.score >= 90
-                                                            ? 'success'
-                                                            : grade.score >= 70
-                                                            ? 'warning'
-                                                            : 'danger'
-                                                    }
-                                                    className="mt-2"
-                                                />
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <Link href="/student/grades">
-                                        <Button variant="outline" className="w-full mt-4">
-                                            View All Grades
-                                        </Button>
-                                    </Link>
-                                </CardContent>
-                            </Card>
-                        </div>
-                    </div>
-
-                    {/* My Courses */}
-                    <Card>
-                        <CardHeader className="flex flex-row items-center justify-between pb-2">
-                            <div>
-                                <CardTitle className="flex items-center gap-2">
-                                    <BookOpen className="w-5 h-5 text-[#862733]" />
-                                    My Courses
-                                </CardTitle>
-                                <CardDescription>Track your progress</CardDescription>
+                    <div className="flex-1 overflow-y-auto">
+                        {coursesLoading ? (
+                            <div className="flex justify-center items-center py-10">
+                                <Loader2 className="w-5 h-5 animate-spin text-gray-300" />
                             </div>
-                            <Link href="/student/courses">
-                                <Button variant="ghost" size="sm">View All<ChevronRight className="w-4 h-4 ml-1" /></Button>
-                            </Link>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {displayCourses.slice(0, 4).map((course: any) => (
+                        ) : !courses?.length ? (
+                            <div className="flex flex-col items-center justify-center py-10 text-gray-400 text-xs">
+                                <BookOpen className="w-8 h-8 mb-2 text-gray-200" />
+                                No enrolled courses
+                            </div>
+                        ) : (
+                            <div className="divide-y divide-gray-50">
+                                {(courses as StudentCourse[]).map((course) => (
                                     <Link
                                         key={course.id}
                                         href={`/student/courses/${course.id}`}
-                                        className="p-4 border border-gray-200 rounded-lg hover:border-[#862733]/30 hover:shadow-sm transition-all group"
+                                        className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/80 transition-colors group"
                                     >
-                                        <div className="flex items-start justify-between mb-3">
-                                            <div>
-                                                <h3 className="font-medium text-gray-900 group-hover:text-[#862733]">{course.name}</h3>
-                                                <p className="text-sm text-gray-500">{course.code}</p>
-                                            </div>
-                                            <Badge variant="outline">{course.progress}%</Badge>
+                                        <div className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-xs font-bold flex-shrink-0">
+                                            {course.code?.slice(0, 2) || '??'}
                                         </div>
-                                        <Progress value={course.progress} size="sm" className="mb-2" />
-                                        <div className="flex items-center justify-between text-sm text-gray-500">
-                                            <span>{course.instructor_name || course.instructor?.full_name}</span>
-                                            <span>{course.assignments_completed}/{course.total_assignments} done</span>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium text-gray-900 truncate group-hover:text-primary transition-colors">
+                                                {course.name}
+                                            </p>
+                                            <p className="text-[11px] text-gray-400 flex items-center gap-1.5">
+                                                {course.code}
+                                                {course.semester && course.year && (
+                                                    <span className="text-[10px] text-gray-400">
+                                                        {course.semester} {course.year}
+                                                    </span>
+                                                )}
+                                            </p>
+                                        </div>
+                                        <div className="flex items-center gap-4 flex-shrink-0">
+                                            {course.assignments_count !== undefined && (
+                                                <span className="hidden sm:flex items-center gap-1 text-xs text-gray-500">
+                                                    <FileCode className="w-3 h-3" />
+                                                    {course.assignments_count}
+                                                </span>
+                                            )}
+                                            <ArrowRight className="w-3.5 h-3.5 text-gray-200 group-hover:text-primary transition-colors" />
                                         </div>
                                     </Link>
                                 ))}
                             </div>
-                        </CardContent>
-                    </Card>
-
-                    {/* Quick Actions */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <Link href="/student/assignments">
-                            <Card className="hover:shadow-md transition-shadow cursor-pointer group">
-                                <CardContent className="p-4 text-center">
-                                    <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-blue-100 flex items-center justify-center group-hover:bg-blue-200 transition-colors">
-                                        <FileCode className="w-6 h-6 text-blue-600" />
-                                    </div>
-                                    <p className="font-medium text-gray-900">Start Assignment</p>
-                                    <p className="text-sm text-gray-500">Begin coding</p>
-                                </CardContent>
-                            </Card>
-                        </Link>
-                        <Link href="/student/grades">
-                            <Card className="hover:shadow-md transition-shadow cursor-pointer group">
-                                <CardContent className="p-4 text-center">
-                                    <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-green-100 flex items-center justify-center group-hover:bg-green-200 transition-colors">
-                                        <Award className="w-6 h-6 text-green-600" />
-                                    </div>
-                                    <p className="font-medium text-gray-900">View Grades</p>
-                                    <p className="text-sm text-gray-500">Check results</p>
-                                </CardContent>
-                            </Card>
-                        </Link>
-                        <Link href="/student/progress">
-                            <Card className="hover:shadow-md transition-shadow cursor-pointer group">
-                                <CardContent className="p-4 text-center">
-                                    <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-purple-100 flex items-center justify-center group-hover:bg-purple-200 transition-colors">
-                                        <TrendingUp className="w-6 h-6 text-purple-600" />
-                                    </div>
-                                    <p className="font-medium text-gray-900">My Progress</p>
-                                    <p className="text-sm text-gray-500">Track learning</p>
-                                </CardContent>
-                            </Card>
-                        </Link>
-                        <Link href="/student/help">
-                            <Card className="hover:shadow-md transition-shadow cursor-pointer group">
-                                <CardContent className="p-4 text-center">
-                                    <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-yellow-100 flex items-center justify-center group-hover:bg-yellow-200 transition-colors">
-                                        <Zap className="w-6 h-6 text-yellow-600" />
-                                    </div>
-                                    <p className="font-medium text-gray-900">Get Help</p>
-                                    <p className="text-sm text-gray-500">Support center</p>
-                                </CardContent>
-                            </Card>
-                        </Link>
+                        )}
                     </div>
                 </div>
-            </DashboardLayout>
-        </ProtectedRoute>
+
+                {/* Upcoming Assignments - same structure as faculty's "Allowed Languages" panel */}
+                <div className="lg:col-span-2 rounded-xl border border-gray-100 bg-white overflow-hidden flex flex-col">
+                    <div className="px-4 py-3 border-b border-gray-100">
+                        <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                            <Clock className="w-4 h-4 text-primary" />
+                            Upcoming Assignments
+                        </h2>
+                        <p className="text-[11px] text-gray-400 mt-0.5">Due soon</p>
+                    </div>
+                    <div className="flex-1 overflow-y-auto">
+                        {assignmentsLoading ? (
+                            <div className="flex justify-center items-center py-10">
+                                <Loader2 className="w-5 h-5 animate-spin text-gray-300" />
+                            </div>
+                        ) : publishedAssignments.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-10 text-gray-400 text-xs">
+                                <FileCode className="w-8 h-8 mb-2 text-gray-200" />
+                                No upcoming assignments
+                            </div>
+                        ) : (
+                            <div className="divide-y divide-gray-50">
+                                {publishedAssignments.slice(0, 8).map((assignment: StudentAssignment) => {
+                                    const timeInfo = getTimeRemaining(assignment.due_date);
+                                    const courseName =
+                                        assignment.course?.name || assignment.course_name || '';
+                                    return (
+                                        <Link
+                                            key={assignment.id}
+                                            href={`/student/assignments/${assignment.id}`}
+                                            className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/80 transition-colors group"
+                                        >
+                                            <div
+                                                className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${timeInfo.urgent ? 'bg-amber-50' : 'bg-gray-50'
+                                                    }`}
+                                            >
+                                                <FileCode
+                                                    className={`w-4 h-4 ${timeInfo.urgent ? 'text-amber-600' : 'text-gray-500'
+                                                        }`}
+                                                />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium text-gray-900 truncate group-hover:text-primary transition-colors">
+                                                    {assignment.title}
+                                                </p>
+                                                <p className="text-[11px] text-gray-400 truncate">
+                                                    {courseName}
+                                                </p>
+                                            </div>
+                                            <span
+                                                className={`text-[10px] font-medium flex-shrink-0 ${timeInfo.urgent ? 'text-amber-600' : 'text-gray-500'
+                                                    }`}
+                                            >
+                                                {timeInfo.text}
+                                            </span>
+                                            <ArrowRight className="w-3 h-3 text-gray-200 group-hover:text-primary transition-colors flex-shrink-0" />
+                                        </Link>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Quick links row - same style as faculty */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 flex-shrink-0">
+                {[
+                    { label: 'Courses', href: '/student/courses', icon: BookOpen, grad: 'from-blue-500 to-blue-600' },
+                    { label: 'Assignments', href: '/student/assignments', icon: FileCode, grad: 'from-emerald-500 to-emerald-600' },
+                    { label: 'Grades', href: '/student/grades', icon: Award, grad: 'from-amber-500 to-amber-600' },
+                    { label: 'Progress', href: '/student/progress', icon: CalendarDays, grad: 'from-violet-500 to-violet-600' },
+                ].map((a) => (
+                    <Link key={a.href} href={a.href}>
+                        <div className="group flex items-center gap-2.5 rounded-lg border border-gray-100 bg-white px-3 py-2.5 hover:border-gray-200 hover:shadow-sm transition-all">
+                            <div
+                                className={`w-7 h-7 rounded-md bg-gradient-to-br ${a.grad} flex items-center justify-center flex-shrink-0`}
+                            >
+                                <a.icon className="w-3.5 h-3.5 text-white" />
+                            </div>
+                            <span className="text-xs font-medium text-gray-700 group-hover:text-primary transition-colors">
+                                {a.label}
+                            </span>
+                            <ArrowRight className="w-3 h-3 text-gray-200 group-hover:text-primary ml-auto flex-shrink-0 transition-colors" />
+                        </div>
+                    </Link>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function StatTile({
+    label,
+    value,
+    icon: Icon,
+    loading,
+    color,
+    bg,
+    highlight,
+    sub,
+}: {
+    label: string;
+    value?: number;
+    icon: React.ElementType;
+    loading: boolean;
+    color: string;
+    bg: string;
+    highlight?: boolean;
+    sub?: string;
+}) {
+    return (
+        <div
+            className={`rounded-xl border px-3.5 py-3 ${highlight ? 'border-amber-200 bg-amber-50/30' : 'border-gray-100 bg-white'
+                }`}
+        >
+            <div className="flex items-center justify-between mb-1">
+                <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">{label}</p>
+                <div className={`w-7 h-7 rounded-md flex items-center justify-center ${bg}`}>
+                    <Icon className={`w-3.5 h-3.5 ${color}`} />
+                </div>
+            </div>
+            <p className={`text-xl font-bold ${highlight ? 'text-amber-700' : 'text-gray-900'}`}>
+                {loading ? (
+                    <span className="inline-block w-6 h-6 bg-gray-100 rounded animate-pulse" />
+                ) : (
+                    value ?? 0
+                )}
+            </p>
+            {sub && <p className="text-[10px] text-gray-400 mt-0.5">{sub}</p>}
+        </div>
     );
 }

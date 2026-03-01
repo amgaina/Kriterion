@@ -1,6 +1,6 @@
 from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from app.models.course import CourseStatus, EnrollmentStatus
 
 
@@ -11,11 +11,16 @@ class CourseBase(BaseModel):
     section: Optional[str] = None
     semester: str
     year: int
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
     color: Optional[str] = None
 
 
 class CourseCreate(CourseBase):
     instructor_id: Optional[int] = None
+    status: Optional[str] = None  # "draft", "active" (published), or "archived"
+    allow_late_submissions: Optional[bool] = True
+    default_late_penalty: Optional[float] = Field(default=10.0, ge=0, le=100)  # percentage per day
 
 
 class CourseUpdate(BaseModel):
@@ -26,11 +31,13 @@ class CourseUpdate(BaseModel):
     section: Optional[str] = None
     semester: Optional[str] = None
     year: Optional[int] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
     status: Optional[CourseStatus] = None
     is_active: Optional[bool] = None
     color: Optional[str] = None
     allow_late_submissions: Optional[bool] = None
-    default_late_penalty: Optional[float] = None
+    default_late_penalty: Optional[float] = Field(default=None, ge=0, le=100)
 
 
 class Course(CourseBase):
@@ -38,6 +45,8 @@ class Course(CourseBase):
     instructor_id: int
     status: CourseStatus
     is_active: bool
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
     allow_late_submissions: bool
     default_late_penalty: float
     created_at: datetime

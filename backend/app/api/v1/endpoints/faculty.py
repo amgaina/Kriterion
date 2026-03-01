@@ -1,7 +1,7 @@
 """
 Faculty Endpoints - Course Management, Grading, Analytics
 """
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from sqlalchemy.orm import Session
@@ -28,9 +28,6 @@ class FacultyDashboardStats(BaseModel):
     total_students: int
     total_assignments: int
     pending_grading: int
-    average_class_score: Optional[float]
-    submissions_this_week: int
-    flagged_submissions: int
 
 class CourseDetailResponse(BaseModel):
     id: int
@@ -40,9 +37,8 @@ class CourseDetailResponse(BaseModel):
     section: Optional[str]
     semester: Optional[str]
     year: Optional[int]
-    student_count: int
-    assignment_count: int
-    average_score: Optional[float]
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
     status: str
     is_active: bool
 
@@ -117,64 +113,134 @@ def get_faculty_dashboard(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.FACULTY]))
 ):
-    """Get faculty dashboard statistics"""
-    # Get courses taught
-    courses = db.query(Course).filter(Course.instructor_id == current_user.id).all()
-    course_ids = [c.id for c in courses]
-    
-    total_courses = len(courses)
-    
-    # Count total students
-    total_students = db.query(Enrollment).filter(
-        Enrollment.course_id.in_(course_ids),
-        Enrollment.status == EnrollmentStatus.ACTIVE
-    ).count()
-    
-    # Count assignments
-    total_assignments = db.query(Assignment).filter(
-        Assignment.course_id.in_(course_ids)
-    ).count()
-    
-    # Get assignment IDs for submissions query
-    assignment_ids = [a.id for a in db.query(Assignment).filter(
-        Assignment.course_id.in_(course_ids)
-    ).all()]
-    
-    # Count pending grading
-    pending_grading = db.query(Submission).filter(
-        Submission.assignment_id.in_(assignment_ids),
-        Submission.status.in_([SubmissionStatus.PENDING, SubmissionStatus.PROCESSING])
-    ).count()
-    
-    # Calculate average class score
-    avg_result = db.query(func.avg(Submission.final_score)).filter(
-        Submission.assignment_id.in_(assignment_ids),
-        Submission.final_score.isnot(None)
-    ).scalar()
-    average_class_score = float(avg_result) if avg_result else None
-    
-    # Submissions this week
-    week_ago = datetime.utcnow() - timedelta(days=7)
-    submissions_this_week = db.query(Submission).filter(
-        Submission.assignment_id.in_(assignment_ids),
-        Submission.submitted_at >= week_ago
-    ).count()
-    
-    # Flagged submissions
-    flagged_submissions = db.query(Submission).filter(
-        Submission.assignment_id.in_(assignment_ids),
-        (Submission.plagiarism_flagged == True) | (Submission.ai_flagged == True)
-    ).count()
-    
+    """Get faculty dashboard statistics - real-time from database."""
+    now = datetime.utcnow()
+
+    # Active courses only (status=ACTIVE and is_active=True)
+    active_courses = db.query(Course).filter(
+        Course.instructor_id == current_user.id,
+        Course.status == CourseStatus.ACTIVE,
+        Course.is_active == True,
+    ).all()
+    active_course_ids = [c.id for c in active_courses]
+    total_courses = len(active_courses)
+
+    # Active students across active courses (distinct to avoid double-counting)
+    total_students = 0
+    if active_course_ids:
+        total_students = db.query(func.count(func.distinct(Enrollment.student_id))).filter(
+            Enrollment.course_id.in_(active_course_ids),
+            Enrollment.status == EnrollmentStatus.ACTIVE,
+        ).scalar() or 0
+
+    # Assignments created by this professor in active courses
+    total_assignments = 0
+    if active_course_ids:
+        total_assignments = db.query(Assignment).filter(
+            Assignment.course_id.in_(active_course_ids),
+        ).count()
+
+    # Pending = assignments whose due_date has NOT yet passed
+    pending_assignments = 0
+    if active_course_ids:
+        pending_assignments = db.query(Assignment).filter(
+            Assignment.course_id.in_(active_course_ids),
+            Assignment.due_date >= now,
+        ).count()
+
     return FacultyDashboardStats(
         total_courses=total_courses,
         total_students=total_students,
         total_assignments=total_assignments,
-        pending_grading=pending_grading,
-        average_class_score=average_class_score,
-        submissions_this_week=submissions_this_week,
-        flagged_submissions=flagged_submissions
+        pending_grading=pending_assignments,
     )
+
+
+class FacultyEvent(BaseModel):
+    id: int
+    title: str
+    course_name: str
+    course_code: str
+    event_type: str
+    date: str
+    detail: Optional[str] = None
+
+
+@router.get("/upcoming-events", response_model=List[FacultyEvent])
+def get_faculty_upcoming_events(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.FACULTY]))
+):
+    """Get all assignment deadlines and course milestones for the faculty calendar."""
+    courses = db.query(Course).filter(Course.instructor_id == current_user.id).all()
+    course_map = {c.id: c for c in courses}
+    course_ids = list(course_map.keys())
+
+    # Fetch ALL assignments (no date filter) so every due date appears on the calendar
+    assignments = db.query(Assignment).filter(
+        Assignment.course_id.in_(course_ids),
+    ).order_by(Assignment.due_date).all()
+
+    events: list = []
+
+    for a in assignments:
+        if not a.due_date:
+            continue
+        c = course_map.get(a.course_id)
+        pending = db.query(Submission).filter(
+            Submission.assignment_id == a.id,
+            Submission.status == SubmissionStatus.PENDING
+        ).count()
+        total_enrolled = db.query(Enrollment).filter(
+            Enrollment.course_id == a.course_id,
+            Enrollment.status == EnrollmentStatus.ACTIVE
+        ).count()
+        submitted = db.query(Submission.student_id).filter(
+            Submission.assignment_id == a.id
+        ).distinct().count()
+
+        is_past = a.due_date < datetime.utcnow()
+        etype = "grading" if is_past else "deadline"
+        detail_text = f"{submitted}/{total_enrolled} submitted"
+        if pending > 0:
+            detail_text += f" · {pending} pending grading"
+
+        events.append(FacultyEvent(
+            id=a.id,
+            title=a.title,
+            course_name=c.name if c else "Unknown",
+            course_code=c.code if c else "N/A",
+            event_type=etype,
+            date=a.due_date.strftime("%Y-%m-%d"),
+            detail=detail_text,
+        ))
+
+    # Course end-dates as events
+    for c in courses:
+        if c.end_date:
+            is_completed = c.end_date < datetime.utcnow()
+            events.append(FacultyEvent(
+                id=c.id,
+                title=f"{c.code} - {'Completed' if is_completed else 'Course Ends'}",
+                course_name=c.name,
+                course_code=c.code,
+                event_type="course_end",
+                date=c.end_date.strftime("%Y-%m-%d"),
+                detail="Completed" if is_completed else "Upcoming end date",
+            ))
+        if c.start_date:
+            events.append(FacultyEvent(
+                id=c.id,
+                title=f"{c.code} - Course Starts",
+                course_name=c.name,
+                course_code=c.code,
+                event_type="course_start",
+                date=c.start_date.strftime("%Y-%m-%d"),
+                detail=f"{c.semester} {c.year}",
+            ))
+
+    events.sort(key=lambda e: e.date)
+    return events
 
 
 # ============== Course Management ==============
@@ -189,30 +255,6 @@ def get_faculty_courses(
     
     result = []
     for course in courses:
-        student_count = db.query(Enrollment).filter(
-            Enrollment.course_id == course.id,
-            Enrollment.status == EnrollmentStatus.ACTIVE
-        ).count()
-        
-        assignment_count = db.query(Assignment).filter(
-            Assignment.course_id == course.id
-        ).count()
-        
-        # Calculate average score
-        # Query assignment IDs directly instead of using the relationship
-        assignment_ids_query = db.query(Assignment.id).filter(
-            Assignment.course_id == course.id
-        ).all()
-        assignment_ids = [aid[0] for aid in assignment_ids_query]
-        
-        avg_score = None
-        if assignment_ids:
-            avg_result = db.query(func.avg(Submission.final_score)).filter(
-                Submission.assignment_id.in_(assignment_ids),
-                Submission.final_score.isnot(None)
-            ).scalar()
-            avg_score = float(avg_result) if avg_result else None
-        
         result.append(CourseDetailResponse(
             id=course.id,
             code=course.code,
@@ -221,9 +263,8 @@ def get_faculty_courses(
             section=course.section,
             semester=course.semester,
             year=course.year,
-            student_count=student_count,
-            assignment_count=assignment_count,
-            average_score=avg_score,
+            start_date=course.start_date.isoformat() if course.start_date else None,
+            end_date=course.end_date.isoformat() if course.end_date else None,
             status=course.status.value if course.status else "ACTIVE",
             is_active=course.is_active
         ))

@@ -1,347 +1,394 @@
 'use client';
 
-import { useState } from 'react';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { DashboardLayout } from '@/components/layouts/DashboardLayout';
+/**
+ * Student Grades Page
+ *
+ * Shows all assignments by course.
+ * - Course average (graded only)
+ * - Every assignment: graded → score/max, not graded → -/max
+ */
+
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
+import Link from 'next/link';
 import { format } from 'date-fns';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
-import { Select } from '@/components/ui/select';
-import { DataTable } from '@/components/ui/data-table';
+import { InnerHeaderDesign } from '@/components/InnerHeaderDesign';
 import {
     Award,
     Search,
-    TrendingUp,
-    TrendingDown,
     BookOpen,
     FileCode,
-    Calendar,
-    Download,
-    Filter,
-    ChevronDown,
-    Eye
+    ChevronRight,
+    AlertCircle,
 } from 'lucide-react';
-import Link from 'next/link';
 
-interface Grade {
+interface Submission {
     id: number;
     assignment_id: number;
-    assignment_title: string;
-    course_id: number;
-    course_name: string;
-    course_code: string;
-    submitted_at: string;
-    graded_at: string;
-    score: number;
+    status: string;
+    final_score?: number | null;
     max_score: number;
-    percentage: number;
-    tests_passed: number;
-    total_tests: number;
-    feedback?: string;
+    submitted_at?: string;
+    graded_at?: string | null;
 }
 
-interface CourseGrade {
+interface Assignment {
+    id: number;
+    title: string;
     course_id: number;
-    course_name: string;
-    course_code: string;
-    assignments_completed: number;
-    total_assignments: number;
-    average_score: number;
-    highest_score: number;
-    lowest_score: number;
+    max_score: number;
+    due_date?: string;
+    is_published?: boolean;
+    course?: { id: number; code: string; name: string };
+}
+
+interface Course {
+    id: number;
+    code: string;
+    name: string;
+}
+
+function getScoreColor(pct: number) {
+    if (pct >= 90) return 'text-green-600';
+    if (pct >= 80) return 'text-blue-600';
+    if (pct >= 70) return 'text-amber-600';
+    if (pct >= 60) return 'text-orange-600';
+    return 'text-red-600';
+}
+
+function getScoreBgColor(pct: number) {
+    if (pct >= 90) return 'bg-green-50';
+    if (pct >= 80) return 'bg-blue-50';
+    if (pct >= 70) return 'bg-amber-50';
+    if (pct >= 60) return 'bg-orange-50';
+    return 'bg-red-50';
 }
 
 export default function StudentGradesPage() {
     const [searchQuery, setSearchQuery] = useState('');
-    const [selectedCourse, setSelectedCourse] = useState('all');
-    const [sortBy, setSortBy] = useState('date');
+    const [courseFilter, setCourseFilter] = useState<string>('all');
 
-    const { data: grades = [], isLoading } = useQuery({
-        queryKey: ['student-grades'],
+    const { data: submissions = [], isLoading, isError, error, refetch } = useQuery({
+        queryKey: ['student-submissions'],
         queryFn: () => apiClient.getSubmissions(),
+        staleTime: 2 * 60 * 1000,
     });
 
-    // Mock data
-    const mockGrades: Grade[] = [
-        { id: 1, assignment_id: 1, assignment_title: 'Binary Search Tree Implementation', course_id: 1, course_name: 'Data Structures', course_code: 'CS201', submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString(), graded_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(), score: 92, max_score: 100, percentage: 92, tests_passed: 5, total_tests: 5 },
-        { id: 2, assignment_id: 2, assignment_title: 'SQL Query Optimization', course_id: 4, course_name: 'Database Systems', course_code: 'CS303', submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 5).toISOString(), graded_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 4).toISOString(), score: 88, max_score: 100, percentage: 88, tests_passed: 4, total_tests: 5 },
-        { id: 3, assignment_id: 3, assignment_title: 'React Components', course_id: 2, course_name: 'Web Development', course_code: 'CS301', submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString(), graded_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 6).toISOString(), score: 95, max_score: 100, percentage: 95, tests_passed: 5, total_tests: 5 },
-        { id: 4, assignment_id: 4, assignment_title: 'Linked List Operations', course_id: 1, course_name: 'Data Structures', course_code: 'CS201', submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 10).toISOString(), graded_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 9).toISOString(), score: 78, max_score: 100, percentage: 78, tests_passed: 4, total_tests: 5 },
-        { id: 5, assignment_id: 5, assignment_title: 'Graph Algorithms', course_id: 3, course_name: 'Algorithm Design', course_code: 'CS202', submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 12).toISOString(), graded_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 11).toISOString(), score: 85, max_score: 100, percentage: 85, tests_passed: 4, total_tests: 5 },
-        { id: 6, assignment_id: 6, assignment_title: 'Database Design', course_id: 4, course_name: 'Database Systems', course_code: 'CS303', submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 15).toISOString(), graded_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 14).toISOString(), score: 90, max_score: 100, percentage: 90, tests_passed: 5, total_tests: 5 },
-        { id: 7, assignment_id: 7, assignment_title: 'Sorting Algorithms', course_id: 3, course_name: 'Algorithm Design', course_code: 'CS202', submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 18).toISOString(), graded_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 17).toISOString(), score: 72, max_score: 100, percentage: 72, tests_passed: 3, total_tests: 5 },
-        { id: 8, assignment_id: 8, assignment_title: 'REST API', course_id: 2, course_name: 'Web Development', course_code: 'CS301', submitted_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 20).toISOString(), graded_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 19).toISOString(), score: 82, max_score: 100, percentage: 82, tests_passed: 4, total_tests: 5 },
-    ];
-
-    const mockCourseGrades: CourseGrade[] = [
-        { course_id: 1, course_name: 'Data Structures', course_code: 'CS201', assignments_completed: 6, total_assignments: 8, average_score: 85, highest_score: 92, lowest_score: 78 },
-        { course_id: 2, course_name: 'Web Development', course_code: 'CS301', assignments_completed: 3, total_assignments: 5, average_score: 88, highest_score: 95, lowest_score: 82 },
-        { course_id: 3, course_name: 'Algorithm Design', course_code: 'CS202', assignments_completed: 4, total_assignments: 9, average_score: 78, highest_score: 85, lowest_score: 72 },
-        { course_id: 4, course_name: 'Database Systems', course_code: 'CS303', assignments_completed: 9, total_assignments: 10, average_score: 89, highest_score: 90, lowest_score: 88 },
-    ];
-
-    const displayGrades = grades.length > 0 ? grades : mockGrades;
-
-    const filteredGrades = displayGrades.filter((grade: Grade) => {
-        const matchesSearch = grade.assignment_title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            grade.course_name.toLowerCase().includes(searchQuery.toLowerCase());
-        const matchesCourse = selectedCourse === 'all' || grade.course_id.toString() === selectedCourse;
-        return matchesSearch && matchesCourse;
-    }).sort((a: Grade, b: Grade) => {
-        if (sortBy === 'date') return new Date(b.graded_at).getTime() - new Date(a.graded_at).getTime();
-        if (sortBy === 'score-high') return b.percentage - a.percentage;
-        if (sortBy === 'score-low') return a.percentage - b.percentage;
-        return 0;
+    const { data: assignments = [] } = useQuery({
+        queryKey: ['student-assignments'],
+        queryFn: () => apiClient.getAssignments(),
     });
 
-    const overallAverage = Math.round(displayGrades.reduce((acc: number, g: Grade) => acc + g.percentage, 0) / displayGrades.length);
-    const highestGrade = Math.max(...displayGrades.map((g: Grade) => g.percentage));
-    const totalAssignments = displayGrades.length;
+    const { data: courses = [] } = useQuery({
+        queryKey: ['student-courses'],
+        queryFn: () => apiClient.getCourses(),
+    });
 
-    const getGradeColor = (percentage: number) => {
-        if (percentage >= 90) return 'text-green-600';
-        if (percentage >= 80) return 'text-blue-600';
-        if (percentage >= 70) return 'text-yellow-600';
-        if (percentage >= 60) return 'text-orange-600';
-        return 'text-red-600';
-    };
+    const submissionByAssignment = useMemo(() => {
+        const m = new Map<number, Submission>();
+        (submissions as Submission[]).forEach((s) => {
+            const existing = m.get(s.assignment_id);
+            const sGraded = s.final_score != null;
+            const eGraded = existing?.final_score != null;
+            if (!existing) {
+                m.set(s.assignment_id, s);
+            } else if (sGraded && !eGraded) {
+                m.set(s.assignment_id, s);
+            } else if (sGraded && eGraded && s.graded_at && existing.graded_at && new Date(s.graded_at) > new Date(existing.graded_at)) {
+                m.set(s.assignment_id, s);
+            } else if (!sGraded && !eGraded && s.submitted_at && existing.submitted_at && new Date(s.submitted_at) > new Date(existing.submitted_at)) {
+                m.set(s.assignment_id, s);
+            }
+        });
+        return m;
+    }, [submissions]);
 
-    const getGradeLetter = (percentage: number) => {
-        if (percentage >= 90) return 'A';
-        if (percentage >= 80) return 'B';
-        if (percentage >= 70) return 'C';
-        if (percentage >= 60) return 'D';
-        return 'F';
-    };
+    const assignmentsByCourse = useMemo(() => {
+        const byCourse = new Map<number, Assignment[]>();
+        (assignments as (Assignment & { is_published?: boolean })[]).forEach((a) => {
+            if ((a as { is_published?: boolean }).is_published !== false) {
+                const arr = byCourse.get(a.course_id) ?? [];
+                arr.push(a);
+                byCourse.set(a.course_id, arr);
+            }
+        });
+        byCourse.forEach((arr) => arr.sort((a, b) => new Date(a.due_date || 0).getTime() - new Date(b.due_date || 0).getTime()));
+        return byCourse;
+    }, [assignments]);
 
-    const columns = [
-        {
-            key: 'assignment_title',
-            header: 'Assignment',
-            cell: (grade: Grade) => (
-                <div>
-                    <p className="font-medium text-gray-900">{grade.assignment_title}</p>
-                    <p className="text-sm text-gray-500">{grade.course_code} - {grade.course_name}</p>
-                </div>
-            ),
-        },
-        {
-            key: 'submitted_at',
-            header: 'Submitted',
-            cell: (grade: Grade) => (
-                <span className="text-sm text-gray-600">
-                    {format(new Date(grade.submitted_at), 'MMM dd, yyyy')}
-                </span>
-            ),
-        },
-        {
-            key: 'tests_passed',
-            header: 'Tests',
-            cell: (grade: Grade) => (
-                <span className="text-sm">
-                    {grade.tests_passed}/{grade.total_tests}
-                </span>
-            ),
-        },
-        {
-            key: 'percentage',
-            header: 'Score',
-            cell: (grade: Grade) => (
-                <div className="flex items-center gap-2">
-                    <span className={`text-lg font-bold ${getGradeColor(grade.percentage)}`}>
-                        {grade.percentage}%
-                    </span>
-                    <Badge variant={grade.percentage >= 80 ? 'success' : grade.percentage >= 60 ? 'warning' : 'danger'}>
-                        {getGradeLetter(grade.percentage)}
-                    </Badge>
-                </div>
-            ),
-        },
-        {
-            key: 'id',
-            header: 'Actions',
-            cell: (grade: Grade) => (
-                <Link href={`/student/assignments/${grade.assignment_id}`}>
-                    <Button variant="ghost" size="sm">
-                        <Eye className="w-4 h-4" />
-                    </Button>
-                </Link>
-            ),
-        },
-    ];
+    const courseStats = useMemo(() => {
+        const result: { course: Course; avg: number; graded: number; total: number }[] = [];
+        (courses as Course[]).forEach((c) => {
+            const courseAssignments = assignmentsByCourse.get(c.id) ?? [];
+            const scores: number[] = [];
+            courseAssignments.forEach((a) => {
+                const sub = submissionByAssignment.get(a.id);
+                if (sub?.final_score != null) {
+                    scores.push((sub.final_score / (sub.max_score || 100)) * 100);
+                }
+            });
+            if (courseAssignments.length > 0) {
+                result.push({
+                    course: c,
+                    avg: scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0,
+                    graded: scores.length,
+                    total: courseAssignments.length,
+                });
+            }
+        });
+        return result;
+    }, [courses, assignmentsByCourse, submissionByAssignment]);
+
+    const overallAvg = useMemo(() => {
+        const graded = (submissions as Submission[]).filter((s) => s.final_score != null);
+        if (graded.length === 0) return null;
+        const sum = graded.reduce(
+            (acc, s) => acc + (s.final_score! / (s.max_score || 100)) * 100,
+            0
+        );
+        return Math.round(sum / graded.length);
+    }, [submissions]);
+
+    const filteredCourses = useMemo(() => {
+        let list = courseStats;
+        const q = searchQuery.toLowerCase().trim();
+        if (courseFilter !== 'all') {
+            list = list.filter((s) => s.course.id.toString() === courseFilter);
+        }
+        if (q) {
+            list = list.filter(
+                (s) =>
+                    s.course.name.toLowerCase().includes(q) ||
+                    s.course.code.toLowerCase().includes(q)
+            );
+        }
+        return list;
+    }, [courseStats, searchQuery, courseFilter]);
+
+    const allAssignmentsCount = (assignments as Assignment[]).filter(
+        (a) => (a as { is_published?: boolean }).is_published !== false
+    ).length;
 
     return (
-        <ProtectedRoute allowedRoles={['STUDENT']}>
-            <DashboardLayout>
-                <div className="space-y-6">
-                    {/* Header */}
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                        <div>
-                            <h1 className="text-2xl font-bold text-gray-900">My Grades</h1>
-                            <p className="text-gray-500 mt-1">Track your academic performance</p>
-                        </div>
-                        <Button variant="outline">
-                            <Download className="w-4 h-4 mr-2" />
-                            Export Grades
-                        </Button>
-                    </div>
+        <div className="space-y-6 pb-8">
+            <InnerHeaderDesign
+                title="My Grades"
+                subtitle="All assignments by course"
+            />
 
-                    {/* Overall Stats */}
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                        <Card>
-                            <CardContent className="p-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-12 h-12 rounded-lg bg-[#862733]/10 flex items-center justify-center">
-                                        <Award className="w-6 h-6 text-[#862733]" />
-                                    </div>
-                                    <div>
-                                        <p className="text-3xl font-bold text-[#862733]">{overallAverage}%</p>
-                                        <p className="text-sm text-gray-500">Overall Average</p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="p-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-12 h-12 rounded-lg bg-green-100 flex items-center justify-center">
-                                        <TrendingUp className="w-6 h-6 text-green-600" />
-                                    </div>
-                                    <div>
-                                        <p className="text-3xl font-bold text-green-600">{highestGrade}%</p>
-                                        <p className="text-sm text-gray-500">Highest Score</p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="p-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center">
-                                        <FileCode className="w-6 h-6 text-blue-600" />
-                                    </div>
-                                    <div>
-                                        <p className="text-3xl font-bold text-blue-600">{totalAssignments}</p>
-                                        <p className="text-sm text-gray-500">Graded Assignments</p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="p-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-12 h-12 rounded-lg bg-purple-100 flex items-center justify-center">
-                                        <BookOpen className="w-6 h-6 text-purple-600" />
-                                    </div>
-                                    <div>
-                                        <p className="text-3xl font-bold text-purple-600">{mockCourseGrades.length}</p>
-                                        <p className="text-sm text-gray-500">Active Courses</p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
+            {isError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-4 flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                        <p className="font-semibold text-sm text-red-800">Failed to load grades</p>
+                        <p className="text-sm text-red-700 mt-0.5">{(error as Error)?.message || 'An error occurred.'}</p>
                     </div>
+                    <button
+                        onClick={() => refetch()}
+                        className="px-3 py-1.5 text-sm border border-red-300 rounded-lg text-red-700 hover:bg-red-100"
+                    >
+                        Try Again
+                    </button>
+                </div>
+            )}
 
-                    {/* Course Performance */}
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Course Performance</CardTitle>
-                            <CardDescription>Average scores by course</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {mockCourseGrades.map((course) => (
-                                    <div key={course.course_id} className="p-4 bg-gray-50 rounded-lg">
-                                        <div className="flex items-center justify-between mb-3">
-                                            <div>
-                                                <p className="font-medium text-gray-900">{course.course_name}</p>
-                                                <p className="text-sm text-gray-500">{course.course_code}</p>
-                                            </div>
-                                            <Badge
-                                                variant={course.average_score >= 80 ? 'success' : course.average_score >= 60 ? 'warning' : 'danger'}
-                                                className="text-lg px-3 py-1"
-                                            >
-                                                {course.average_score}%
-                                            </Badge>
+            {isLoading && (
+                <div className="space-y-4">
+                    {[1, 2, 3].map((i) => (
+                        <Card key={i} className="animate-pulse">
+                            <CardContent className="p-6">
+                                <div className="h-6 bg-gray-200 rounded w-1/4 mb-4" />
+                                <div className="space-y-2">
+                                    {[1, 2, 3].map((j) => (
+                                        <div key={j} className="h-12 bg-gray-100 rounded" />
+                                    ))}
+                                </div>
+                            </CardContent>
+                        </Card>
+                    ))}
+                </div>
+            )}
+
+            {!isLoading && !isError && (
+                <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {overallAvg != null && (
+                            <Card className="border-primary/20 shadow-sm hover:shadow-md transition-shadow">
+                                <CardContent className="p-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-12 h-12 rounded-xl bg-primary/15 flex items-center justify-center">
+                                            <Award className="w-6 h-6 text-primary" />
                                         </div>
+                                        <div>
+                                            <p className="text-2xl font-bold text-primary">{overallAvg}%</p>
+                                            <p className="text-sm text-gray-500">Overall average</p>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
+                        {courseStats.slice(0, 3).map(({ course, avg, graded, total }) => (
+                            <Card key={course.id} className="border-gray-100 hover:border-primary/20 transition-colors">
+                                <CardContent className="p-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${avg > 0 ? getScoreBgColor(avg) : 'bg-gray-50'}`}>
+                                            <BookOpen className={`w-6 h-6 ${avg > 0 ? getScoreColor(avg) : 'text-gray-400'}`} />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-semibold text-gray-900 truncate">{course.name}</p>
+                                            <p className="text-sm text-gray-500">{course.code} · {graded}/{total} graded</p>
+                                        </div>
+                                    </div>
+                                    {total > 0 && (
                                         <Progress
-                                            value={course.average_score}
-                                            variant={course.average_score >= 80 ? 'success' : course.average_score >= 60 ? 'warning' : 'danger'}
-                                            className="mb-2"
+                                            value={avg}
+                                            size="sm"
+                                            variant={avg >= 80 ? 'success' : avg >= 60 ? 'warning' : 'danger'}
+                                            className="mt-3"
                                         />
-                                        <div className="flex items-center justify-between text-sm text-gray-500">
-                                            <span>{course.assignments_completed}/{course.total_assignments} completed</span>
-                                            <span>High: {course.highest_score}% • Low: {course.lowest_score}%</span>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </CardContent>
-                    </Card>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        ))}
+                    </div>
 
-                    {/* Grades Table */}
-                    <Card>
-                        <CardHeader>
-                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                                <div>
-                                    <CardTitle>All Grades</CardTitle>
-                                    <CardDescription>Detailed view of all graded assignments</CardDescription>
+                    <Card className="border-gray-100 shadow-sm">
+                        <CardContent className="p-5">
+                            <div className="flex flex-col sm:flex-row gap-3 mb-5">
+                                <div className="relative flex-1">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                    <Input
+                                        placeholder="Search by course..."
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        className="pl-10 border-gray-200 focus:border-primary focus:ring-primary/20"
+                                    />
                                 </div>
-                                <div className="flex items-center gap-3">
-                                    <div className="relative">
-                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                        <Input
-                                            placeholder="Search..."
-                                            value={searchQuery}
-                                            onChange={(e) => setSearchQuery(e.target.value)}
-                                            className="pl-9 w-48"
-                                        />
-                                    </div>
-                                    <select
-                                        value={selectedCourse}
-                                        onChange={(e) => setSelectedCourse(e.target.value)}
-                                        className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#862733]/20"
-                                    >
-                                        <option value="all">All Courses</option>
-                                        {mockCourseGrades.map((course) => (
-                                            <option key={course.course_id} value={course.course_id}>{course.course_name}</option>
-                                        ))}
-                                    </select>
-                                    <select
-                                        value={sortBy}
-                                        onChange={(e) => setSortBy(e.target.value)}
-                                        className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#862733]/20"
-                                    >
-                                        <option value="date">Latest First</option>
-                                        <option value="score-high">Highest Score</option>
-                                        <option value="score-low">Lowest Score</option>
-                                    </select>
-                                </div>
+                                <select
+                                    value={courseFilter}
+                                    onChange={(e) => setCourseFilter(e.target.value)}
+                                    className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white"
+                                >
+                                    <option value="all">All courses</option>
+                                    {(courses as Course[]).map((c) => (
+                                        <option key={c.id} value={c.id}>{c.name}</option>
+                                    ))}
+                                </select>
                             </div>
-                        </CardHeader>
-                        <CardContent>
-                            {isLoading ? (
-                                <div className="text-center py-12 text-gray-500">Loading grades...</div>
-                            ) : filteredGrades.length > 0 ? (
-                                <DataTable columns={columns} data={filteredGrades} />
+
+                            {allAssignmentsCount === 0 ? (
+                                <div className="py-16 text-center">
+                                    <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-primary/10 flex items-center justify-center">
+                                        <FileCode className="w-8 h-8 text-primary" />
+                                    </div>
+                                    <h3 className="text-lg font-semibold text-gray-900 mb-2">No assignments yet</h3>
+                                    <p className="text-gray-500 mb-6">You have no assignments in your courses.</p>
+                                    <Link href="/student/courses">
+                                        <Button className="bg-primary hover:bg-primary-700 text-white">
+                                            View Courses
+                                        </Button>
+                                    </Link>
+                                </div>
+                            ) : filteredCourses.length === 0 ? (
+                                <div className="py-16 text-center">
+                                    <div className="w-14 h-14 mx-auto mb-4 rounded-xl bg-gray-100 flex items-center justify-center">
+                                        <Search className="w-7 h-7 text-gray-400" />
+                                    </div>
+                                    <p className="text-gray-500">No courses match your search</p>
+                                </div>
                             ) : (
-                                <div className="text-center py-12">
-                                    <Award className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-                                    <h3 className="text-lg font-medium text-gray-900 mb-2">No grades found</h3>
-                                    <p className="text-gray-500">
-                                        {searchQuery ? 'Try adjusting your search criteria' : 'No graded assignments yet.'}
-                                    </p>
+                                <div className="space-y-6">
+                                    {filteredCourses.map(({ course, avg, graded, total }) => {
+                                        const courseAssignments = (assignmentsByCourse.get(course.id) ?? [])
+                                            .filter((a) => {
+                                                const q = searchQuery.toLowerCase().trim();
+                                                if (!q) return true;
+                                                return a.title.toLowerCase().includes(q) ||
+                                                    (a.course?.name ?? '').toLowerCase().includes(q) ||
+                                                    (a.course?.code ?? '').toLowerCase().includes(q);
+                                            });
+
+                                        if (courseAssignments.length === 0) return null;
+
+                                        return (
+                                            <div key={course.id} className="rounded-xl border border-gray-100 overflow-hidden">
+                                                <div className="flex items-center gap-3 px-4 py-3 bg-primary/5 border-l-4 border-l-primary">
+                                                    <h3 className="font-semibold text-gray-900">{course.name}</h3>
+                                                    <span className="text-sm text-primary font-medium">{course.code}</span>
+                                                    <Badge variant="outline" className="text-xs border-primary/30 text-primary">
+                                                        {graded}/{total} graded
+                                                    </Badge>
+                                                    {graded > 0 && (
+                                                        <span className="text-sm font-medium text-gray-600">
+                                                            Avg: {Math.round(avg)}%
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="divide-y divide-gray-50">
+                                                    {courseAssignments.map((assignment) => {
+                                                        const sub = submissionByAssignment.get(assignment.id);
+                                                        const isGraded = sub?.final_score != null;
+                                                        const maxScore = sub?.max_score ?? assignment.max_score ?? 100;
+                                                        const pct = isGraded
+                                                            ? Math.round((sub!.final_score! / maxScore) * 100)
+                                                            : 0;
+
+                                                        return (
+                                                            <Link
+                                                                key={assignment.id}
+                                                                href={`/student/assignments/${assignment.id}`}
+                                                                className="flex items-center gap-4 px-4 py-3.5 hover:bg-primary/5 transition-colors group"
+                                                            >
+                                                                <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${isGraded ? getScoreBgColor(pct) : 'bg-gray-50'}`}>
+                                                                    {isGraded ? (
+                                                                        <span className={`text-sm font-bold ${getScoreColor(pct)}`}>
+                                                                            {pct}%
+                                                                        </span>
+                                                                    ) : (
+                                                                        <FileCode className="w-5 h-5 text-gray-400" />
+                                                                    )}
+                                                                </div>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <p className="font-medium text-gray-900 truncate group-hover:text-primary transition-colors">
+                                                                        {assignment.title}
+                                                                    </p>
+                                                                    {sub?.graded_at && (
+                                                                        <p className="text-xs text-gray-500">
+                                                                            Graded {format(new Date(sub.graded_at), 'MMM d')}
+                                                                        </p>
+                                                                    )}
+                                                                </div>
+                                                                <div className="flex items-center gap-2 flex-shrink-0">
+                                                                    {isGraded ? (
+                                                                        <Badge variant={pct >= 80 ? 'success' : pct >= 60 ? 'warning' : 'danger'}>
+                                                                            {sub!.final_score}/{maxScore}
+                                                                        </Badge>
+                                                                    ) : (
+                                                                        <Badge variant="outline" className="text-gray-500 border-gray-200">
+                                                                            -/{maxScore}
+                                                                        </Badge>
+                                                                    )}
+                                                                    <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-primary transition-colors" />
+                                                                </div>
+                                                            </Link>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             )}
                         </CardContent>
                     </Card>
-                </div>
-            </DashboardLayout>
-        </ProtectedRoute>
+                </>
+            )}
+        </div>
     );
 }

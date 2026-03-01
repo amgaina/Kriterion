@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { InnerHeaderDesign } from '@/components/InnerHeaderDesign';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { AdminLayout } from '@/components/layouts/AdminLayout';
 import { useMutation } from '@tanstack/react-query';
@@ -119,25 +120,31 @@ export default function SettingsPage() {
         <ProtectedRoute allowedRoles={['ADMIN']}>
             <AdminLayout>
                 <div className="space-y-6">
-                    {/* Header */}
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                        <div>
-                            <h1 className="text-2xl font-bold text-gray-900">System Settings</h1>
-                            <p className="text-gray-500 mt-1">Configure system-wide settings and preferences</p>
-                        </div>
-                        {hasChanges && (
-                            <div className="flex gap-2">
-                                <Button variant="outline" onClick={() => window.location.reload()}>
-                                    <RefreshCw className="w-4 h-4 mr-2" />
-                                    Discard
-                                </Button>
-                                <Button onClick={() => saveMutation.mutate(settings)}>
-                                    <Save className="w-4 h-4 mr-2" />
-                                    Save Changes
-                                </Button>
-                            </div>
-                        )}
-                    </div>
+                    <InnerHeaderDesign
+                        title="System Settings"
+                        subtitle="Configure system-wide settings and preferences"
+                        actions={
+                            hasChanges ? (
+                                <div className="flex gap-2">
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => window.location.reload()}
+                                        className="border-white/30 text-white hover:bg-white/20 hover:text-white"
+                                    >
+                                        <RefreshCw className="w-4 h-4 mr-2" />
+                                        Discard
+                                    </Button>
+                                    <Button
+                                        onClick={() => saveMutation.mutate(settings)}
+                                        className="bg-white/20 hover:bg-white/30 text-white border border-white/30"
+                                    >
+                                        <Save className="w-4 h-4 mr-2" />
+                                        Save Changes
+                                    </Button>
+                                </div>
+                            ) : undefined
+                        }
+                    />
 
                     {hasChanges && (
                         <Alert type="warning" title="Unsaved Changes">

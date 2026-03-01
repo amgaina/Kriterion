@@ -159,6 +159,7 @@ export default function NewUserPage() {
                     options={[
                       { value: "STUDENT", label: "Student" },
                       { value: "FACULTY", label: "Faculty" },
+                      { value: "ASSISTANT", label: "Assistant" },
                       { value: "ADMIN", label: "Admin" },
                     ]}
                   />

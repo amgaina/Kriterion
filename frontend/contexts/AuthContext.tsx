@@ -1,10 +1,10 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 import apiClient from '@/lib/api-client';
 
-export type UserRole = 'STUDENT' | 'FACULTY' | 'ADMIN';
+export type UserRole = 'STUDENT' | 'FACULTY' | 'ASSISTANT' | 'ADMIN';
 
 export interface User {
     id: number;
@@ -27,15 +27,35 @@ interface AuthContextType {
     register: (userData: any) => Promise<void>;
 }
 
+const ROLE_HOME: Record<UserRole, string> = {
+    STUDENT: '/student/dashboard',
+    FACULTY: '/faculty/dashboard',
+    ASSISTANT: '/assistant/dashboard',
+    ADMIN: '/admin/dashboard',
+};
+
+function setRoleCookie(role: string) {
+    if (typeof window === 'undefined') return;
+    const maxAge = 60 * 60 * 24 * 7;
+    document.cookie = `kriterion_role=${role}; path=/; max-age=${maxAge}; SameSite=Lax`;
+    document.cookie = `kriterion_auth=1; path=/; max-age=${maxAge}; SameSite=Lax`;
+}
+
+function clearRoleCookie() {
+    if (typeof window === 'undefined') return;
+    document.cookie = 'kriterion_role=; path=/; max-age=0';
+    document.cookie = 'kriterion_auth=; path=/; max-age=0';
+}
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const router = useRouter();
+    const pathname = usePathname();
 
     useEffect(() => {
-        // Check if user is logged in on mount
         checkAuth();
     }, []);
 
@@ -49,48 +69,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             const userData = await apiClient.getCurrentUser();
             setUser(userData);
+            setRoleCookie(userData.role);
         } catch (error) {
             console.error('Auth check failed:', error);
             apiClient.clearTokens();
+            clearRoleCookie();
             setUser(null);
         } finally {
             setIsLoading(false);
         }
     };
 
-    const login = async (email: string, password: string) => {
+    const login = useCallback(async (email: string, password: string) => {
         try {
-            await apiClient.login(email, password);
-            const userData = await apiClient.getCurrentUser();
+            const data = await apiClient.login(email, password);
+            const userData = data.user ?? await apiClient.getCurrentUser();
             setUser(userData);
+            setRoleCookie(userData.role);
 
-            // Redirect based on role
-            switch (userData.role) {
-                case 'STUDENT':
-                    router.push('/student/dashboard');
-                    break;
-                case 'FACULTY':
-                    router.push('/faculty/dashboard');
-                    break;
-                case 'ADMIN':
-                    router.push('/admin/dashboard');
-                    break;
-                default:
-                    router.push('/');
-            }
+            const home = ROLE_HOME[userData.role as UserRole] || '/';
+            router.push(home);
         } catch (error: any) {
             console.error('Login failed:', error);
             throw new Error(error.response?.data?.detail || 'Login failed');
         }
-    };
+    }, [router]);
 
-    const logout = () => {
+    const logout = useCallback(() => {
         apiClient.logout();
+        clearRoleCookie();
         setUser(null);
         router.push('/login');
-    };
+    }, [router]);
 
-    const register = async (userData: any) => {
+    const register = useCallback(async (userData: any) => {
         try {
             await apiClient.register(userData);
             router.push('/login');
@@ -98,7 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             console.error('Registration failed:', error);
             throw new Error(error.response?.data?.detail || 'Registration failed');
         }
-    };
+    }, [router]);
 
     const value = {
         user,

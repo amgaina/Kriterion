@@ -1,19 +1,18 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { DashboardLayout } from '@/components/layouts/DashboardLayout';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CourseLoadingPage } from '@/components/course/CourseLoading';
+import { ConfirmDeleteModal } from '@/components/ui/ConfirmDeleteModal';
 import {
     Plus,
     FileText,
-    Calendar,
     CheckCircle2,
     Clock,
     Loader2,
@@ -22,12 +21,10 @@ import {
     EyeOff,
     Trash2,
     AlertCircle,
-    ArrowLeft,
     ChevronRight,
     FlaskConical,
     Target,
     RefreshCw,
-    Users,
 } from 'lucide-react';
 
 interface Assignment {
@@ -61,6 +58,7 @@ const getDifficultyStyle = (d?: string) => {
 };
 
 const isOverdue = (dueDate?: string) => dueDate ? new Date(dueDate) < new Date() : false;
+const isClosed = (a: Assignment) => !!a.is_published && !!a.due_date && new Date(a.due_date) < new Date();
 const isUpcoming = (dueDate?: string) => {
     if (!dueDate) return false;
     const due = new Date(dueDate);
@@ -71,14 +69,14 @@ const isUpcoming = (dueDate?: string) => {
 
 export default function AssignmentsPage() {
     const params = useParams();
-    const router = useRouter();
     const queryClient = useQueryClient();
     const courseParam = params?.courseId as string | string[] | undefined;
     const courseIdStr = Array.isArray(courseParam) ? (courseParam[0] ?? '') : (courseParam ?? '');
     const courseId = useMemo(() => parseInt(courseIdStr, 10), [courseIdStr]);
 
     const [searchQuery, setSearchQuery] = useState('');
-    const [statusFilter, setStatusFilter] = useState<'all' | 'published' | 'draft'>('all');
+    const [statusFilter, setStatusFilter] = useState<'all' | 'published' | 'draft' | 'closed'>('all');
+    const [deleteTarget, setDeleteTarget] = useState<{ id: number; title: string } | null>(null);
     const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
     const showNotification = (type: 'success' | 'error', message: string) => {
@@ -86,16 +84,25 @@ export default function AssignmentsPage() {
         setTimeout(() => setNotification(null), 4000);
     };
 
-    const { data: assignments = [], isLoading, isFetching, refetch } = useQuery({
-        queryKey: ['courseAssignments', courseId],
-        queryFn: () => apiClient.getCourseAssignments(courseId, true) as Promise<Assignment[]>,
+    const { data: allAssignments = [], isLoading, isFetching, refetch } = useQuery({
+        queryKey: ['course-assignments', courseId],
+        queryFn: () => apiClient.getCourseAssignments(courseId, true, 'all') as Promise<Assignment[]>,
         enabled: !!courseId && !isNaN(courseId),
     });
+
+    const assignments = useMemo(() => {
+        const list = allAssignments as Assignment[];
+        if (statusFilter === 'all') return list;
+        if (statusFilter === 'published') return list.filter((a) => a.is_published && !isClosed(a));
+        if (statusFilter === 'draft') return list.filter((a) => !a.is_published);
+        if (statusFilter === 'closed') return list.filter(isClosed);
+        return list;
+    }, [allAssignments, statusFilter]);
 
     const publishMutation = useMutation({
         mutationFn: (id: number) => apiClient.publishAssignment(id),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['courseAssignments', courseId] });
+            queryClient.invalidateQueries({ queryKey: ['course-assignments', courseId] });
             showNotification('success', 'Assignment published!');
         },
         onError: (err: any) => showNotification('error', err.response?.data?.detail || 'Failed to publish'),
@@ -104,46 +111,45 @@ export default function AssignmentsPage() {
     const deleteMutation = useMutation({
         mutationFn: (id: number) => apiClient.deleteAssignment(id),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['courseAssignments', courseId] });
+            queryClient.invalidateQueries({ queryKey: ['course-assignments', courseId] });
+            setDeleteTarget(null);
             showNotification('success', 'Assignment deleted.');
         },
-        onError: (err: any) => showNotification('error', err.response?.data?.detail || 'Failed to delete'),
+        onError: (err: unknown) => {
+            const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to delete';
+            showNotification('error', typeof msg === 'string' ? msg : 'Failed to delete');
+        },
     });
 
     const filteredAssignments = useMemo(() => {
         let result = assignments;
-        if (statusFilter === 'published') result = result.filter((a: Assignment) => a.is_published);
-        if (statusFilter === 'draft') result = result.filter((a: Assignment) => !a.is_published);
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase();
-            result = result.filter((a: Assignment) => a.title.toLowerCase().includes(q) || a.description?.toLowerCase().includes(q));
+            result = result.filter((a: Assignment) => a.title.toLowerCase().includes(q) || (a.description ?? '').toLowerCase().includes(q));
         }
         return result;
-    }, [assignments, searchQuery, statusFilter]);
+    }, [assignments, searchQuery]);
 
-    const stats = useMemo(() => ({
-        total: assignments.length,
-        published: assignments.filter((a: Assignment) => a.is_published).length,
-        drafts: assignments.filter((a: Assignment) => !a.is_published).length,
-        overdue: assignments.filter((a: Assignment) => a.is_published && isOverdue(a.due_date)).length,
-    }), [assignments]);
+    const stats = useMemo(() => {
+        const all = allAssignments as Assignment[];
+        const closed = all.filter(isClosed);
+        const published = all.filter((a) => a.is_published && !isClosed(a));
+        const drafts = all.filter((a) => !a.is_published);
+        return {
+            total: all.length,
+            published: published.length,
+            drafts: drafts.length,
+            closed: closed.length,
+            overdue: closed.length,
+        };
+    }, [allAssignments]);
 
     if (isLoading) {
-        return (
-            <ProtectedRoute allowedRoles={["FACULTY"]}>
-                <DashboardLayout>
-                    <div className="flex items-center justify-center h-96">
-                        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                    </div>
-                </DashboardLayout>
-            </ProtectedRoute>
-        );
+        return <CourseLoadingPage message="Loading assignments..." />;
     }
 
     return (
-        <ProtectedRoute allowedRoles={["FACULTY"]}>
-            <DashboardLayout>
-                <div className="space-y-6 pb-8">
+        <div className="space-y-6 pb-8">
                     {/* Notification */}
                     {notification && (
                         <div className={`rounded-lg border p-4 flex items-start gap-3 ${
@@ -162,19 +168,21 @@ export default function AssignmentsPage() {
                     {/* ─── Header ─── */}
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div>
-                            <button
-                                onClick={() => router.push(`/faculty/courses/${courseId}`)}
-                                className="flex items-center gap-1.5 text-gray-500 hover:text-gray-700 text-sm mb-2 transition-colors"
+                            <Link
+                                href={`/faculty/courses/${courseId}`}
+                                className="inline-flex items-center gap-1.5 text-gray-500 hover:text-gray-700 text-sm mb-2 transition-colors"
                             >
-                                <ArrowLeft className="w-4 h-4" /> Back to Course
-                            </button>
+                                ← Back to Overview
+                            </Link>
                             <h1 className="text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-3">
                                 <div className="p-2 bg-primary/10 rounded-xl">
                                     <FileText className="w-6 h-6 text-primary" />
                                 </div>
                                 Assignments
                             </h1>
-                            <p className="text-gray-500 mt-1">{stats.total} total &middot; {stats.published} published &middot; {stats.drafts} draft{stats.drafts !== 1 ? 's' : ''}</p>
+                            <p className="text-gray-500 mt-1">
+                                {stats.total} total &middot; {stats.published} published &middot; {stats.drafts} draft{stats.drafts !== 1 ? 's' : ''} &middot; {stats.closed} closed
+                            </p>
                         </div>
                         <div className="flex gap-2">
                             <Button
@@ -233,15 +241,18 @@ export default function AssignmentsPage() {
                                 </div>
                             </CardContent>
                         </Card>
-                        <Card className="hover:shadow-md transition-shadow">
+                        <Card
+                            className="hover:shadow-md transition-shadow cursor-pointer"
+                            onClick={() => setStatusFilter('closed')}
+                        >
                             <CardContent className="p-4">
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center">
                                         <AlertCircle className="w-5 h-5 text-red-600" />
                                     </div>
                                     <div>
-                                        <p className="text-2xl font-bold text-red-600">{stats.overdue}</p>
-                                        <p className="text-xs text-gray-500">Past Due</p>
+                                        <p className="text-2xl font-bold text-red-600">{stats.closed}</p>
+                                        <p className="text-xs text-gray-500">Closed</p>
                                     </div>
                                 </div>
                             </CardContent>
@@ -264,16 +275,17 @@ export default function AssignmentsPage() {
                                 <select
                                     className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-transparent"
                                     value={statusFilter}
-                                    onChange={(e) => setStatusFilter(e.target.value as 'all' | 'published' | 'draft')}
+                                    onChange={(e) => setStatusFilter(e.target.value as 'all' | 'published' | 'draft' | 'closed')}
                                 >
                                     <option value="all">All Status</option>
                                     <option value="published">Published</option>
                                     <option value="draft">Drafts</option>
+                                    <option value="closed">Closed</option>
                                 </select>
                             </div>
                             {(searchQuery || statusFilter !== 'all') && (
                                 <div className="mt-2 flex items-center gap-2 text-sm text-gray-500">
-                                    <span>Showing {filteredAssignments.length} of {assignments.length}</span>
+                                    <span>Showing {filteredAssignments.length} of {assignments.length} assignment{assignments.length !== 1 ? 's' : ''}</span>
                                     <button onClick={() => { setSearchQuery(''); setStatusFilter('all'); }} className="text-primary hover:underline">Clear</button>
                                 </div>
                             )}
@@ -403,11 +415,7 @@ export default function AssignmentsPage() {
                                                         </button>
                                                     )}
                                                     <button
-                                                        onClick={() => {
-                                                            if (confirm(`Delete "${a.title}"? This cannot be undone.`)) {
-                                                                deleteMutation.mutate(a.id);
-                                                            }
-                                                        }}
+                                                        onClick={() => setDeleteTarget({ id: a.id, title: a.title })}
                                                         className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                                                         title="Delete"
                                                     >
@@ -422,6 +430,22 @@ export default function AssignmentsPage() {
                         </div>
                     )}
 
+                    {/* Delete confirmation modal */}
+                    <ConfirmDeleteModal
+                        isOpen={!!deleteTarget}
+                        onClose={() => setDeleteTarget(null)}
+                        onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+                        confirmationPhrase="Delete this Assignment"
+                        itemName={deleteTarget?.title}
+                        title="Delete Assignment"
+                        description={
+                            deleteTarget
+                                ? `Are you sure you want to delete "${deleteTarget.title}"? This action cannot be undone. Type "Delete this Assignment" to confirm.`
+                                : undefined
+                        }
+                        isLoading={deleteMutation.isPending}
+                    />
+
                     {/* Background refresh indicator */}
                     {isFetching && !isLoading && (
                         <div className="fixed bottom-4 right-4 bg-white shadow-lg rounded-full px-4 py-2 flex items-center gap-2 text-sm text-gray-600 border">
@@ -430,7 +454,5 @@ export default function AssignmentsPage() {
                         </div>
                     )}
                 </div>
-            </DashboardLayout>
-        </ProtectedRoute>
     );
 }

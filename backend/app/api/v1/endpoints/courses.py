@@ -1,11 +1,14 @@
 from typing import List, Optional
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import and_, or_
 from sqlalchemy import func
 from pydantic import BaseModel, EmailStr
 
 from app.api.deps import get_db, get_current_user, require_roles
-from app.models import User, UserRole, Course, CourseStatus, Enrollment, EnrollmentStatus, Assignment, TestCase, AuditLog
+from app.models import User, UserRole, Course, CourseStatus, CourseAssistant, Enrollment, EnrollmentStatus, Assignment, TestCase, AuditLog
+from app.services.email import send_student_add_request_to_admin, send_bulk_student_add_request_to_admin
 from app.schemas.course import Course as CourseSchema, CourseCreate, CourseUpdate, Enrollment as EnrollmentSchema
 from app.schemas.assignment import Assignment as AssignmentSchema
 
@@ -23,17 +26,24 @@ class CourseWithStats(BaseModel):
     semester: str
     year: int
     instructor_id: int
+    instructor_name: Optional[str] = None
+    instructor_email: Optional[str] = None
     is_active: bool
     status: str
     students_count: int
     assignments_count: int
     created_at: str
+    color: Optional[str] = None
 
     class Config:
         from_attributes = True
 
 
 class EnrollByEmailRequest(BaseModel):
+    email: EmailStr
+
+
+class AddAssistantRequest(BaseModel):
     email: EmailStr
 
 
@@ -45,6 +55,8 @@ class BulkEnrollResponse(BaseModel):
     enrolled: int
     failed: int
     errors: List[str]
+    not_found: List[str] = []
+    already_enrolled: List[str] = []
 
 
 class StudentInCourse(BaseModel):
@@ -54,6 +66,7 @@ class StudentInCourse(BaseModel):
     student_id: Optional[str] = None
     enrolled_at: str
     status: str
+    current_grade: Optional[float] = None
 
 
 @router.post("/", response_model=CourseSchema, status_code=status.HTTP_201_CREATED)
@@ -62,7 +75,7 @@ def create_course(
     current_user: User = Depends(require_roles(UserRole.FACULTY, UserRole.ADMIN)),
     db: Session = Depends(get_db)
 ):
-    """Create a new course (Faculty/Admin only)"""
+    """Create a new course. Faculty creates for themselves; Admin can assign instructor."""
     # Check if course code already exists
     existing = db.query(Course).filter(Course.code == course_in.code).first()
     if existing:
@@ -71,20 +84,31 @@ def create_course(
             detail="Course code already exists"
         )
     
-    # Ensure newly created courses are ACTIVE by default
-    course_data = course_in.dict()
+    course_data = course_in.model_dump()
     course_data.setdefault('section', None)
-    
-    # Allow admins to assign instructor; faculty creates their own course
-    instructor_id = course_data.pop('instructor_id') if course_data.get('instructor_id') else None
+
+    # Remove instructor_id from payload - we set it explicitly
+    instructor_id = course_data.pop('instructor_id', None)
     if not instructor_id:
         instructor_id = current_user.id
-    
+
+    # Status: draft, published (active), or archived
+    status_val = course_data.pop('status', 'draft')
+    if status_val == 'active':
+        status = CourseStatus.ACTIVE
+        is_active = True
+    elif status_val == 'archived':
+        status = CourseStatus.ARCHIVED
+        is_active = False
+    else:
+        status = CourseStatus.DRAFT
+        is_active = False
+
     course = Course(
         **course_data,
         instructor_id=instructor_id,
-        status=CourseStatus.ACTIVE,
-        is_active=True,
+        status=status,
+        is_active=is_active,
     )
     
     db.add(course)
@@ -122,6 +146,11 @@ def list_courses(
     elif current_user.role == UserRole.FACULTY:
         # Get courses taught by faculty
         courses = db.query(Course).filter(Course.instructor_id == current_user.id).offset(skip).limit(limit).all()
+    elif current_user.role == UserRole.ASSISTANT:
+        # Get courses where user is assigned as assistant
+        ca_list = db.query(CourseAssistant).filter(CourseAssistant.assistant_id == current_user.id).all()
+        course_ids = [ca.course_id for ca in ca_list]
+        courses = db.query(Course).filter(Course.id.in_(course_ids)).offset(skip).limit(limit).all() if course_ids else []
     else:
         # Admin sees all courses
         courses = db.query(Course).offset(skip).limit(limit).all()
@@ -149,11 +178,14 @@ def list_courses(
             semester=course.semester,
             year=course.year,
             instructor_id=course.instructor_id,
+            instructor_name=None,
+            instructor_email=None,
             is_active=course.is_active,
             status=course.status.value if hasattr(course.status, 'value') else str(course.status),
             students_count=students_count,
             assignments_count=assignments_count,
-            created_at=course.created_at.isoformat()
+            created_at=course.created_at.isoformat(),
+            color=course.color,
         ))
     
     return result
@@ -190,6 +222,16 @@ def get_course(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to access this course"
         )
+    elif current_user.role == UserRole.ASSISTANT:
+        ca = db.query(CourseAssistant).filter(
+            CourseAssistant.course_id == course_id,
+            CourseAssistant.assistant_id == current_user.id
+        ).first()
+        if not ca:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not assigned as assistant for this course"
+            )
     
     # Calculate counts
     students_count = db.query(Enrollment).filter(
@@ -200,6 +242,9 @@ def get_course(
     assignments_count = db.query(Assignment).filter(
         Assignment.course_id == course_id
     ).count()
+
+    # Fetch instructor
+    instructor = db.query(User).filter(User.id == course.instructor_id).first()
     
     # Build response
     return CourseWithStats(
@@ -211,11 +256,14 @@ def get_course(
         semester=course.semester,
         year=course.year,
         instructor_id=course.instructor_id,
+        instructor_name=instructor.full_name if instructor else None,
+        instructor_email=instructor.email if instructor else None,
         is_active=course.is_active,
         status=course.status.value if hasattr(course.status, 'value') else str(course.status),
         students_count=students_count,
         assignments_count=assignments_count,
-        created_at=course.created_at.isoformat()
+        created_at=course.created_at.isoformat(),
+        color=course.color,
     )
 
 
@@ -264,7 +312,7 @@ def update_course(
 @router.delete("/{course_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_course(
     course_id: int,
-    current_user: User = Depends(require_roles(UserRole.FACULTY, UserRole.ADMIN)),
+    current_user: User = Depends(require_roles(UserRole.ADMIN)),
     db: Session = Depends(get_db)
 ):
     """Delete a course (Admin or owning Faculty)"""
@@ -357,14 +405,47 @@ def enroll_student(
     return enrollment
 
 
-@router.post("/{course_id}/enroll-by-email")
-def enroll_student_by_email(
+class AssistantInCourse(BaseModel):
+    id: int
+    email: str
+    full_name: Optional[str] = None
+    assigned_at: str
+
+
+@router.get("/{course_id}/assistants", response_model=List[AssistantInCourse])
+def list_course_assistants(
     course_id: int,
-    request: EnrollByEmailRequest,
     current_user: User = Depends(require_roles(UserRole.FACULTY, UserRole.ADMIN)),
     db: Session = Depends(get_db)
 ):
-    """Enroll a student by email address"""
+    """List grading assistants assigned to a course"""
+    course = db.query(Course).filter(Course.id == course_id).first()
+    if not course:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
+    if current_user.role == UserRole.FACULTY and course.instructor_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+    cas = db.query(CourseAssistant).filter(CourseAssistant.course_id == course_id).all()
+    result = []
+    for ca in cas:
+        u = db.query(User).filter(User.id == ca.assistant_id).first()
+        if u:
+            result.append(AssistantInCourse(
+                id=u.id,
+                email=u.email,
+                full_name=u.full_name,
+                assigned_at=ca.assigned_at.isoformat(),
+            ))
+    return result
+
+
+@router.post("/{course_id}/assistants")
+def add_course_assistant(
+    course_id: int,
+    request: AddAssistantRequest,
+    current_user: User = Depends(require_roles(UserRole.FACULTY, UserRole.ADMIN)),
+    db: Session = Depends(get_db)
+):
+    """Add a grading assistant to a course (Faculty/Admin only)"""
     course = db.query(Course).filter(Course.id == course_id).first()
     if not course:
         raise HTTPException(
@@ -372,25 +453,149 @@ def enroll_student_by_email(
             detail="Course not found"
         )
     
+    if current_user.role == UserRole.FACULTY and course.instructor_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to manage assistants for this course"
+        )
+    
+    assistant = db.query(User).filter(
+        User.email == request.email,
+        User.role == UserRole.ASSISTANT
+    ).first()
+    
+    if not assistant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with email {request.email} not found or is not an assistant"
+        )
+    
+    existing = db.query(CourseAssistant).filter(
+        CourseAssistant.course_id == course_id,
+        CourseAssistant.assistant_id == assistant.id
+    ).first()
+    
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Assistant already assigned to this course"
+        )
+    
+    ca = CourseAssistant(course_id=course_id, assistant_id=assistant.id)
+    db.add(ca)
+    db.commit()
+    
+    audit = AuditLog(
+        user_id=current_user.id,
+        event_type="assistant_added",
+        description=f"Assistant {assistant.email} added to course {course.code}"
+    )
+    db.add(audit)
+    db.commit()
+    
+    return {"message": "Assistant added successfully", "assistant_id": assistant.id}
+
+
+@router.delete("/{course_id}/assistants/{assistant_id}")
+def remove_course_assistant(
+    course_id: int,
+    assistant_id: int,
+    current_user: User = Depends(require_roles(UserRole.FACULTY, UserRole.ADMIN)),
+    db: Session = Depends(get_db)
+):
+    """Remove a grading assistant from a course"""
+    course = db.query(Course).filter(Course.id == course_id).first()
+    if not course:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Course not found"
+        )
+    
+    if current_user.role == UserRole.FACULTY and course.instructor_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to manage assistants for this course"
+        )
+    
+    ca = db.query(CourseAssistant).filter(
+        CourseAssistant.course_id == course_id,
+        CourseAssistant.assistant_id == assistant_id
+    ).first()
+    
+    if not ca:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Assistant not assigned to this course"
+        )
+    
+    db.delete(ca)
+    db.commit()
+    
+    assistant = db.query(User).filter(User.id == assistant_id).first()
+    audit = AuditLog(
+        user_id=current_user.id,
+        event_type="assistant_removed",
+        description=f"Assistant {assistant.email if assistant else assistant_id} removed from course {course.code}"
+    )
+    db.add(audit)
+    db.commit()
+    
+    return {"message": "Assistant removed successfully"}
+
+
+@router.post("/{course_id}/enroll-by-email")
+def enroll_student_by_email(
+    course_id: int,
+    request: EnrollByEmailRequest,
+    current_user: User = Depends(require_roles(UserRole.FACULTY, UserRole.ADMIN)),
+    db: Session = Depends(get_db)
+):
+    """Enroll a student by email address. If student not in system, notifies admin."""
+    course = db.query(Course).filter(Course.id == course_id).first()
+    if not course:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Course not found"
+        )
+
     # Check authorization for faculty
     if current_user.role == UserRole.FACULTY and course.instructor_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to enroll students in this course"
         )
-    
-    # Find student by email
+
+    # Find student by email (normalize to lowercase for lookup)
+    email_lower = request.email.strip().lower()
     student = db.query(User).filter(
-        User.email == request.email,
+        User.email == email_lower,
         User.role == UserRole.STUDENT
     ).first()
-    
+
     if not student:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Student with email {request.email} not found"
+        # Record request and notify admin
+        audit = AuditLog(
+            user_id=current_user.id,
+            event_type="student_add_requested",
+            description=f"Faculty requested to add student {email_lower} for {course.code}. Student not in system."
         )
-    
+        db.add(audit)
+        db.commit()
+
+        admin_notified = send_student_add_request_to_admin(
+            student_email=email_lower,
+            course_code=course.code,
+            course_name=course.name,
+            faculty_name=current_user.full_name or current_user.email,
+            faculty_email=current_user.email,
+        )
+        return {
+            "enrolled": False,
+            "student_not_found": True,
+            "message": "Student is not in the system. Request has been sent to the admin to add this student." if admin_notified else "Student is not in the system. Request has been logged. Admin will be notified.",
+            "admin_notified": admin_notified,
+        }
+
     # Check if already enrolled
     existing = db.query(Enrollment).filter(
         Enrollment.student_id == student.id,
@@ -454,35 +659,40 @@ def bulk_enroll_students(
     enrolled = 0
     failed = 0
     errors = []
-    
+    not_found: List[str] = []
+    already_enrolled_list: List[str] = []
+
     for email in request.emails:
+        email_clean = email.strip().lower()
         try:
-            # Find student by email
+            # Find student by email (normalize)
             student = db.query(User).filter(
-                User.email == email,
+                User.email == email_clean,
                 User.role == UserRole.STUDENT
             ).first()
-            
+
             if not student:
                 failed += 1
-                errors.append(f"Student {email} not found")
+                not_found.append(email_clean)
+                errors.append(f"{email_clean}: not in system")
                 continue
-            
+
             # Check if already enrolled
             existing = db.query(Enrollment).filter(
                 Enrollment.student_id == student.id,
                 Enrollment.course_id == course_id
             ).first()
-            
+
             if existing:
                 if existing.status == EnrollmentStatus.ACTIVE:
-                    errors.append(f"{email} already enrolled")
+                    already_enrolled_list.append(email_clean)
+                    errors.append(f"{email_clean}: already enrolled")
                     continue
                 else:
                     existing.status = EnrollmentStatus.ACTIVE
                     enrolled += 1
                     continue
-            
+
             # Create enrollment
             enrollment = Enrollment(
                 student_id=student.id,
@@ -491,13 +701,23 @@ def bulk_enroll_students(
             )
             db.add(enrollment)
             enrolled += 1
-            
+
         except Exception as e:
             failed += 1
-            errors.append(f"Error enrolling {email}: {str(e)}")
+            errors.append(f"{email_clean}: {str(e)}")
     
     db.commit()
-    
+
+    # Notify admin about students not in system
+    if not_found:
+        send_bulk_student_add_request_to_admin(
+            not_found_emails=not_found,
+            course_code=course.code,
+            course_name=course.name,
+            faculty_name=current_user.full_name or current_user.email,
+            faculty_email=current_user.email,
+        )
+
     # Audit log
     audit = AuditLog(
         user_id=current_user.id,
@@ -506,8 +726,14 @@ def bulk_enroll_students(
     )
     db.add(audit)
     db.commit()
-    
-    return BulkEnrollResponse(enrolled=enrolled, failed=failed, errors=errors)
+
+    return BulkEnrollResponse(
+        enrolled=enrolled,
+        failed=failed,
+        errors=errors,
+        not_found=not_found,
+        already_enrolled=already_enrolled_list,
+    )
 
 
 @router.get("/{course_id}/students", response_model=List[StudentInCourse])
@@ -545,7 +771,8 @@ def get_course_students(
                 full_name=student.full_name,
                 student_id=student.student_id,
                 enrolled_at=enrollment.enrolled_at.isoformat(),
-                status=enrollment.status.value if hasattr(enrollment.status, 'value') else str(enrollment.status)
+                status=enrollment.status.value if hasattr(enrollment.status, 'value') else str(enrollment.status),
+                current_grade=enrollment.current_grade,
             ))
     
     return students
@@ -583,17 +810,37 @@ def get_course_assignments(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to access this course"
         )
+    elif current_user.role == UserRole.ASSISTANT:
+        ca = db.query(CourseAssistant).filter(
+            CourseAssistant.course_id == course_id,
+            CourseAssistant.assistant_id == current_user.id
+        ).first()
+        if not ca:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not assigned as assistant for this course"
+            )
     
     # Query assignments with test_cases eager-loaded to avoid lazy loading issues
     query = db.query(Assignment).options(
         joinedload(Assignment.test_cases),
         joinedload(Assignment.course)
     ).filter(Assignment.course_id == course_id)
-    
+
     # Students only see published assignments
     if current_user.role == UserRole.STUDENT or not include_unpublished:
         query = query.filter(Assignment.is_published == True)
-    
+    elif status and status != "all":
+        now = datetime.utcnow()
+        if status == "published":
+            query = query.filter(
+                and_(Assignment.is_published == True, or_(Assignment.due_date.is_(None), Assignment.due_date >= now))
+            )
+        elif status == "draft":
+            query = query.filter(Assignment.is_published == False)
+        elif status == "closed":
+            query = query.filter(and_(Assignment.is_published == True, Assignment.due_date < now))
+
     assignments = query.order_by(Assignment.due_date).all()
     
     return assignments

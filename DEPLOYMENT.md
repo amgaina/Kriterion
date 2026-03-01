@@ -1,219 +1,165 @@
-# Deployment Guide
+# Kriterion - Production Deployment Guide
 
-## Quick Deployment Commands
+This guide covers deploying Kriterion with:
+- **Frontend**: Vercel
+- **Backend**: Render
+- **Redis**: Redis Cloud
+- **Object Storage**: AWS S3
+- **Database**: Render PostgreSQL (or Neon / Supabase)
 
-### Initial Setup
+---
 
-```bash
-# 1. Clone repository
-git clone <repository-url>
-cd Kriterion
+## 1. Prerequisites
 
-# 2. Configure environment
-cp .env.example .env
-nano .env  # Edit with your settings
+- GitHub repo with Kriterion code
+- AWS account (for S3)
+- [Redis Cloud](https://redis.com/try-free/) account
+- [Vercel](https://vercel.com) account
+- [Render](https://render.com) account
 
-# 3. Setup (copy .env and install dependencies)
-make setup
+---
 
-# 4. Build containers
-make build
+## 2. Database (PostgreSQL)
 
-# 5. Start services
-make up
+**Option A: Render PostgreSQL**
+1. Render Dashboard → New → PostgreSQL
+2. Create database, note: **Internal Database URL** (for Render services) or **External Database URL** (if connecting from elsewhere)
 
-# 6. Initialize database
-make init-db
+**Option B: Neon / Supabase**
+- Create a project and copy the connection string
 
-# 7. Build sandbox
-make sandbox-build
+**Format:** `postgresql://user:password@host:port/dbname`
+
+---
+
+## 3. Redis Cloud
+
+1. Go to [Redis Cloud](https://app.redislabs.com/)
+2. Create a database (free tier available)
+3. After creation, open the database → **Connect** → copy the connection URL
+4. Redis Cloud typically uses TLS: `rediss://default:password@host:port`
+5. Use this URL for both `CELERY_BROKER_URL` and `CELERY_RESULT_BACKEND`
+
+---
+
+## 4. AWS S3
+
+1. Create an S3 bucket (e.g. `kriterion-submissions-prod`)
+2. Create an IAM user with programmatic access
+3. Attach a policy with:
+   - `s3:PutObject`
+   - `s3:GetObject`
+   - `s3:DeleteObject`
+   - `s3:ListBucket`
+4. Note: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
+5. Set `AWS_REGION` (e.g. `us-east-1`) and `AWS_S3_BUCKET_NAME`
+
+---
+
+## 5. Deploy Backend on Render
+
+1. Push `render.yaml` to your repo
+2. Render Dashboard → **New** → **Blueprint**
+3. Connect your GitHub repo
+4. Render will detect `render.yaml` and create:
+   - `kriterion-api` (web)
+   - `kriterion-celery-worker` (background worker)
+   - `kriterion-celery-beat` (scheduler)
+
+5. Add **PostgreSQL**: New → PostgreSQL (if not using external DB)
+
+6. For each service (`kriterion-api`, `kriterion-celery-worker`, `kriterion-celery-beat`), add **Environment Variables**:
+
+   | Variable | Value |
+   |----------|-------|
+   | `DATABASE_URL` | From Render PostgreSQL or your DB |
+   | `SECRET_KEY` | `openssl rand -hex 32` |
+   | `BACKEND_CORS_ORIGINS` | `["https://YOUR_VERCEL_APP.vercel.app"]` |
+   | `CELERY_BROKER_URL` | Redis Cloud URL |
+   | `CELERY_RESULT_BACKEND` | Same Redis Cloud URL |
+   | `AWS_ACCESS_KEY_ID` | Your AWS key |
+   | `AWS_SECRET_ACCESS_KEY` | Your AWS secret |
+   | `AWS_REGION` | `us-east-1` |
+   | `AWS_S3_BUCKET_NAME` | Your bucket name |
+   | `USE_S3_STORAGE` | `true` |
+   | `ENVIRONMENT` | `production` |
+   | `DEBUG` | `false` |
+   | `INITIAL_ADMIN_EMAIL` | Admin email |
+   | `INITIAL_ADMIN_PASSWORD` | Strong password |
+
+7. Deploy. Note the web service URL: `https://kriterion-api.onrender.com` (or your custom domain)
+
+---
+
+## 6. Deploy Frontend on Vercel
+
+1. Vercel Dashboard → **Add New** → **Project**
+2. Import your GitHub repo
+3. **Root Directory**: set to `frontend` (or `vercel.json` will use it)
+4. **Environment Variables**:
+
+   | Variable | Value |
+   |----------|-------|
+   | `NEXT_PUBLIC_API_URL` | `https://kriterion-api.onrender.com/api/v1` |
+   | `NEXT_PUBLIC_APP_NAME` | `Kriterion` |
+
+5. Deploy
+
+6. Copy your Vercel URL (e.g. `https://kriterion.vercel.app`) and add it to `BACKEND_CORS_ORIGINS` on Render, then redeploy the backend.
+
+---
+
+## 7. CORS
+
+Ensure `BACKEND_CORS_ORIGINS` on Render includes your Vercel URLs:
+```
+["https://kriterion.vercel.app","https://your-custom-domain.com"]
 ```
 
-### Access Application
+---
 
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8000
-- API Docs: http://localhost:8000/api/docs
+## 8. Sandbox / Code Execution
 
-### Default Credentials
+The backend runs student code in Docker containers. Render’s Docker services typically **cannot** run Docker-in-Docker (dind). Options:
 
-**Admin:**
+1. **Render with Docker**: Basic API and Celery will run; code execution may fail if it expects a Docker socket.
+2. **Alternative**: Host the backend on a platform that supports Docker-in-Docker (e.g. a VPS, Railway with the right setup, or Fly.io with a volume for the Docker socket).
 
-- Email: admin@kriterion.edu
-- Password: Admin@123456
+If code execution is required, consider running the backend on a VM or platform that supports Docker socket access.
 
-**Faculty:**
+---
 
-- Email: faculty@kriterion.edu
-- Password: Faculty@123
+## 9. Environment Variable Summary
 
-**Students:**
-
-- Email: student1@kriterion.edu
-- Password: Student1@123
-
-⚠️ **IMPORTANT:** Change all default passwords immediately!
-
-## Environment Variables to Configure
-
-### Critical (Must Change)
-
-```bash
-# Generate a secure secret key
-SECRET_KEY=$(openssl rand -hex 32)
-
-# Set strong database password
-POSTGRES_PASSWORD=$(openssl rand -hex 16)
-
-# Update admin credentials
-INITIAL_ADMIN_EMAIL=admin@yourdomain.com
-INITIAL_ADMIN_PASSWORD=YourSecurePassword@123
+### Vercel (frontend)
+```
+NEXT_PUBLIC_API_URL=https://kriterion-api.onrender.com/api/v1
+NEXT_PUBLIC_APP_NAME=Kriterion
 ```
 
-### Optional (Recommended)
-
-```bash
-# Email configuration (for password reset)
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your-email@gmail.com
-SMTP_PASSWORD=your-app-password
-EMAIL_FROM=noreply@yourdomain.com
-
-# File upload limits
-MAX_UPLOAD_SIZE_MB=50
-
-# Sandbox security
-SANDBOX_TIMEOUT_SECONDS=30
-SANDBOX_MEMORY_LIMIT_MB=512
+### Render (backend)
+```
+DATABASE_URL=postgresql://...
+SECRET_KEY=<32+ chars>
+BACKEND_CORS_ORIGINS=["https://your-app.vercel.app"]
+CELERY_BROKER_URL=rediss://default:pass@host:port
+CELERY_RESULT_BACKEND=rediss://default:pass@host:port
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+AWS_REGION=us-east-1
+AWS_S3_BUCKET_NAME=kriterion-submissions
+USE_S3_STORAGE=true
+ENVIRONMENT=production
+DEBUG=false
+INITIAL_ADMIN_EMAIL=admin@yourdomain.edu
+INITIAL_ADMIN_PASSWORD=...
 ```
 
-## Production Deployment Checklist
+---
 
-- [ ] Change all default passwords
-- [ ] Generate secure SECRET_KEY (min 32 chars)
-- [ ] Configure production database
-- [ ] Set ENVIRONMENT=production
-- [ ] Set DEBUG=false
-- [ ] Configure CORS origins
-- [ ] Setup HTTPS/SSL certificates
-- [ ] Configure email for notifications
-- [ ] Setup backup strategy
-- [ ] Configure monitoring and logging
-- [ ] Review and adjust rate limits
-- [ ] Setup firewall rules
-- [ ] Enable audit logging
-- [ ] Test sandbox isolation
+## 10. Post-Deploy
 
-## Maintenance Commands
-
-```bash
-# View logs
-make logs
-
-# Restart services
-make restart
-
-# Update database schema
-make migrate
-
-# Backup database
-docker exec kriterion-db pg_dump -U kriterion kriterion > backup.sql
-
-# Restore database
-docker exec -i kriterion-db psql -U kriterion kriterion < backup.sql
-
-# Clean up
-make clean
-```
-
-## Monitoring
-
-### Health Checks
-
-```bash
-# Check service status
-make status
-
-# Backend health
-curl http://localhost:8000/health
-
-# Database connection
-make shell-db
-```
-
-### Logs
-
-```bash
-# All services
-make logs
-
-# Backend only
-make logs-backend
-
-# Frontend only
-make logs-frontend
-
-# Follow logs
-docker-compose logs -f --tail=100
-```
-
-## Troubleshooting
-
-### Services won't start
-
-```bash
-# Check for port conflicts
-lsof -i :3000  # Frontend
-lsof -i :8000  # Backend
-lsof -i :5432  # Database
-
-# Restart services
-make restart
-
-# Rebuild if needed
-make clean
-make build
-make up
-```
-
-### Database issues
-
-```bash
-# Reset database (⚠️ destroys all data)
-make down
-docker volume rm kriterion_postgres_data
-make up
-make init-db
-```
-
-### Migration errors
-
-```bash
-# View migration status
-docker-compose exec backend alembic current
-
-# Reset migrations (⚠️ destroys data)
-docker-compose exec backend alembic downgrade base
-docker-compose exec backend alembic upgrade head
-```
-
-## Security Notes
-
-1. **Never commit .env file** - Contains sensitive credentials
-2. **Change default passwords** - Immediately after deployment
-3. **Use HTTPS in production** - Setup SSL certificates
-4. **Regular updates** - Keep dependencies updated
-5. **Backup regularly** - Database and uploaded files
-6. **Monitor logs** - Check for suspicious activity
-7. **Rate limiting** - Configure appropriate limits
-8. **Firewall rules** - Restrict access to necessary ports
-
-## Support
-
-For issues:
-
-1. Check logs: `make logs`
-2. Review documentation in README.md
-3. Check GitHub issues
-4. Contact support: support@kriterion.edu
+1. Open the Vercel app URL
+2. Log in with `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD`
+3. Change the admin password in the app
+4. Create courses, assignments, and test cases
