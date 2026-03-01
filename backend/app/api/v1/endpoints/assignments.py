@@ -515,6 +515,10 @@ def delete_assignment(
     if current_user.role == UserRole.FACULTY and assignment.course.instructor_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized")
     
+    # Delete related notifications first to avoid foreign key constraint violation
+    from app.models.notification import Notification
+    db.query(Notification).filter(Notification.assignment_id == assignment_id).delete()
+    
     # Audit log before deletion
     audit = AuditLog(
         user_id=current_user.id,
