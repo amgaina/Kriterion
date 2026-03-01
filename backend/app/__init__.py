@@ -1,1 +1,1 @@
-
+"""Kriterion application package."""
