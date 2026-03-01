@@ -178,6 +178,8 @@ const getTopNavItems = (role: UserRole) => {
         { label: 'Dashboard', href: '/admin/dashboard' },
         { label: 'Users', href: '/admin/users' },
         { label: 'Courses', href: '/admin/courses' },
+        { label: 'Languages', href: '/admin/languages' },
+        { label: 'Security', href: '/admin/security' },
         { label: 'Reports', href: '/admin/reports' },
         { label: 'Settings', href: '/admin/settings' },
     ];
@@ -219,15 +221,14 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
     if (!user) return null;
 
-    const navItems = getNavItems(user.role);
     const topNavItems = getTopNavItems(user.role);
+    const isAdmin = user.role === 'ADMIN';
     const showSidebar = false;
+    const showAdminTopNav = isAdmin && (pathname === '/admin/dashboard' || pathname.startsWith('/admin/dashboard/'));
 
     // For students, remove the primary learning nav from the sidebar since we show it in the top nav
     // Also remove 'Help' and 'Settings' from the sidebar and surface them in the profile menu
-    const sidebarItems = user.role === 'STUDENT'
-        ? navItems.filter(i => !['Dashboard', 'My Courses', 'Assignments', 'Grades', 'Progress', 'Schedule', 'Help', 'Settings'].includes(i.label))
-        : navItems;
+    const sidebarItems: NavItem[] = [];
 
     const handleLogout = () => {
         logout();
@@ -360,6 +361,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             {/* Main Content */}
             <div className={`flex-1 flex flex-col min-h-0 overflow-hidden ${showSidebar ? 'lg:pl-72' : ''}`}>
                 {/* Top Header */}
+                {(!isAdmin || showAdminTopNav) && (
                 <header className="flex-shrink-0 z-30 bg-white border-b border-gray-200 shadow-sm">
                     <div className="px-3 sm:px-4 lg:px-6 h-14 sm:h-16 flex items-center justify-between gap-2 min-w-0">
                         {/* Left side */}
@@ -508,6 +510,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                         </nav>
                     </div>
                 </header>
+                )}
 
                 {/* Logout Confirmation Modal */}
                 {showLogoutConfirm && (
