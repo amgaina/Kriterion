@@ -1,0 +1,70 @@
+# Kriterion Backend - Render Blueprint
+# Deploy: Render Dashboard > New > Blueprint > Connect repo with render.yaml
+#
+# Prerequisites:
+# - Create PostgreSQL on Render (or use external e.g. Neon)
+# - Create Redis on Redis Cloud - use the connection URL
+# - Create S3 bucket and IAM credentials
+# - Add all env vars in Render Dashboard or use envVarGroups
+
+services:
+  - type: web
+    name: kriterion-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+
+    region: oregon
+
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: false
+      - key: USE_S3_STORAGE
+        value: true
+      # Add these in Render Dashboard (sensitive):
+      # DATABASE_URL - from Render PostgreSQL or external
+      # SECRET_KEY - generate with: openssl rand -hex 32
+      # BACKEND_CORS_ORIGINS - ["https://your-app.vercel.app"]
+      # CELERY_BROKER_URL - Redis Cloud URL (redis:// or rediss://)
+      # CELERY_RESULT_BACKEND - same as CELERY_BROKER_URL
+      # AWS_ACCESS_KEY_ID
+      # AWS_SECRET_ACCESS_KEY
+      # AWS_REGION
+      # AWS_S3_BUCKET_NAME
+      # INITIAL_ADMIN_EMAIL
+      # INITIAL_ADMIN_PASSWORD
+
+  - type: worker
+    name: kriterion-celery-worker
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+
+    region: oregon
+
+    # Celery worker command
+    dockerCommand: celery -A app.core.celery_app worker --loglevel=info --queues=default,code_execution,grading --concurrency=2
+
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: USE_S3_STORAGE
+        value: true
+      # Same env vars as web service (add in Dashboard)
+
+  - type: worker
+    name: kriterion-celery-beat
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+
+    region: oregon
+
+    dockerCommand: celery -A app.core.celery_app beat --loglevel=info
+
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      # Same env vars (DATABASE_URL, SECRET_KEY, CELERY_*, etc.)

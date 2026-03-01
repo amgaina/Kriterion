@@ -146,6 +146,10 @@ make sandbox-build
 
 ⚠️ **Change these immediately in production!**
 
+## Production Deployment
+
+For production deployment with **Vercel** (frontend), **Render** (backend), **Redis Cloud**, and **AWS S3**, see [DEPLOYMENT.md](./DEPLOYMENT.md).
+
 ## 📁 Project Structure
 
 ```
