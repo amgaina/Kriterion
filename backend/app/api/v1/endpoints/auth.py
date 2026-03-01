@@ -126,7 +126,7 @@ def login(
     user.last_login = datetime.utcnow()
     db.commit()
     
-    # Create tokens — include role so frontend middleware can enforce route access
+    # Create tokens - include role so frontend middleware can enforce route access
     access_token = create_access_token(data={"sub": user.id, "role": user.role.value})
     refresh_token = create_refresh_token(data={"sub": user.id, "role": user.role.value})
     

@@ -3,7 +3,7 @@
 /**
  * Student Courses Page
  *
- * Clean, simple view of enrolled courses — same layout as faculty courses.
+ * Clean, simple view of enrolled courses - same layout as faculty courses.
  * - Search
  * - Course cards grid
  * - Responsive

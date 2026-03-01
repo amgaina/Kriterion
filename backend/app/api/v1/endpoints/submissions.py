@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
-from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from typing import Dict, List, Optional, Tuple
+from collections import defaultdict
+from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc
 import os
@@ -123,6 +124,85 @@ def list_assignment_submissions(
     return submissions
 
 
+def _get_assignment_ids_for_grader(db: Session, user: User) -> List[int]:
+    """Get assignment IDs the user can grade (for faculty/assistant)."""
+    if user.role == UserRole.ADMIN:
+        return [a.id for a in db.query(Assignment).all()]
+    if user.role == UserRole.FACULTY:
+        course_ids = [c.id for c in db.query(Course).filter(Course.instructor_id == user.id).all()]
+    elif user.role == UserRole.ASSISTANT:
+        ca_list = db.query(CourseAssistant).filter(CourseAssistant.assistant_id == user.id).all()
+        course_ids = [ca.course_id for ca in ca_list]
+    else:
+        return []
+    if not course_ids:
+        return []
+    return [a.id for a in db.query(Assignment).filter(Assignment.course_id.in_(course_ids)).all()]
+
+
+@router.get("/grading-stats")
+def get_grading_stats(
+    course_id: Optional[int] = Query(None, description="Filter by course (optional)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.FACULTY, UserRole.ADMIN, UserRole.ASSISTANT]))
+):
+    """
+    Return grading stats counting unique students (latest submission per student per assignment).
+    - pending_count: students whose latest submission is not completed
+    - graded_count: students whose latest submission is completed
+    """
+    assignment_ids = _get_assignment_ids_for_grader(db, current_user)
+    if course_id:
+        if current_user.role == UserRole.ADMIN:
+            pass  # admin sees all
+        elif current_user.role == UserRole.FACULTY:
+            if not db.query(Course).filter(Course.id == course_id, Course.instructor_id == current_user.id).first():
+                raise HTTPException(status_code=403, detail="Not authorized for this course")
+        elif current_user.role == UserRole.ASSISTANT:
+            if not db.query(CourseAssistant).filter(
+                CourseAssistant.course_id == course_id,
+                CourseAssistant.assistant_id == current_user.id
+            ).first():
+                raise HTTPException(status_code=403, detail="Not authorized for this course")
+        assignment_ids = [a.id for a in db.query(Assignment).filter(Assignment.course_id == course_id).all() if a.id in assignment_ids]
+
+    if not assignment_ids:
+        return {"total_pending": 0, "total_graded": 0, "assignments": []}
+
+    submissions = (
+        db.query(Submission)
+        .filter(Submission.assignment_id.in_(assignment_ids))
+        .order_by(Submission.assignment_id, Submission.student_id, desc(Submission.submitted_at))
+        .all()
+    )
+
+    # Group by (assignment_id, student_id), take latest (first after desc sort)
+    latest_by_student: Dict[Tuple[int, int], Submission] = {}
+    for s in submissions:
+        key = (s.assignment_id, s.student_id)
+        if key not in latest_by_student:
+            latest_by_student[key] = s
+
+    # Per-assignment counts
+    by_assignment: Dict[int, Dict[str, int]] = defaultdict(lambda: {"pending": 0, "graded": 0})
+    total_pending = 0
+    total_graded = 0
+    for (aid, _), sub in latest_by_student.items():
+        is_completed = str(sub.status or "").lower() == "completed"
+        if is_completed:
+            by_assignment[aid]["graded"] += 1
+            total_graded += 1
+        else:
+            by_assignment[aid]["pending"] += 1
+            total_pending += 1
+
+    assignments_out = [
+        {"assignment_id": aid, "pending_count": by_assignment[aid]["pending"], "graded_count": by_assignment[aid]["graded"]}
+        for aid in sorted(by_assignment.keys())
+    ]
+    return {"total_pending": total_pending, "total_graded": total_graded, "assignments": assignments_out}
+
+
 @router.get("/{submission_id}", response_model=SubmissionDetailWithStudent)
 def get_submission(
     submission_id: int,
@@ -231,6 +311,19 @@ async def create_submission(
                 raise HTTPException(
                     status_code=400,
                     detail=f"Required file missing: {required_file}"
+                )
+
+    # Validate allowed file extensions
+    allowed_extensions = assignment.allowed_file_extensions
+    if allowed_extensions:
+        allowed_set = {ext.lower() if ext.startswith('.') else f'.{ext.lower()}' for ext in allowed_extensions}
+        for upload_file in files:
+            fn = upload_file.filename or ''
+            ext = '.' + fn.split('.')[-1].lower() if '.' in fn else ''
+            if ext and ext not in allowed_set:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"File '{fn}' has disallowed extension. Allowed: {', '.join(sorted(allowed_set))}"
                 )
     
     # Calculate late penalty

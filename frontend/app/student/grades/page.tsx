@@ -371,7 +371,7 @@ export default function StudentGradesPage() {
                                                                         </Badge>
                                                                     ) : (
                                                                         <Badge variant="outline" className="text-gray-500 border-gray-200">
-                                                                             -/{maxScore}
+                                                                            -/{maxScore}
                                                                         </Badge>
                                                                     )}
                                                                     <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-primary transition-colors" />

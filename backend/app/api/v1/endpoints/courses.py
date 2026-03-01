@@ -26,6 +26,8 @@ class CourseWithStats(BaseModel):
     semester: str
     year: int
     instructor_id: int
+    instructor_name: Optional[str] = None
+    instructor_email: Optional[str] = None
     is_active: bool
     status: str
     students_count: int
@@ -176,6 +178,8 @@ def list_courses(
             semester=course.semester,
             year=course.year,
             instructor_id=course.instructor_id,
+            instructor_name=None,
+            instructor_email=None,
             is_active=course.is_active,
             status=course.status.value if hasattr(course.status, 'value') else str(course.status),
             students_count=students_count,
@@ -238,6 +242,9 @@ def get_course(
     assignments_count = db.query(Assignment).filter(
         Assignment.course_id == course_id
     ).count()
+
+    # Fetch instructor
+    instructor = db.query(User).filter(User.id == course.instructor_id).first()
     
     # Build response
     return CourseWithStats(
@@ -249,6 +256,8 @@ def get_course(
         semester=course.semester,
         year=course.year,
         instructor_id=course.instructor_id,
+        instructor_name=instructor.full_name if instructor else None,
+        instructor_email=instructor.email if instructor else None,
         is_active=course.is_active,
         status=course.status.value if hasattr(course.status, 'value') else str(course.status),
         students_count=students_count,

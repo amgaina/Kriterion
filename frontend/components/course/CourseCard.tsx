@@ -15,6 +15,7 @@ import {
     Upload,
     GraduationCap,
     BookOpen,
+    FileCode,
 } from 'lucide-react';
 
 /** Course status for styling */
@@ -41,7 +42,7 @@ export interface CourseCardData {
 }
 
 /** Role-specific actions */
-export type CourseCardVariant = 'faculty' | 'student' | 'admin';
+export type CourseCardVariant = 'faculty' | 'student' | 'admin' | 'assistant';
 
 export interface CourseCardActions {
     onEnroll?: (course: CourseCardData) => void;
@@ -152,6 +153,11 @@ export function CourseCard({ course, variant, basePath, actions }: CourseCardPro
                         <ChevronRight className="w-5 h-5" />
                     </div>
                 )}
+                {variant === 'assistant' && (
+                    <div className="absolute right-4 bottom-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <ChevronRight className="w-5 h-5" />
+                    </div>
+                )}
             </div>
 
             {/* Body */}
@@ -165,7 +171,7 @@ export function CourseCard({ course, variant, basePath, actions }: CourseCardPro
                 <div className="flex items-center justify-between pt-3 border-t border-gray-100 flex-shrink-0">
                     <div className="flex items-center gap-1.5 text-sm text-gray-500">
                         <Calendar className="w-4 h-4" />
-                        <span>{semesterYear || '—'}</span>
+                        <span>{semesterYear || '-'}</span>
                     </div>
                     {variant === 'student' && assignmentsCount > 0 && (
                         <div className="flex items-center gap-1.5 text-xs text-gray-500">
@@ -174,6 +180,15 @@ export function CourseCard({ course, variant, basePath, actions }: CourseCardPro
                         </div>
                     )}
                     {(variant === 'admin' && (assignmentsCount > 0 || studentsCount > 0)) && (
+                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                            <GraduationCap className="w-3.5 h-3.5" />
+                            <span>{studentsCount} students</span>
+                            <span className="text-gray-300">·</span>
+                            <BookOpen className="w-3.5 h-3.5" />
+                            <span>{assignmentsCount} assignments</span>
+                        </div>
+                    )}
+                    {(variant === 'assistant' && (assignmentsCount > 0 || studentsCount > 0)) && (
                         <div className="flex items-center gap-2 text-xs text-gray-500">
                             <GraduationCap className="w-3.5 h-3.5" />
                             <span>{studentsCount} students</span>
@@ -248,6 +263,24 @@ export function CourseCard({ course, variant, basePath, actions }: CourseCardPro
                             }}
                         >
                             View Course
+                            <ChevronRight className="w-3.5 h-3.5" />
+                        </Button>
+                    </div>
+                )}
+
+                {variant === 'assistant' && (
+                    <div className="mt-4 pt-3 border-t border-gray-100">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full gap-2 text-xs"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                router.push(courseUrl);
+                            }}
+                        >
+                            <FileCode className="w-3.5 h-3.5" />
+                            Grade Submissions
                             <ChevronRight className="w-3.5 h-3.5" />
                         </Button>
                     </div>

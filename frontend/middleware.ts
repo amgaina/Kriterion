@@ -86,10 +86,10 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // Authenticated — enforce role boundaries
+  // Authenticated - enforce role boundaries
   const allowedPrefix = ROLE_PREFIX[role];
   if (!allowedPrefix || !pathname.startsWith(allowedPrefix)) {
-    // User is trying to access a route outside their role — redirect home
+    // User is trying to access a route outside their role - redirect home
     const home = ROLE_HOME[role] || '/login';
     return NextResponse.redirect(new URL(home, request.url));
   }

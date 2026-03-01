@@ -52,7 +52,7 @@ export default function HeroSection() {
             transition={{ duration: 0.5, delay: 0.2 }}
             className="text-lg sm:text-xl text-gray-500 max-w-xl leading-relaxed mb-10"
           >
-            Kriterion compiles, executes, and grades student code in sandboxed containers — with plagiarism detection, rubric scoring, and instant feedback.
+            Kriterion compiles, executes, and grades student code in sandboxed containers - with plagiarism detection, rubric scoring, and instant feedback.
           </motion.p>
 
           <motion.div

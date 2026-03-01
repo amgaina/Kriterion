@@ -113,7 +113,7 @@ def get_faculty_dashboard(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.FACULTY]))
 ):
-    """Get faculty dashboard statistics — real-time from database."""
+    """Get faculty dashboard statistics - real-time from database."""
     now = datetime.utcnow()
 
     # Active courses only (status=ACTIVE and is_active=True)
@@ -221,7 +221,7 @@ def get_faculty_upcoming_events(
             is_completed = c.end_date < datetime.utcnow()
             events.append(FacultyEvent(
                 id=c.id,
-                title=f"{c.code} — {'Completed' if is_completed else 'Course Ends'}",
+                title=f"{c.code} - {'Completed' if is_completed else 'Course Ends'}",
                 course_name=c.name,
                 course_code=c.code,
                 event_type="course_end",
@@ -231,7 +231,7 @@ def get_faculty_upcoming_events(
         if c.start_date:
             events.append(FacultyEvent(
                 id=c.id,
-                title=f"{c.code} — Course Starts",
+                title=f"{c.code} - Course Starts",
                 course_name=c.name,
                 course_code=c.code,
                 event_type="course_start",

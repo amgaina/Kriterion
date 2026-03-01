@@ -51,7 +51,7 @@ const formatDate = (dateString: string) =>
     new Date(dateString).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
 const formatGrade = (grade: number | null | undefined) => {
-    if (grade == null) return '—';
+    if (grade == null) return '-';
     return `${Math.round(grade * 10) / 10}%`;
 };
 
@@ -168,7 +168,7 @@ export default function CourseStudentsPage() {
             key: 'student_id',
             header: 'Student ID',
             cell: (s: StudentInCourse) => (
-                <span className="text-sm text-gray-600 font-mono">{s.student_id || '—'}</span>
+                <span className="text-sm text-gray-600 font-mono">{s.student_id || '-'}</span>
             ),
         },
         {
@@ -176,15 +176,14 @@ export default function CourseStudentsPage() {
             header: 'Grade',
             cell: (s: StudentInCourse) => (
                 <span
-                    className={`font-medium ${
-                        s.current_grade != null
+                    className={`font-medium ${s.current_grade != null
                             ? s.current_grade >= 90
                                 ? 'text-emerald-600'
                                 : s.current_grade >= 70
-                                ? 'text-gray-700'
-                                : 'text-amber-600'
+                                    ? 'text-gray-700'
+                                    : 'text-amber-600'
                             : 'text-gray-400'
-                    }`}
+                        }`}
                 >
                     {formatGrade(s.current_grade)}
                 </span>
@@ -198,9 +197,8 @@ export default function CourseStudentsPage() {
                 const label = isActive ? 'Active' : 'Inactive';
                 return (
                     <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                            isActive ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-600'
-                        }`}
+                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${isActive ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-600'
+                            }`}
                     >
                         {label}
                     </span>
@@ -247,13 +245,12 @@ export default function CourseStudentsPage() {
                             initial={{ opacity: 0, y: -8 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -8 }}
-                            className={`rounded-xl border p-4 flex items-start gap-3 ${
-                                notification.type === 'success'
+                            className={`rounded-xl border p-4 flex items-start gap-3 ${notification.type === 'success'
                                     ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
                                     : notification.type === 'warning'
-                                    ? 'bg-amber-50 border-amber-200 text-amber-800'
-                                    : 'bg-red-50 border-red-200 text-red-800'
-                            }`}
+                                        ? 'bg-amber-50 border-amber-200 text-amber-800'
+                                        : 'bg-red-50 border-red-200 text-red-800'
+                                }`}
                         >
                             {notification.type === 'success' ? (
                                 <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />

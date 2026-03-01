@@ -1,460 +1,479 @@
 'use client';
 
+/**
+ * Student Course Detail Page
+ *
+ * Three tabs:
+ * 1. Overview - Course info, total grade, pending assignments
+ * 2. Assignments - All assignments list
+ * 3. Grading - Score per assignment (graded → score/max, ungraded → -/max)
+ */
+
 import { useState } from 'react';
 import { useParams } from 'next/navigation';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { DashboardLayout } from '@/components/layouts/DashboardLayout';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { useQuery } from '@tanstack/react-query';
+import apiClient from '@/lib/api-client';
+import Link from 'next/link';
+import { format, isPast } from 'date-fns';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 import { Tabs, TabPanel } from '@/components/ui/tabs';
-import { Avatar } from '@/components/ui/avatar';
-import Link from 'next/link';
+import { InnerHeaderDesign } from '@/components/InnerHeaderDesign';
 import {
     ArrowLeft,
     BookOpen,
-    Clock,
-    FileCode,
-    CheckCircle,
-    AlertCircle,
     User,
     Mail,
-    Calendar,
-    GraduationCap,
-    TrendingUp,
-    Download,
-    ExternalLink,
+    FileCode,
+    CheckCircle2,
+    AlertCircle,
+    ChevronRight,
+    Award,
+    LayoutGrid,
     ClipboardList,
-    FolderOpen,
-    BarChart3
 } from 'lucide-react';
+
+interface Course {
+    id: number;
+    name: string;
+    code: string;
+    description?: string | null;
+    semester: string;
+    year: number;
+    instructor_id: number;
+    instructor_name?: string | null;
+    instructor_email?: string | null;
+}
 
 interface Assignment {
     id: number;
     title: string;
-    due_date: string;
-    status: 'pending' | 'submitted' | 'graded' | 'overdue';
-    score?: number;
+    course_id: number;
     max_score: number;
+    due_date?: string;
+    is_published?: boolean;
 }
 
-interface Material {
+interface Submission {
     id: number;
-    title: string;
-    type: 'document' | 'video' | 'link';
-    url: string;
+    assignment_id: number;
+    final_score?: number | null;
+    max_score?: number;
+    graded_at?: string | null;
 }
 
-interface CourseDetail {
-    id: number;
-    name: string;
-    code: string;
-    description: string;
-    instructor: {
-        name: string;
-        email: string;
-        avatar?: string;
-    };
-    semester: string;
-    enrolled_date: string;
-    progress: number;
-    current_grade: string;
-    grade_percentage: number;
-    assignments: Assignment[];
-    materials: Material[];
-    schedule: {
-        day: string;
-        time: string;
-    }[];
+function getScoreColor(pct: number) {
+    if (pct >= 90) return 'text-green-600';
+    if (pct >= 80) return 'text-blue-600';
+    if (pct >= 70) return 'text-amber-600';
+    if (pct >= 60) return 'text-orange-600';
+    return 'text-red-600';
 }
 
-export default function CourseDetailPage() {
+function getScoreBgColor(pct: number) {
+    if (pct >= 90) return 'bg-green-50';
+    if (pct >= 80) return 'bg-blue-50';
+    if (pct >= 70) return 'bg-amber-50';
+    if (pct >= 60) return 'bg-orange-50';
+    return 'bg-red-50';
+}
+
+export default function StudentCourseDetailPage() {
     const params = useParams();
-    const courseId = params.id;
+    const courseId = Number(params.id);
     const [activeTab, setActiveTab] = useState('overview');
 
-    // Mock data - replace with actual API call
-    const course: CourseDetail = {
-        id: Number(courseId),
-        name: 'Data Structures and Algorithms',
-        code: 'CS201',
-        description: 'This course covers fundamental data structures (arrays, linked lists, trees, graphs) and algorithms (sorting, searching, dynamic programming) essential for software development and technical interviews.',
-        instructor: {
-            name: 'Dr. Sarah Johnson',
-            email: 'sarah.johnson@university.edu',
-            avatar: undefined
-        },
-        semester: 'Fall 2024',
-        enrolled_date: '2024-09-01',
-        progress: 65,
-        current_grade: 'A',
-        grade_percentage: 92,
-        assignments: [
-            { id: 1, title: 'Linked List Implementation', due_date: '2024-10-15', status: 'graded', score: 95, max_score: 100 },
-            { id: 2, title: 'Binary Search Tree', due_date: '2024-10-22', status: 'graded', score: 88, max_score: 100 },
-            { id: 3, title: 'Graph Traversal', due_date: '2024-10-29', status: 'submitted', max_score: 100 },
-            { id: 4, title: 'Sorting Algorithms', due_date: '2024-11-05', status: 'pending', max_score: 100 },
-            { id: 5, title: 'Dynamic Programming', due_date: '2024-11-12', status: 'pending', max_score: 100 },
-            { id: 6, title: 'Final Project', due_date: '2024-12-01', status: 'pending', max_score: 200 },
-        ],
-        materials: [
-            { id: 1, title: 'Course Syllabus', type: 'document', url: '#' },
-            { id: 2, title: 'Lecture Notes - Week 1', type: 'document', url: '#' },
-            { id: 3, title: 'Data Structures Overview', type: 'video', url: '#' },
-            { id: 4, title: 'Big O Notation Cheatsheet', type: 'document', url: '#' },
-            { id: 5, title: 'Additional Resources', type: 'link', url: '#' },
-        ],
-        schedule: [
-            { day: 'Monday', time: '10:00 AM - 11:30 AM' },
-            { day: 'Wednesday', time: '10:00 AM - 11:30 AM' },
-            { day: 'Friday', time: '2:00 PM - 3:00 PM (Lab)' },
-        ]
-    };
+    const { data: course, isLoading: courseLoading, isError: courseError, error: courseErr, refetch: refetchCourse } = useQuery({
+        queryKey: ['course', courseId],
+        queryFn: () => apiClient.getCourse(courseId),
+        enabled: !!courseId,
+    });
 
-    const getStatusBadge = (status: string) => {
-        switch (status) {
-            case 'graded':
-                return <Badge variant="success">Graded</Badge>;
-            case 'submitted':
-                return <Badge variant="info">Submitted</Badge>;
-            case 'overdue':
-                return <Badge variant="danger">Overdue</Badge>;
-            default:
-                return <Badge variant="warning">Pending</Badge>;
+    const { data: assignments = [] } = useQuery({
+        queryKey: ['student-assignments', courseId],
+        queryFn: () => apiClient.getAssignments(courseId),
+        enabled: !!courseId,
+    });
+
+    const { data: submissions = [] } = useQuery({
+        queryKey: ['student-submissions'],
+        queryFn: () => apiClient.getSubmissions(),
+        staleTime: 2 * 60 * 1000,
+    });
+
+    const courseAssignments = (assignments as (Assignment & { is_published?: boolean })[])
+        .filter((a) => (a as { is_published?: boolean }).is_published !== false)
+        .sort((a, b) => new Date(a.due_date || 0).getTime() - new Date(b.due_date || 0).getTime());
+
+    const submissionByAssignment = new Map<number, Submission>();
+    (submissions as Submission[]).forEach((s) => {
+        const existing = submissionByAssignment.get(s.assignment_id);
+        const sGraded = s.final_score != null;
+        const eGraded = existing?.final_score != null;
+        if (!existing) {
+            submissionByAssignment.set(s.assignment_id, s);
+        } else if (sGraded && !eGraded) {
+            submissionByAssignment.set(s.assignment_id, s);
+        } else if (sGraded && eGraded && s.graded_at && existing.graded_at && new Date(s.graded_at) > new Date(existing.graded_at)) {
+            submissionByAssignment.set(s.assignment_id, s);
+        } else if (!sGraded && !eGraded && (s as { submitted_at?: string }).submitted_at && (existing as { submitted_at?: string }).submitted_at &&
+            new Date((s as { submitted_at?: string }).submitted_at!) > new Date((existing as { submitted_at?: string }).submitted_at!)) {
+            submissionByAssignment.set(s.assignment_id, s);
         }
-    };
+    });
 
-    const completedAssignments = course.assignments.filter(a => a.status === 'graded').length;
-    const averageScore = course.assignments
-        .filter(a => a.score !== undefined)
-        .reduce((acc, a) => acc + (a.score! / a.max_score) * 100, 0) /
-        (course.assignments.filter(a => a.score !== undefined).length || 1);
+    const gradedScores: number[] = [];
+    courseAssignments.forEach((a) => {
+        const sub = submissionByAssignment.get(a.id);
+        if (sub?.final_score != null) {
+            const max = sub.max_score ?? a.max_score ?? 100;
+            gradedScores.push((sub.final_score / max) * 100);
+        }
+    });
+    const totalGrade = gradedScores.length > 0
+        ? Math.round(gradedScores.reduce((a, b) => a + b, 0) / gradedScores.length)
+        : null;
+
+    const pendingAssignments = courseAssignments.filter((a) => {
+        const sub = submissionByAssignment.get(a.id);
+        return sub?.final_score == null;
+    });
+
+    if (courseError || !courseId) {
+        return (
+            <div className="space-y-6 pb-8 px-1 sm:px-0">
+                <Link href="/student/courses">
+                    <Button variant="outline" size="sm" className="gap-2">
+                        <ArrowLeft className="w-4 h-4" />
+                        Back to Courses
+                    </Button>
+                </Link>
+                <Card className="border-red-200 bg-red-50">
+                    <CardContent className="py-12 text-center px-4 sm:px-6">
+                        <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                        <p className="font-semibold text-gray-900">Failed to load course</p>
+                        <p className="text-sm text-gray-600 mt-1">
+                            {(courseErr as Error)?.message || 'Course not found.'}
+                        </p>
+                        <Button variant="outline" onClick={() => refetchCourse()} className="mt-4">
+                            Try Again
+                        </Button>
+                    </CardContent>
+                </Card>
+            </div>
+        );
+    }
+
+    if (courseLoading || !course) {
+        return (
+            <div className="space-y-6 pb-8 px-1 sm:px-0">
+                <div className="h-10 w-32 bg-gray-200 rounded animate-pulse" />
+                <div className="space-y-4">
+                    {[1, 2, 3, 4].map((i) => (
+                        <Card key={i} className="animate-pulse">
+                            <CardContent className="p-6">
+                                <div className="h-6 bg-gray-200 rounded w-1/3 mb-4" />
+                                <div className="h-4 bg-gray-100 rounded w-full" />
+                                <div className="h-4 bg-gray-100 rounded w-2/3 mt-2" />
+                            </CardContent>
+                        </Card>
+                    ))}
+                </div>
+            </div>
+        );
+    }
+
+    const c = course as Course;
+
+    const tabs = [
+        { id: 'overview', label: 'Overview', icon: <LayoutGrid className="w-4 h-4" /> },
+        { id: 'assignments', label: 'Assignments', icon: <ClipboardList className="w-4 h-4" />, count: courseAssignments.length },
+        { id: 'grading', label: 'Grading', icon: <Award className="w-4 h-4" />, count: gradedScores.length },
+    ];
 
     return (
-        <ProtectedRoute allowedRoles={['STUDENT']}>
-            <DashboardLayout>
-                <div className="space-y-6">
-                    {/* Back Button & Header */}
-                    <div className="flex items-start gap-4">
-                        <Link href="/student/courses">
-                            <Button variant="outline" size="sm">
-                                <ArrowLeft className="w-4 h-4 mr-2" />
-                                Back
-                            </Button>
-                        </Link>
-                        <div className="flex-1">
-                            <div className="flex items-center gap-3">
-                                <Badge variant="primary">{course.code}</Badge>
-                                <Badge variant="outline">{course.semester}</Badge>
-                            </div>
-                            <h1 className="text-2xl font-bold text-gray-900 mt-2">{course.name}</h1>
-                            <p className="text-gray-500 mt-1">{course.description}</p>
-                        </div>
+        <div className="space-y-6 pb-8 px-1 sm:px-0">
+            <Link href="/student/courses">
+                <Button variant="outline" size="sm" className="gap-2">
+                    <ArrowLeft className="w-4 h-4" />
+                    Back to Courses
+                </Button>
+            </Link>
+
+            <InnerHeaderDesign
+                title={c.name}
+                subtitle={`${c.code} · ${c.semester} ${c.year}`}
+            />
+
+            <Card className="border-gray-100 shadow-sm overflow-hidden">
+                <CardContent className="p-0">
+                    <div className="px-4 sm:px-5 pt-4">
+                        <Tabs
+                            tabs={tabs}
+                            activeTab={activeTab}
+                            onTabChange={setActiveTab}
+                            className="border-0"
+                        />
                     </div>
 
-                    {/* Stats Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <Card>
-                            <CardContent className="p-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-full bg-[#862733]/10 flex items-center justify-center">
-                                        <TrendingUp className="w-5 h-5 text-[#862733]" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-gray-500">Current Grade</p>
-                                        <p className="text-2xl font-bold text-[#862733]">{course.current_grade}</p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="p-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                                        <GraduationCap className="w-5 h-5 text-blue-600" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-gray-500">Grade %</p>
-                                        <p className="text-2xl font-bold text-gray-900">{course.grade_percentage}%</p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="p-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
-                                        <CheckCircle className="w-5 h-5 text-green-600" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-gray-500">Completed</p>
-                                        <p className="text-2xl font-bold text-gray-900">{completedAssignments}/{course.assignments.length}</p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="p-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
-                                        <FileCode className="w-5 h-5 text-purple-600" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-gray-500">Avg Score</p>
-                                        <p className="text-2xl font-bold text-gray-900">{averageScore.toFixed(0)}%</p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    </div>
-
-                    {/* Progress Bar */}
-                    <Card>
-                        <CardContent className="p-4">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-sm font-medium text-gray-700">Course Progress</span>
-                                <span className="text-sm text-gray-500">{course.progress}% Complete</span>
-                            </div>
-                            <Progress value={course.progress} variant="default" />
-                        </CardContent>
-                    </Card>
-
-                    {/* Tabs */}
-                    <Card>
-                        <CardContent className="p-4">
-                            <Tabs
-                                tabs={[
-                                    { id: 'overview', label: 'Overview', icon: <BookOpen className="w-4 h-4" /> },
-                                    { id: 'assignments', label: 'Assignments', icon: <ClipboardList className="w-4 h-4" />, count: course.assignments.length },
-                                    { id: 'materials', label: 'Materials', icon: <FolderOpen className="w-4 h-4" /> },
-                                    { id: 'grades', label: 'Grades', icon: <BarChart3 className="w-4 h-4" /> },
-                                ]}
-                                activeTab={activeTab}
-                                onTabChange={setActiveTab}
-                            />
-                        </CardContent>
-                    </Card>
-
+                    {/* Tab 1: Overview */}
                     {activeTab === 'overview' && (
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            {/* Instructor Info */}
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle className="text-lg">Instructor</CardTitle>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="flex items-center gap-3">
-                                        <Avatar
-                                            src={course.instructor.avatar}
-                                            alt={course.instructor.name}
-                                            fallback={course.instructor.name.split(' ').map(n => n[0]).join('')}
-                                            size="lg"
-                                        />
-                                        <div>
-                                            <p className="font-medium text-gray-900">{course.instructor.name}</p>
-                                            <p className="text-sm text-gray-500">{course.instructor.email}</p>
-                                        </div>
-                                    </div>
-                                    <Button variant="outline" className="w-full mt-4">
-                                        <Mail className="w-4 h-4 mr-2" />
-                                        Contact Instructor
-                                    </Button>
-                                </CardContent>
-                            </Card>
-
-                            {/* Schedule */}
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle className="text-lg">Schedule</CardTitle>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="space-y-3">
-                                        {course.schedule.map((s, index) => (
-                                            <div key={index} className="flex items-center gap-3">
-                                                <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
-                                                    <Calendar className="w-4 h-4 text-gray-600" />
-                                                </div>
+                        <TabPanel className="px-4 sm:px-5 pb-6 pt-2">
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+                                {/* Course Info */}
+                                <div className="lg:col-span-2 space-y-4 sm:space-y-6">
+                                    <div className="rounded-xl bg-primary/5 border border-primary/10 p-4 sm:p-5">
+                                        <h3 className="text-base font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                                            <BookOpen className="w-5 h-5 text-primary" />
+                                            Course Information
+                                        </h3>
+                                        <div className="space-y-3 sm:space-y-4">
+                                            <div>
+                                                <p className="text-xs sm:text-sm font-medium text-gray-500">Title</p>
+                                                <p className="text-gray-900">{c.name}</p>
+                                            </div>
+                                            {c.description && (
                                                 <div>
-                                                    <p className="font-medium text-gray-900">{s.day}</p>
-                                                    <p className="text-sm text-gray-500">{s.time}</p>
+                                                    <p className="text-xs sm:text-sm font-medium text-gray-500">Description</p>
+                                                    <p className="text-gray-700 text-sm sm:text-base">{c.description}</p>
                                                 </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </CardContent>
-                            </Card>
-
-                            {/* Quick Stats */}
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle className="text-lg">Quick Stats</CardTitle>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="space-y-4">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-gray-600">Total Assignments</span>
-                                            <span className="font-medium">{course.assignments.length}</span>
-                                        </div>
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-gray-600">Completed</span>
-                                            <span className="font-medium text-green-600">{completedAssignments}</span>
-                                        </div>
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-gray-600">Pending</span>
-                                            <span className="font-medium text-yellow-600">
-                                                {course.assignments.filter(a => a.status === 'pending').length}
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-gray-600">Enrolled Since</span>
-                                            <span className="font-medium">
-                                                {new Date(course.enrolled_date).toLocaleDateString()}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        </div>
-                    )}
-
-                    {activeTab === 'assignments' && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>All Assignments</CardTitle>
-                                <CardDescription>Track and submit your assignments</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="space-y-4">
-                                    {course.assignments.map((assignment) => (
-                                        <div
-                                            key={assignment.id}
-                                            className="flex items-center justify-between p-4 rounded-lg border border-gray-200 hover:border-[#862733]/30 transition-colors"
-                                        >
-                                            <div className="flex items-center gap-4">
-                                                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${assignment.status === 'graded' ? 'bg-green-100' :
-                                                    assignment.status === 'submitted' ? 'bg-blue-100' :
-                                                        assignment.status === 'overdue' ? 'bg-red-100' : 'bg-gray-100'
-                                                    }`}>
-                                                    <FileCode className={`w-5 h-5 ${assignment.status === 'graded' ? 'text-green-600' :
-                                                        assignment.status === 'submitted' ? 'text-blue-600' :
-                                                            assignment.status === 'overdue' ? 'text-red-600' : 'text-gray-600'
-                                                        }`} />
-                                                </div>
+                                            )}
+                                            {(c.instructor_name || c.instructor_email) && (
                                                 <div>
-                                                    <p className="font-medium text-gray-900">{assignment.title}</p>
-                                                    <p className="text-sm text-gray-500">
-                                                        Due: {new Date(assignment.due_date).toLocaleDateString()}
-                                                    </p>
+                                                    <p className="text-xs sm:text-sm font-medium text-gray-500 mb-2">Instructor</p>
+                                                    <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-4">
+                                                        {c.instructor_name && (
+                                                            <span className="flex items-center gap-2 text-gray-900">
+                                                                <User className="w-4 h-4 text-primary flex-shrink-0" />
+                                                                {c.instructor_name}
+                                                            </span>
+                                                        )}
+                                                        {c.instructor_email && (
+                                                            <a
+                                                                href={`mailto:${c.instructor_email}`}
+                                                                className="flex items-center gap-2 text-primary hover:underline text-sm sm:text-base"
+                                                            >
+                                                                <Mail className="w-4 h-4 flex-shrink-0" />
+                                                                {c.instructor_email}
+                                                            </a>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                            <div className="flex items-center gap-4">
-                                                {assignment.score !== undefined && (
-                                                    <span className="text-sm font-medium text-gray-700">
-                                                        {assignment.score}/{assignment.max_score}
-                                                    </span>
-                                                )}
-                                                {getStatusBadge(assignment.status)}
-                                                <Link href={`/student/assignments/${assignment.id}`}>
-                                                    <Button size="sm" variant={assignment.status === 'pending' ? 'default' : 'outline'}>
-                                                        {assignment.status === 'pending' ? 'Start' : 'View'}
-                                                    </Button>
-                                                </Link>
-                                            </div>
+                                            )}
                                         </div>
-                                    ))}
+                                    </div>
                                 </div>
-                            </CardContent>
-                        </Card>
-                    )}
 
-                    {activeTab === 'materials' && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Course Materials</CardTitle>
-                                <CardDescription>Access lecture notes, videos, and resources</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {course.materials.map((material) => (
-                                        <div
-                                            key={material.id}
-                                            className="flex items-center justify-between p-4 rounded-lg border border-gray-200 hover:border-[#862733]/30 transition-colors"
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${material.type === 'document' ? 'bg-blue-100' :
-                                                    material.type === 'video' ? 'bg-purple-100' : 'bg-green-100'
-                                                    }`}>
-                                                    {material.type === 'document' ? <FileCode className="w-5 h-5 text-blue-600" /> :
-                                                        material.type === 'video' ? <BookOpen className="w-5 h-5 text-purple-600" /> :
-                                                            <ExternalLink className="w-5 h-5 text-green-600" />}
-                                                </div>
-                                                <div>
-                                                    <p className="font-medium text-gray-900">{material.title}</p>
-                                                    <p className="text-sm text-gray-500 capitalize">{material.type}</p>
-                                                </div>
-                                            </div>
-                                            <Button size="sm" variant="outline">
-                                                <Download className="w-4 h-4 mr-2" />
-                                                Download
-                                            </Button>
-                                        </div>
-                                    ))}
-                                </div>
-                            </CardContent>
-                        </Card>
-                    )}
-
-                    {activeTab === 'grades' && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Grade Breakdown</CardTitle>
-                                <CardDescription>Your performance in this course</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="space-y-4">
-                                    {course.assignments.filter(a => a.score !== undefined).map((assignment) => (
-                                        <div key={assignment.id} className="space-y-2">
-                                            <div className="flex items-center justify-between">
-                                                <span className="font-medium text-gray-900">{assignment.title}</span>
-                                                <span className="text-sm text-gray-600">
-                                                    {assignment.score}/{assignment.max_score} ({((assignment.score! / assignment.max_score) * 100).toFixed(0)}%)
+                                {/* Total Grade */}
+                                <div>
+                                    <div className="rounded-xl border border-gray-100 p-4 sm:p-5 h-full">
+                                        <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                                            <Award className="w-5 h-5 text-primary" />
+                                            Total Grade
+                                        </h3>
+                                        <div className="flex flex-col sm:flex-row lg:flex-col items-start sm:items-center gap-4">
+                                            <div
+                                                className={`w-14 h-14 sm:w-16 sm:h-16 rounded-2xl flex items-center justify-center flex-shrink-0 ${totalGrade != null ? getScoreBgColor(totalGrade) : 'bg-gray-50'
+                                                    }`}
+                                            >
+                                                <span
+                                                    className={`text-xl sm:text-2xl font-bold ${totalGrade != null ? getScoreColor(totalGrade) : 'text-gray-400'
+                                                        }`}
+                                                >
+                                                    {totalGrade != null ? `${totalGrade}%` : '-'}
                                                 </span>
                                             </div>
-                                            <Progress
-                                                value={(assignment.score! / assignment.max_score) * 100}
-                                                variant={
-                                                    (assignment.score! / assignment.max_score) >= 0.9 ? 'success' :
-                                                        (assignment.score! / assignment.max_score) >= 0.7 ? 'warning' : 'danger'
-                                                }
-                                            />
-                                        </div>
-                                    ))}
-                                    {course.assignments.filter(a => a.score !== undefined).length === 0 && (
-                                        <p className="text-center text-gray-500 py-8">
-                                            No graded assignments yet
-                                        </p>
-                                    )}
-                                </div>
-
-                                {/* Grade Summary */}
-                                <div className="mt-8 pt-6 border-t border-gray-200">
-                                    <div className="flex items-center justify-between">
-                                        <div>
-                                            <p className="text-lg font-semibold text-gray-900">Overall Grade</p>
-                                            <p className="text-sm text-gray-500">Based on graded assignments</p>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-3xl font-bold text-[#862733]">{course.current_grade}</p>
-                                            <p className="text-sm text-gray-500">{course.grade_percentage}%</p>
+                                            <div>
+                                                <p className="text-sm text-gray-500">Average of graded</p>
+                                                <p className="text-sm text-gray-600 mt-0.5">
+                                                    {gradedScores.length} of {courseAssignments.length} graded
+                                                </p>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-                            </CardContent>
-                        </Card>
+                            </div>
+
+                            {/* Pending Assignments */}
+                            {pendingAssignments.length > 0 && (
+                                <div className="mt-4 sm:mt-6">
+                                    <h3 className="text-base font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                                        <AlertCircle className="w-5 h-5 text-amber-600" />
+                                        Pending ({pendingAssignments.length})
+                                    </h3>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
+                                        {pendingAssignments.map((a) => {
+                                            const isOverdue = a.due_date && isPast(new Date(a.due_date));
+                                            return (
+                                                <Link
+                                                    key={a.id}
+                                                    href={`/student/assignments/${a.id}`}
+                                                    className="flex items-center gap-3 p-3 sm:p-4 rounded-lg border border-gray-100 hover:border-primary/20 hover:bg-primary/5 transition-colors group"
+                                                >
+                                                    <FileCode className="w-5 h-5 text-gray-400 flex-shrink-0 group-hover:text-primary" />
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="font-medium text-gray-900 truncate text-sm sm:text-base">{a.title}</p>
+                                                        <p className={`text-xs sm:text-sm ${isOverdue ? 'text-red-600' : 'text-gray-500'}`}>
+                                                            Due {a.due_date ? format(new Date(a.due_date), 'MMM d') : '-'}
+                                                            {isOverdue && ' · Overdue'}
+                                                        </p>
+                                                    </div>
+                                                    <Button size="sm" className="bg-primary hover:bg-primary-700 text-white flex-shrink-0">
+                                                        {isOverdue ? 'Complete' : 'Start'}
+                                                        <ChevronRight className="w-3.5 h-3.5 ml-0.5" />
+                                                    </Button>
+                                                </Link>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {pendingAssignments.length === 0 && courseAssignments.length > 0 && (
+                                <div className="mt-6 flex items-center gap-2 p-4 rounded-lg bg-green-50 border border-green-100">
+                                    <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+                                    <p className="text-sm text-green-800">All assignments completed or graded.</p>
+                                </div>
+                            )}
+                        </TabPanel>
                     )}
-                </div>
-            </DashboardLayout>
-        </ProtectedRoute>
+
+                    {/* Tab 2: Assignments */}
+                    {activeTab === 'assignments' && (
+                        <TabPanel className="px-4 sm:px-5 pb-6 pt-2">
+                            {courseAssignments.length === 0 ? (
+                                <div className="py-12 sm:py-16 text-center">
+                                    <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-primary/10 flex items-center justify-center">
+                                        <FileCode className="w-8 h-8 text-primary" />
+                                    </div>
+                                    <p className="text-gray-500">No assignments in this course yet.</p>
+                                </div>
+                            ) : (
+                                <div className="divide-y divide-gray-50">
+                                    {courseAssignments.map((a) => {
+                                        const sub = submissionByAssignment.get(a.id);
+                                        const isGraded = sub?.final_score != null;
+                                        const maxScore = sub?.max_score ?? a.max_score ?? 100;
+                                        const isOverdue = a.due_date && isPast(new Date(a.due_date)) && !isGraded;
+                                        return (
+                                            <Link
+                                                key={a.id}
+                                                href={`/student/assignments/${a.id}`}
+                                                className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 py-4 sm:py-3.5 hover:bg-primary/5 -mx-2 px-2 sm:mx-0 sm:px-0 rounded-lg transition-colors group"
+                                            >
+                                                <div
+                                                    className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${isGraded ? getScoreBgColor((sub!.final_score! / maxScore) * 100) :
+                                                            isOverdue ? 'bg-red-50' : 'bg-gray-50'
+                                                        }`}
+                                                >
+                                                    {isGraded ? (
+                                                        <CheckCircle2 className="w-5 h-5 text-green-600" />
+                                                    ) : isOverdue ? (
+                                                        <AlertCircle className="w-5 h-5 text-red-600" />
+                                                    ) : (
+                                                        <FileCode className="w-5 h-5 text-gray-400" />
+                                                    )}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="font-medium text-gray-900 truncate group-hover:text-primary transition-colors">
+                                                        {a.title}
+                                                    </p>
+                                                    <p className="text-sm text-gray-500">
+                                                        Due {a.due_date ? format(new Date(a.due_date), 'MMM d, yyyy') : '-'}
+                                                    </p>
+                                                </div>
+                                                <div className="flex items-center gap-2 flex-shrink-0">
+                                                    {isGraded ? (
+                                                        <Badge
+                                                            variant={(sub!.final_score! / maxScore) >= 0.7 ? 'success' : (sub!.final_score! / maxScore) >= 0.6 ? 'warning' : 'danger'}
+                                                        >
+                                                            {Math.round(sub!.final_score!)}/{maxScore}
+                                                        </Badge>
+                                                    ) : (
+                                                        <span className="text-sm text-gray-400">-/{maxScore}</span>
+                                                    )}
+                                                    <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-primary" />
+                                                </div>
+                                            </Link>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </TabPanel>
+                    )}
+
+                    {/* Tab 3: Grading */}
+                    {activeTab === 'grading' && (
+                        <TabPanel className="px-4 sm:px-5 pb-6 pt-2">
+                            <p className="text-sm text-gray-500 mb-4">
+                                Your score for each assignment in this course.
+                            </p>
+                            {courseAssignments.length === 0 ? (
+                                <div className="py-12 sm:py-16 text-center">
+                                    <Award className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                                    <p className="text-gray-500">No assignments to display.</p>
+                                </div>
+                            ) : (
+                                <div className="rounded-xl border border-gray-100 overflow-hidden">
+                                    <div className="divide-y divide-gray-50">
+                                        {courseAssignments.map((a) => {
+                                            const sub = submissionByAssignment.get(a.id);
+                                            const isGraded = sub?.final_score != null;
+                                            const maxScore = sub?.max_score ?? a.max_score ?? 100;
+                                            const pct = isGraded ? Math.round((sub!.final_score! / maxScore) * 100) : 0;
+                                            return (
+                                                <Link
+                                                    key={a.id}
+                                                    href={`/student/assignments/${a.id}`}
+                                                    className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 px-4 py-3.5 hover:bg-primary/5 transition-colors group"
+                                                >
+                                                    <div
+                                                        className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${isGraded ? getScoreBgColor(pct) : 'bg-gray-50'
+                                                            }`}
+                                                    >
+                                                        {isGraded ? (
+                                                            <span className={`text-sm font-bold ${getScoreColor(pct)}`}>
+                                                                {pct}%
+                                                            </span>
+                                                        ) : (
+                                                            <FileCode className="w-5 h-5 text-gray-400" />
+                                                        )}
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="font-medium text-gray-900 truncate group-hover:text-primary transition-colors">
+                                                            {a.title}
+                                                        </p>
+                                                        {sub?.graded_at && (
+                                                            <p className="text-xs text-gray-500">
+                                                                Graded {format(new Date(sub.graded_at!), 'MMM d')}
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                                        {isGraded ? (
+                                                            <Badge
+                                                                variant={pct >= 80 ? 'success' : pct >= 60 ? 'warning' : 'danger'}
+                                                            >
+                                                                {Math.round(sub!.final_score!)}/{maxScore}
+                                                            </Badge>
+                                                        ) : (
+                                                            <Badge variant="outline" className="text-gray-500 border-gray-200">
+                                                                -/{maxScore}
+                                                            </Badge>
+                                                        )}
+                                                        <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-primary" />
+                                                    </div>
+                                                </Link>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </TabPanel>
+                    )}
+                </CardContent>
+            </Card>
+        </div>
     );
 }

@@ -45,7 +45,8 @@ class CodeFile(BaseModel):
 class RunCodeRequest(BaseModel):
     """Request to run code without submission"""
     files: List[CodeFile] = Field(..., min_items=1, description="Code files to run")
-    test_case_ids: Optional[List[int]] = Field(None, description="Specific test case IDs to run; omit or empty to run all")
+    test_case_ids: Optional[List[int]] = Field(None, description="Specific test case IDs to run; omit or empty to run code only (terminal mode)")
+    stdin: Optional[str] = Field(None, description="Standard input for terminal mode (when no test cases); e.g. '10\\n20\\n30' for Scanner/input()")
 
 class TestResult(BaseModel):
     """Individual test result"""
@@ -69,6 +70,8 @@ class RunCodeResponse(BaseModel):
     tests_total: int
     message: Optional[str] = None
     compilation_status: Optional[str] = None
+    stdout: Optional[str] = None
+    stderr: Optional[str] = None
 
 
 @router.get("", response_model=List[AssignmentSchema])
@@ -175,6 +178,54 @@ def get_assignment(
     
     return assignment
 
+
+@router.get("/{assignment_id}/supplementary-files")
+def get_supplementary_files(
+    assignment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get list of supplementary files with presigned download URLs (students only)"""
+    assignment = db.query(Assignment).options(joinedload(Assignment.course)).filter(Assignment.id == assignment_id).first()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    if current_user.role == UserRole.STUDENT:
+        enrollment = db.query(Enrollment).filter(
+            and_(
+                Enrollment.student_id == current_user.id,
+                Enrollment.course_id == assignment.course_id,
+                Enrollment.status == EnrollmentStatus.ACTIVE
+            )
+        ).first()
+        if not enrollment or not assignment.is_published:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+    import json
+    supplementary = []
+    if assignment.starter_code and isinstance(assignment.starter_code, str):
+        try:
+            payload = json.loads(assignment.starter_code)
+            supplementary = payload.get("supplementary") or []
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    if not supplementary:
+        return []
+
+    result = []
+    try:
+        from app.core.config import settings
+        if getattr(settings, 'USE_S3_STORAGE', True) and s3_service.s3_client:
+            for item in supplementary:
+                s3_key = item.get("s3_key")
+                filename = item.get("filename", "file")
+                size = item.get("size", 0)
+                if s3_key:
+                    url = s3_service.generate_presigned_url(s3_key, expiration=3600)
+                    result.append({"filename": filename, "download_url": url, "size": size})
+    except Exception as e:
+        logger.warning(f"Could not generate presigned URLs: {e}")
+    return result
 
 
 # --- New version: Accept files and upload to S3 ---
@@ -607,7 +658,7 @@ async def run_assignment_code(
             or_(TestCase.is_sample == True, TestCase.is_hidden == False)
         )
 
-    if request.test_case_ids:
+    if request.test_case_ids is not None:
         tc_query = tc_query.filter(TestCase.id.in_(request.test_case_ids))
 
     test_cases = tc_query.order_by(TestCase.order).all()
@@ -628,28 +679,30 @@ async def run_assignment_code(
             logger.info(f"No test cases for assignment {assignment_id}, attempting compilation/run for user {current_user.id}")
             
             try:
+                stdin_input = (request.stdin or "").replace("\r\n", "\n").replace("\r", "\n")
                 execution_result = await asyncio.to_thread(
                     sandbox_executor.execute_code,
                     code_path=temp_dir,
                     language=assignment.language.name.lower(),
-                    test_input="",
+                    test_input=stdin_input,
                     command_args=None
                 )
                 
                 timed_out = execution_result.get("timed_out", False)
                 compiled_ok = execution_result.get("success", False) or execution_result.get("exit_code") == 0
-                
+                raw_stdout = execution_result.get("stdout", "") or ""
+                raw_stderr = execution_result.get("stderr", "") or ""
+
                 if timed_out:
                     compilation_status = "Time Exceeds"
-                    message = "Time Exceeds"
+                    message = "Execution timed out."
                 elif compiled_ok:
                     compilation_status = "Compiled Successfully"
-                    message = "Compiled Successfully"
+                    message = None
                 else:
                     compilation_status = "Not Compiled Successfully"
-                    error_msg = execution_result.get("stderr", "Unknown error")
-                    message = f"Not Compiled Successfully\n{error_msg[:500]}"
-                    
+                    message = raw_stderr[:2000] if raw_stderr else "Unknown error"
+
                 audit = AuditLog(
                     user_id=current_user.id,
                     event_type="code_run_no_tests",
@@ -666,7 +719,9 @@ async def run_assignment_code(
                     tests_passed=0,
                     tests_total=0,
                     message=message,
-                    compilation_status=compilation_status
+                    compilation_status=compilation_status,
+                    stdout=raw_stdout[:10000] if raw_stdout else None,
+                    stderr=raw_stderr[:10000] if raw_stderr else None,
                 )
                 
             except Exception as e:
@@ -678,8 +733,10 @@ async def run_assignment_code(
                     max_score=0,
                     tests_passed=0,
                     tests_total=0,
-                    message=f"Not Compiled Successfully\n{str(e)}",
-                    compilation_status="Not Compiled Successfully"
+                    message=str(e),
+                    compilation_status="Not Compiled Successfully",
+                    stdout=None,
+                    stderr=str(e)[:10000],
                 )
             finally:
                 if temp_dir and os.path.exists(temp_dir):

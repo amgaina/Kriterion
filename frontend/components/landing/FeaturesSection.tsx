@@ -7,7 +7,7 @@ const FEATURES = [
   {
     icon: <Cpu className="w-5 h-5" />,
     title: "Sandboxed Execution",
-    desc: "Every submission runs in an isolated Docker container — no security risks, no system access.",
+    desc: "Every submission runs in an isolated Docker container - no security risks, no system access.",
     color: "bg-cyan-50 text-cyan-600 border-cyan-100",
   },
   {
@@ -31,7 +31,7 @@ const FEATURES = [
   {
     icon: <Clock className="w-5 h-5" />,
     title: "Real-Time Feedback",
-    desc: "Students see compilation results and test output instantly — no waiting for manual review.",
+    desc: "Students see compilation results and test output instantly - no waiting for manual review.",
     color: "bg-amber-50 text-amber-600 border-amber-100",
   },
   {

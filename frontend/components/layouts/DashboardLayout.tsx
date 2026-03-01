@@ -118,7 +118,6 @@ const getNavItems = (role: UserRole): NavItem[] => {
         return [
             { label: 'Dashboard', href: `${baseUrl}/dashboard`, icon: <DashboardIcon /> },
             { label: 'My Courses', href: `${baseUrl}/courses`, icon: <BookIcon /> },
-            { label: 'Grading', href: `${baseUrl}/grading`, icon: <GradeIcon /> },
         ];
     }
 
@@ -171,7 +170,6 @@ const getTopNavItems = (role: UserRole) => {
         return [
             { label: 'Dashboard', href: '/assistant/dashboard' },
             { label: 'My Courses', href: '/assistant/courses' },
-            { label: 'Grading', href: '/assistant/grading' },
         ];
     }
 
@@ -442,7 +440,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                                             <p className="text-sm font-semibold text-gray-900">{user.full_name}</p>
                                             <p className="text-xs text-gray-500 mt-1 break-words">{user.email}</p>
                                             <span className="inline-block mt-3 px-3 py-1 bg-[#862733] text-white text-xs font-medium rounded-full">
-                                                {user.role === 'FACULTY' ? 'Faculty' : user.role === 'STUDENT' ? 'Student' : 'Admin'}
+                                                {user.role === 'FACULTY' ? 'Faculty' : user.role === 'STUDENT' ? 'Student' : user.role === 'ASSISTANT' ? 'Grading Assistant' : 'Admin'}
                                             </span>
                                         </div>
 

@@ -55,8 +55,8 @@ export default function AssistantSubmissionDetailPage() {
         return (
             <div className="text-center py-12">
                 <p className="text-gray-500">Submission not found</p>
-                <Link href="/assistant/grading">
-                    <Button className="mt-4">Back to Grading</Button>
+                <Link href="/assistant/dashboard">
+                    <Button className="mt-4">Back to Dashboard</Button>
                 </Link>
             </div>
         );
@@ -79,10 +79,10 @@ export default function AssistantSubmissionDetailPage() {
             )}
 
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <Link href="/assistant/grading">
+                <Link href="/assistant/dashboard">
                     <Button variant="ghost" size="sm">
                         <ArrowLeft className="w-4 h-4 mr-2" />
-                        Back to Grading
+                        Back to Dashboard
                     </Button>
                 </Link>
             </div>

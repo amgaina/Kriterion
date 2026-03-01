@@ -220,6 +220,11 @@ class ApiClient {
         return response.data;
     }
 
+    async getAssignmentSupplementaryFiles(assignmentId: number) {
+        const response = await this.client.get(`/assignments/${assignmentId}/supplementary-files`);
+        return response.data as { filename: string; download_url: string; size: number }[];
+    }
+
     async createAssignment(
         data: any,
         options?: {
@@ -274,6 +279,17 @@ class ApiClient {
 
     async getAssignmentSubmissions(assignmentId: number) {
         const response = await this.client.get(`/submissions/assignment/${assignmentId}/all`);
+        return response.data;
+    }
+
+    /** Grading stats: unique students per assignment (latest submission only). pending/graded count students, not raw submissions. */
+    async getGradingStats(courseId?: number): Promise<{
+        total_pending: number;
+        total_graded: number;
+        assignments: { assignment_id: number; pending_count: number; graded_count: number }[];
+    }> {
+        const params = courseId ? { course_id: courseId } : {};
+        const response = await this.client.get('/submissions/grading-stats', { params });
         return response.data;
     }
 
@@ -354,10 +370,13 @@ class ApiClient {
         return response.data;
     }
 
-    async runCode(assignmentId: number, files: { name: string; content: string }[], testCaseIds?: number[]) {
+    async runCode(assignmentId: number, files: { name: string; content: string }[], testCaseIds?: number[], stdin?: string) {
         const payload: any = { files };
-        if (testCaseIds && testCaseIds.length > 0) {
-            payload.test_case_ids = testCaseIds;
+        if (testCaseIds !== undefined) {
+            payload.test_case_ids = testCaseIds; // [] = run code only (terminal output); non-empty = run those tests
+        }
+        if (stdin !== undefined && stdin !== '') {
+            payload.stdin = stdin; // Standard input for terminal mode (e.g. Scanner/input())
         }
         const response = await this.client.post(`/assignments/${assignmentId}/run`, payload);
         return response.data;

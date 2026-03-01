@@ -78,7 +78,7 @@ export function FacultyPageShell({ children, hideCalendar = false }: FacultyPage
                 <CalendarDays className="w-5 h-5" />
             </button>
 
-            {/* Reopen button — visible on desktop when calendar is collapsed */}
+            {/* Reopen button - visible on desktop when calendar is collapsed */}
             {!calendarOpen && (
                 <button
                     onClick={() => setCalendarOpen(true)}
@@ -116,7 +116,7 @@ export function FacultyPageShell({ children, hideCalendar = false }: FacultyPage
                         />
                     </div>
 
-                    {/* Events list below calendar — scrollable */}
+                    {/* Events list below calendar - scrollable */}
                     <Card className="border-0 shadow-sm flex-1 min-h-0 flex flex-col overflow-hidden">
                         <CardHeader className="pb-2 px-4 pt-3 flex-shrink-0">
                             <CardTitle className="text-xs font-semibold text-gray-600 flex items-center gap-1.5">
@@ -143,13 +143,12 @@ export function FacultyPageShell({ children, hideCalendar = false }: FacultyPage
                                                 className="block group"
                                             >
                                                 <div className="flex items-start gap-2.5 p-2 rounded-lg hover:bg-gray-50 transition-colors">
-                                                    <div className={`mt-0.5 w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${
-                                                        isPast
+                                                    <div className={`mt-0.5 w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${isPast
                                                             ? 'bg-amber-50 text-amber-600'
                                                             : isDeadline
-                                                            ? 'bg-red-50 text-red-500'
-                                                            : 'bg-emerald-50 text-emerald-600'
-                                                    }`}>
+                                                                ? 'bg-red-50 text-red-500'
+                                                                : 'bg-emerald-50 text-emerald-600'
+                                                        }`}>
                                                         {isPast ? (
                                                             <AlertTriangle className="w-3.5 h-3.5" />
                                                         ) : isDeadline ? (

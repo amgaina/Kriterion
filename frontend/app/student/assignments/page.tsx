@@ -308,18 +308,16 @@ export default function StudentAssignmentsPage() {
                                         <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                                             {/* Icon */}
                                             <div
-                                                className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                                                    assignment.status === 'graded' ? 'bg-green-50' :
-                                                    assignment.status === 'submitted' ? 'bg-blue-50' :
-                                                    assignment.status === 'overdue' ? 'bg-red-50' : 'bg-amber-50'
-                                                }`}
+                                                className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${assignment.status === 'graded' ? 'bg-green-50' :
+                                                        assignment.status === 'submitted' ? 'bg-blue-50' :
+                                                            assignment.status === 'overdue' ? 'bg-red-50' : 'bg-amber-50'
+                                                    }`}
                                             >
                                                 <config.icon
-                                                    className={`w-6 h-6 ${
-                                                        assignment.status === 'graded' ? 'text-green-600' :
-                                                        assignment.status === 'submitted' ? 'text-blue-600' :
-                                                        assignment.status === 'overdue' ? 'text-red-600' : 'text-amber-600'
-                                                    }`}
+                                                    className={`w-6 h-6 ${assignment.status === 'graded' ? 'text-green-600' :
+                                                            assignment.status === 'submitted' ? 'text-blue-600' :
+                                                                assignment.status === 'overdue' ? 'text-red-600' : 'text-amber-600'
+                                                        }`}
                                                 />
                                             </div>
 

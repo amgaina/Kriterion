@@ -3,7 +3,7 @@
 export interface InnerHeaderDesignProps {
     /** Main heading text */
     title: string;
-    /** Optional subtitle — string or React node */
+    /** Optional subtitle - string or React node */
     subtitle?: React.ReactNode;
     /** Optional actions (e.g. buttons) to show on the right */
     actions?: React.ReactNode;

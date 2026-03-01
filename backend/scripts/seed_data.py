@@ -233,10 +233,10 @@ ASSIGNMENTS = [
             "## Objective\n"
             "Create a `Stack` class that uses an array internally.\n\n"
             "## Requirements\n"
-            "- `push(int val)` — adds to top\n"
-            "- `pop()` — removes and returns top\n"
-            "- `peek()` — returns top without removing\n"
-            "- `isEmpty()` — returns boolean\n\n"
+            "- `push(int val)` - adds to top\n"
+            "- `pop()` - removes and returns top\n"
+            "- `peek()` - returns top without removing\n"
+            "- `isEmpty()` - returns boolean\n\n"
             "## Input\n"
             "Read commands from stdin, one per line: `push X`, `pop`, `peek`, `isEmpty`.\n"
             "Print the result of each command that returns a value.\n"
@@ -357,7 +357,7 @@ def seed_database():
 
     try:
         print("=" * 56)
-        print("  KRITERION — DATABASE SEED")
+        print("  KRITERION - DATABASE SEED")
         print("=" * 56)
 
         # ── Languages ──
@@ -449,7 +449,7 @@ def seed_database():
                 db.add(course)
                 db.commit()
                 db.refresh(course)
-                print(f"  + Course: {course.code} — {course.name}")
+                print(f"  + Course: {course.code} - {course.name}")
 
                 # Grant language permissions to the faculty for this course's languages
                 for lang_name in c.get("languages", []):

@@ -22,7 +22,7 @@ import {
     GraduationCap,
 } from 'lucide-react';
 
-/** Generic calendar event shape — roles map their data to this */
+/** Generic calendar event shape - roles map their data to this */
 export interface CalendarEvent {
     id: number;
     title: string;
@@ -36,7 +36,7 @@ export interface CalendarEvent {
 export interface RoleDashboardLayoutProps {
     children: React.ReactNode;
     allowedRoles: string[];
-    /** Query to fetch events. Required — pass { queryFn: () => [] } for roles with no events. */
+    /** Query to fetch events. Required - pass { queryFn: () => [] } for roles with no events. */
     eventsQuery: Pick<UseQueryOptions<CalendarEvent[]>, 'queryKey' | 'queryFn'> & {
         staleTime?: number;
     };

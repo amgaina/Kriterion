@@ -66,9 +66,8 @@ export default function DeviceShowcase() {
                   <button
                     key={tab.id}
                     onClick={() => setActive(tab.id)}
-                    className={`relative flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                      isActive ? "text-white" : "text-white/40 hover:text-white/60"
-                    }`}
+                    className={`relative flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${isActive ? "text-white" : "text-white/40 hover:text-white/60"
+                      }`}
                   >
                     {isActive && (
                       <motion.div
@@ -173,7 +172,7 @@ function AdminScreen() {
       </div>
       <div className="flex-1 bg-white/[0.02] border border-white/[0.04] rounded-lg p-3 overflow-hidden">
         <div className="text-[10px] text-white/25 font-semibold uppercase tracking-wider mb-2">Active Courses</div>
-        {["CS 101 — Intro to Programming", "CS 201 — Data Structures", "CS 301 — Algorithms", "CS 401 — Software Engineering"].map((c, i) => (
+        {["CS 101 - Intro to Programming", "CS 201 - Data Structures", "CS 301 - Algorithms", "CS 401 - Software Engineering"].map((c, i) => (
           <div key={i} className="flex items-center justify-between py-1.5 border-b border-white/[0.03] last:border-0">
             <span className="text-[10px] sm:text-[11px] text-white/40">{c}</span>
             <span className="text-[9px] text-white/15">Python, Java</span>
@@ -189,7 +188,7 @@ function FacultyScreen() {
     <div className="h-full flex gap-2.5">
       <div className="w-40 sm:w-48 shrink-0 bg-white/[0.02] border border-white/[0.04] rounded-lg p-2.5 flex flex-col">
         <div className="text-[10px] text-white/25 font-semibold uppercase tracking-wider mb-2 px-1">Assignments</div>
-        {["HW1 — Fibonacci", "HW2 — Sorting", "HW3 — Linked Lists", "Lab — Binary Search"].map((a, i) => (
+        {["HW1 - Fibonacci", "HW2 - Sorting", "HW3 - Linked Lists", "Lab - Binary Search"].map((a, i) => (
           <Pill key={a} active={i === 0}>{a}</Pill>
         ))}
         <div className="mt-auto pt-2 border-t border-white/[0.04]">
@@ -198,7 +197,7 @@ function FacultyScreen() {
       </div>
       <div className="flex-1 flex flex-col gap-2.5">
         <div className="flex items-center justify-between">
-          <span className="text-white/60 text-[11px] sm:text-xs font-semibold">HW1 — Fibonacci</span>
+          <span className="text-white/60 text-[11px] sm:text-xs font-semibold">HW1 - Fibonacci</span>
           <span className="text-[9px] font-semibold bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded-full">Published</span>
         </div>
         <div className="flex-1 bg-white/[0.02] border border-white/[0.04] rounded-lg p-3 overflow-hidden">

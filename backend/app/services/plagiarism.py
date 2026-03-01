@@ -1,5 +1,5 @@
 """
-Plagiarism Detection Service — powered by JPlag (Greedy String Tiling).
+Plagiarism Detection Service - powered by JPlag (Greedy String Tiling).
 
 Runs JPlag v4.3.0 as a subprocess to compare all submissions for an assignment.
 Falls back to a lightweight n-gram / Jaccard approach when the JPlag JAR is
@@ -74,7 +74,7 @@ def _jplag_available() -> bool:
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  Lightweight fallback (n-gram / Jaccard) — used when JPlag JAR
+#  Lightweight fallback (n-gram / Jaccard) - used when JPlag JAR
 #  is not present (local dev, CI, etc.)
 # ═══════════════════════════════════════════════════════════════════
 
@@ -743,7 +743,7 @@ class PlagiarismService:
         }
 
     def check_all_for_assignment(self, assignment_id: int) -> Dict:
-        """Batch plagiarism check — runs JPlag once for all submissions."""
+        """Batch plagiarism check - runs JPlag once for all submissions."""
         assignment = (
             self.db.query(Assignment)
             .options(joinedload(Assignment.language))
