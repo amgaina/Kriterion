@@ -200,6 +200,12 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
         if (closeSidebar) setSidebarOpen(false);
 
+        // If clicking the same route, just ensure content is visible
+        if (pathname === href || pathname.startsWith(href + '/')) {
+            setContentVisible(true);
+            return;
+        }
+
         // Respect reduced motion user preference
         if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
             router.push(href);
