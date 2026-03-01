@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { useQuery, UseQueryOptions } from '@tanstack/react-query';
 import { format, isSameDay, parseISO } from 'date-fns';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { UserRole } from '@/contexts/AuthContext';
 import { DashboardLayout } from '@/components/layouts/DashboardLayout';
 import { DashboardCalendar } from '@/components/dashboard/DashboardCalendar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -35,7 +36,7 @@ export interface CalendarEvent {
 
 export interface RoleDashboardLayoutProps {
     children: React.ReactNode;
-    allowedRoles: string[];
+    allowedRoles: UserRole[];
     /** Query to fetch events. Required - pass { queryFn: () => [] } for roles with no events. */
     eventsQuery: Pick<UseQueryOptions<CalendarEvent[]>, 'queryKey' | 'queryFn'> & {
         staleTime?: number;

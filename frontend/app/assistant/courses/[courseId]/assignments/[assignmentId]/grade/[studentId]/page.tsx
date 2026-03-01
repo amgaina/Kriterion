@@ -1,7 +1,7 @@
 'use client';
 
 import { useParams } from 'next/navigation';
-import { GradingPageContent } from '@/app/faculty/courses/[courseId]/assignments/[assignmentId]/grade/[studentId]/page';
+import { GradingPageContent } from '@/components/grading/GradingPageContent';
 
 /**
  * Assistant grading page - uses the same GradingPageContent as faculty.
