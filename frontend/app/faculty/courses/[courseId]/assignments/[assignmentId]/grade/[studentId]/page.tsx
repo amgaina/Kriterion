@@ -236,9 +236,6 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
     const [gradeSaved, setGradeSaved] = useState(false);
     const [explorerOpen, setExplorerOpen] = useState(true);
     const [selectedTestCases, setSelectedTestCases] = useState<Set<number>>(new Set());
-    const [terminalStdin, setTerminalStdin] = useState('');
-    const [terminalInput, setTerminalInput] = useState('');
-    const terminalInputRef = useRef<HTMLInputElement>(null);
     const [viewingTestResult, setViewingTestResult] = useState<TestResultOut | null>(null);
     const gutterRef = useRef<HTMLDivElement>(null);
     const editorRef = useRef<HTMLTextAreaElement>(null);
@@ -459,14 +456,7 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
         }
     };
 
-    const isWaitingForInput = (r: RunResult | null): boolean => {
-        if (!r || r.results.length > 0) return false;
-        const stderr = (r.stderr || '').toLowerCase();
-        const hasInputError = /no such element|eoferror|end of file|unexpected end of input|read.*eof/i.test(stderr);
-        return hasInputError && (r.stdout != null && r.stdout.length > 0);
-    };
-
-    const runCode = async (appendStdin?: string) => {
+    const runCode = async () => {
         if (!selectedSub || !assignment) return;
 
         const fileList: { name: string; content: string }[] = [];
@@ -490,20 +480,9 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
         }
 
         setIsRunning(true);
-        if (appendStdin === undefined) setRunResult(null);
+        setRunResult(null);
         setPanelOpen(true);
         setActivePanel('output');
-
-        const isTerminalMode = selectedTestCases.size === 0;
-        const stdinToUse = isTerminalMode && appendStdin !== undefined
-            ? terminalStdin + appendStdin + '\n'
-            : (appendStdin === undefined && isTerminalMode ? '' : undefined);
-
-        if (stdinToUse !== undefined && isTerminalMode) {
-            setTerminalStdin(stdinToUse);
-        } else if (appendStdin === undefined && isTerminalMode) {
-            setTerminalStdin('');
-        }
 
         try {
             let testCaseIds: number[] | undefined;
@@ -513,22 +492,11 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
                     .map(trId => subTestResults.find(tr => tr.id === trId)?.test_case_id)
                     .filter((id): id is number => id !== undefined);
                 testCaseIds = [...new Set(testCaseIds)];
-            } else {
-                testCaseIds = [];
             }
 
-            const result: RunResult = await apiClient.runCode(
-                assignmentId,
-                fileList,
-                testCaseIds,
-                stdinToUse !== undefined ? stdinToUse : undefined
-            );
+            const result: RunResult = await apiClient.runCode(assignmentId, fileList, testCaseIds);
             setRunResult(result);
             if (result.results.length > 0) setActivePanel('tests');
-            if (isTerminalMode && isWaitingForInput(result)) {
-                setTerminalInput('');
-                setTimeout(() => terminalInputRef.current?.focus(), 50);
-            }
         } catch (err: any) {
             const msg = err?.response?.data?.detail || 'Run failed';
             setRunResult({
@@ -539,11 +507,6 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
         } finally {
             setIsRunning(false);
         }
-    };
-
-    const sendTerminalInput = () => {
-        if (!terminalInput.trim() || isRunning) return;
-        runCode(terminalInput.trim());
     };
 
     /* ===== Save Grade ===== */
@@ -784,11 +747,11 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
                         </button>
                     )}
                     <div className="w-px h-4 bg-[#5a5a5a] mx-1" />
-                    <Button onClick={() => runCode()} disabled={isRunning || !selectedSub} size="sm"
+                    <Button onClick={runCode} disabled={isRunning || !selectedSub} size="sm"
                         className="h-6 px-3 text-[10px] bg-[#0e639c] hover:bg-[#1177bb] text-white border-0">
                         {isRunning
                             ? (<><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Running...</>)
-                            : (<><Play className="w-3 h-3 mr-1" /> {selectedTestCases.size > 0 ? `Run ${selectedTestCases.size} Test${selectedTestCases.size > 1 ? 's' : ''}` : 'Run Code'}</>)
+                            : (<><Play className="w-3 h-3 mr-1" /> {selectedTestCases.size > 0 ? `Run ${selectedTestCases.size} Test${selectedTestCases.size > 1 ? 's' : ''}` : 'Run All Tests'}</>)
                         }
                     </Button>
                     <Button onClick={saveGrade} disabled={isSaving || !selectedSub} size="sm"
@@ -1143,7 +1106,7 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
 
                         {/* Bottom Panel */}
                         {panelOpen && (
-                            <div className="flex-[3] min-h-[80px] border-t border-[#3c3c3c] flex flex-col bg-[#1e1e1e]">
+                            <div className="flex-[3] min-h-[120px] border-t border-[#3c3c3c] flex flex-col bg-[#1e1e1e]">
                                 <div className="flex items-center bg-[#252526] border-b border-[#3c3c3c] px-2 shrink-0">
                                     <button onClick={() => setActivePanel('output')}
                                         className={`px-3 py-1.5 text-[11px] font-medium border-b-2 ${activePanel === 'output' ? 'border-[#862733] text-white' : 'border-transparent text-[#858585] hover:text-[#cccccc]'}`}>
@@ -1156,76 +1119,51 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
                                     <div className="flex-1" />
                                     <button onClick={() => setPanelOpen(false)} className="p-1 rounded hover:bg-[#505050] text-[#858585]"><X className="w-3 h-3" /></button>
                                 </div>
-                                <div className="flex-1 overflow-y-auto p-3 font-mono text-[12px] flex flex-col gap-3">
+                                <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                                     {activePanel === 'output' ? (
-                                        <div className="flex flex-col gap-3">
-                                            {isRunning ? (
-                                                <div className="flex items-center gap-2 text-[#569cd6]"><Loader2 className="w-4 h-4 animate-spin" /> Running code...</div>
-                                            ) : runResult ? (
-                                                <div className="space-y-3">
-                                                    {/* Compilation Status */}
-                                                    <div className={`flex items-center gap-2 p-2.5 rounded-lg ${isWaitingForInput(runResult) ? 'bg-[#0d2818] border border-[#2ea04366]'
-                                                            : runResult.compilation_status === 'Compiled Successfully' ? 'bg-[#0d2818] border border-[#2ea04366]'
-                                                                : runResult.compilation_status === 'Time Exceeds' ? 'bg-[#332b00] border border-[#665500]'
-                                                                    : 'bg-[#2d0000] border border-[#5c1e1e]'
-                                                        }`}>
-                                                        {isWaitingForInput(runResult) ? <CheckCircle2 className="w-4 h-4 text-[#4ec9b0]" />
-                                                            : runResult.compilation_status === 'Compiled Successfully' ? <CheckCircle2 className="w-4 h-4 text-[#4ec9b0]" />
-                                                                : runResult.compilation_status === 'Time Exceeds' ? <Clock className="w-4 h-4 text-[#dcdcaa]" />
-                                                                    : <XCircle className="w-4 h-4 text-[#f44747]" />}
-                                                        <span className={`font-semibold ${isWaitingForInput(runResult) ? 'text-[#4ec9b0]'
-                                                                : runResult.compilation_status === 'Compiled Successfully' ? 'text-[#4ec9b0]'
-                                                                    : runResult.compilation_status === 'Time Exceeds' ? 'text-[#dcdcaa]'
-                                                                        : 'text-[#f44747]'
-                                                            }`}>{isWaitingForInput(runResult) ? 'Running — enter input below' : (runResult.compilation_status || (runResult.success ? 'Compiled Successfully' : 'Not Compiled Successfully'))}</span>
-                                                        {runResult.results.length > 0 && (
-                                                            <span className="ml-auto text-[10px] text-[#858585]">{runResult.tests_passed}/{runResult.tests_total} tests passed</span>
-                                                        )}
-                                                    </div>
-
-                                                    {/* Terminal output (code-only run: stdout / stderr) — interactive compiler style */}
-                                                    {(runResult.stdout != null || runResult.stderr != null || runResult.message) && runResult.results.length === 0 && (
-                                                        <div className="rounded-lg overflow-hidden border border-[#3c3c3c] bg-[#0c0c0c]">
-                                                            <div className="px-3 py-1.5 bg-[#252526] border-b border-[#3c3c3c] flex items-center gap-2">
-                                                                <Terminal className="w-3.5 h-3.5 text-[#858585]" />
-                                                                <span className="text-[10px] text-[#858585] font-medium uppercase tracking-wider">Terminal Output</span>
+                                        <div className="flex-1 flex flex-col min-h-0 bg-[#0c0c0c]">
+                                            {/* Complete IDE Terminal */}
+                                            <div className="flex-1 flex flex-col min-h-0 overflow-hidden font-mono text-[13px]">
+                                                {/* Output content */}
+                                                <div className="flex-1 overflow-auto p-4 min-h-0">
+                                                    {isRunning ? (
+                                                        <div className="space-y-1">
+                                                            <div className="text-[#4ec9b0]">{"› "}<span className="text-[#569cd6]">Running tests...</span></div>
+                                                            <div className="flex items-center gap-1 text-[#858585]">
+                                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                <span className="text-[12px]">Running</span>
+                                                                <span className="inline-block w-2 h-4 ml-0.5 bg-[#4ec9b0] animate-pulse" />
                                                             </div>
-                                                            <div className="p-3 text-[11px] font-mono leading-relaxed overflow-x-auto max-h-[280px] overflow-y-auto">
-                                                                <pre className="whitespace-pre-wrap text-[#d4d4d4]">
-                                                                    {runResult.stdout != null && runResult.stdout !== '' && runResult.stdout}
-                                                                    {isWaitingForInput(runResult) ? (
-                                                                        /* Interactive: show prompt, hide exception — program is waiting for input */
-                                                                        null
-                                                                    ) : (
-                                                                        <>
-                                                                            {runResult.stdout != null && runResult.stdout !== '' && runResult.stderr != null && runResult.stderr !== '' && '\n'}
-                                                                            {runResult.stderr != null && runResult.stderr !== '' && (
-                                                                                <span className="text-[#f44747]">{runResult.stderr}</span>
-                                                                            )}
-                                                                            {((runResult.stdout == null || runResult.stdout === '') && (runResult.stderr == null || runResult.stderr === '')) && runResult.message && (
-                                                                                <span className={runResult.compilation_status === 'Compiled Successfully' ? 'text-[#d4d4d4]' : 'text-[#f44747]'}>{runResult.message}</span>
-                                                                            )}
-                                                                            {((runResult.stdout == null || runResult.stdout === '') && (runResult.stderr == null || runResult.stderr === '')) && !runResult.message && (
-                                                                                <span className="text-[#858585]">(No output)</span>
-                                                                            )}
-                                                                        </>
-                                                                    )}
-                                                                </pre>
-                                                                {isWaitingForInput(runResult) && (
-                                                                    <div className="flex items-center gap-1 mt-1 pt-1 border-t border-[#333]">
-                                                                        <span className="text-[#4ec9b0]">{'>'}</span>
-                                                                        <input
-                                                                            ref={terminalInputRef}
-                                                                            type="text"
-                                                                            value={terminalInput}
-                                                                            onChange={(e) => setTerminalInput(e.target.value)}
-                                                                            onKeyDown={(e) => e.key === 'Enter' && sendTerminalInput()}
-                                                                            placeholder="Type input and press Enter..."
-                                                                            className="flex-1 bg-transparent text-[#d4d4d4] placeholder-[#666] focus:outline-none text-[11px]"
-                                                                        />
+                                                        </div>
+                                                    ) : runResult ? (
+                                                        <div className="space-y-0">
+                                                            {(runResult.stdout != null || runResult.stderr != null || runResult.message) && runResult.results.length === 0 ? (
+                                                                <>
+                                                                    {/* Program output */}
+                                                                    <div className="space-y-1">
+                                                                        {runResult.stdout != null && runResult.stdout !== '' && (
+                                                                            <pre className="whitespace-pre-wrap break-words text-[#d4d4d4] leading-[1.7] text-[13px]">{runResult.stdout}</pre>
+                                                                        )}
+                                                                        {runResult.stderr != null && runResult.stderr !== '' && (
+                                                                            <pre className="whitespace-pre-wrap break-words text-[#f44747] leading-[1.7] text-[13px] mt-2">{runResult.stderr}</pre>
+                                                                        )}
+                                                                        {(runResult.stdout == null || runResult.stdout === '') && (runResult.stderr == null || runResult.stderr === '') && runResult.message && (
+                                                                            <pre className={`whitespace-pre-wrap break-words leading-[1.7] text-[13px] ${runResult.compilation_status === 'Compiled Successfully' ? 'text-[#d4d4d4]' : 'text-[#f44747]'}`}>{runResult.message}</pre>
+                                                                        )}
+                                                                        {(runResult.stdout == null || runResult.stdout === '') && (runResult.stderr == null || runResult.stderr === '') && !runResult.message && (
+                                                                            <span className="text-[#858585] italic">(No output)</span>
+                                                                        )}
                                                                     </div>
-                                                                )}
-                                                            </div>
+                                                                </>
+                                                            ) : null}
+                                                    {/* Status badge for test runs */}
+                                                    {runResult.results.length > 0 && (
+                                                        <div className={`flex items-center gap-2 p-2.5 rounded-b-lg border border-t-0 border-[#3c3c3c] ${runResult.tests_passed === runResult.tests_total ? 'bg-[#0d2818]' : 'bg-[#2d0000]'}`}>
+                                                            {runResult.tests_passed === runResult.tests_total ? <CheckCircle2 className="w-4 h-4 text-[#4ec9b0]" /> : <XCircle className="w-4 h-4 text-[#f44747]" />}
+                                                            <span className={`font-semibold text-[12px] ${runResult.tests_passed === runResult.tests_total ? 'text-[#4ec9b0]' : 'text-[#f44747]'}`}>
+                                                                {runResult.tests_passed}/{runResult.tests_total} tests passed
+                                                            </span>
+                                                            <span className="text-[10px] text-[#858585] ml-1">{runResult.total_score}/{runResult.max_score} pts</span>
                                                         </div>
                                                     )}
 
@@ -1264,8 +1202,13 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
                                                     )}
                                                 </div>
                                             ) : (
-                                                <p className="text-[#858585]">{'>'} Click <span className="text-[#569cd6]">Run Code</span> to execute the student&apos;s submission</p>
+                                                <div className="space-y-1">
+                                                    <div className="text-[#4ec9b0]">{"› "}<span className="text-[#858585]">Ready</span></div>
+                                                    <div className="text-[#6e7681] text-[12px]">Click <span className="text-[#58a6ff]">Run All Tests</span> to run test cases (create test cases in the assignment if needed)</div>
+                                                </div>
                                             )}
+                                                </div>
+                                            </div>
                                         </div>
                                     ) : (
                                         /* RUN RESULTS tab - detailed cards */

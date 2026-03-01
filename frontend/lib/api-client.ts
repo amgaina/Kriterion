@@ -370,13 +370,10 @@ class ApiClient {
         return response.data;
     }
 
-    async runCode(assignmentId: number, files: { name: string; content: string }[], testCaseIds?: number[], stdin?: string) {
+    async runCode(assignmentId: number, files: { name: string; content: string }[], testCaseIds?: number[]) {
         const payload: any = { files };
-        if (testCaseIds !== undefined) {
-            payload.test_case_ids = testCaseIds; // [] = run code only (terminal output); non-empty = run those tests
-        }
-        if (stdin !== undefined && stdin !== '') {
-            payload.stdin = stdin; // Standard input for terminal mode (e.g. Scanner/input())
+        if (testCaseIds && testCaseIds.length > 0) {
+            payload.test_case_ids = testCaseIds;
         }
         const response = await this.client.post(`/assignments/${assignmentId}/run`, payload);
         return response.data;

@@ -658,7 +658,7 @@ async def run_assignment_code(
             or_(TestCase.is_sample == True, TestCase.is_hidden == False)
         )
 
-    if request.test_case_ids is not None:
+    if request.test_case_ids:
         tc_query = tc_query.filter(TestCase.id.in_(request.test_case_ids))
 
     test_cases = tc_query.order_by(TestCase.order).all()
