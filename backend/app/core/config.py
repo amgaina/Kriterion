@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
     # CORS
-    BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:3000"]
+    BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:3000", "https://kriterion.vercel.app"]
     
     # Rate Limiting
     RATE_LIMIT_LOGIN: str = "5/minute"
