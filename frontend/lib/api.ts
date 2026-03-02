@@ -2,6 +2,7 @@ import axios from 'axios';
 import Cookies from 'js-cookie';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+NEXT_PUBLIC_API_URL=https://kriterion-api-production.up.railway.app
 
 export const api = axios.create({
   baseURL: `${API_URL}/api/v1`,
