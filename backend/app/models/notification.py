@@ -30,7 +30,7 @@ class Notification(Base):
     __tablename__ = "notifications"
     
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     
     # Content
     type = Column(Enum(NotificationType), nullable=False)
@@ -44,6 +44,9 @@ class Notification(Base):
     course_id = Column(Integer, ForeignKey("courses.id"), nullable=True)
     assignment_id = Column(Integer, ForeignKey("assignments.id"), nullable=True)
     submission_id = Column(Integer, ForeignKey("submissions.id"), nullable=True)
+    
+    # Relationships
+    user = relationship("User", back_populates="notifications")
     
     # Status
     is_read = Column(Boolean, default=False)

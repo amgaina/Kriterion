@@ -50,6 +50,7 @@ export default function UsersPage() {
     const [roleFilter, setRoleFilter] = useState('');
     const [selectedUsers, setSelectedUsers] = useState<User[]>([]);
     const [deleteModal, setDeleteModal] = useState<{ open: boolean; user?: User }>({ open: false });
+    const [bulkDeleteModal, setBulkDeleteModal] = useState(false);
     const [resetPasswordModal, setResetPasswordModal] = useState<{ open: boolean; user?: User }>({ open: false });
     const [newPassword, setNewPassword] = useState('');
 
@@ -63,6 +64,19 @@ export default function UsersPage() {
         invalidateGroups: ['allUsers', 'allDashboards'],
         onSuccess: () => {
             setDeleteModal({ open: false });
+        },
+    });
+
+    const bulkDeleteMutation = useMutationWithInvalidation({
+        mutationFn: async (userIds: number[]) => {
+            for (const id of userIds) {
+                await apiClient.deleteUser(id);
+            }
+        },
+        invalidateGroups: ['allUsers', 'allDashboards'],
+        onSuccess: () => {
+            setBulkDeleteModal(false);
+            setSelectedUsers([]);
         },
     });
 
@@ -291,7 +305,12 @@ export default function UsersPage() {
                                     <Button variant="outline" size="sm">
                                         Send Email
                                     </Button>
-                                    <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50">
+                                    <Button 
+                                        variant="outline" 
+                                        size="sm" 
+                                        className="text-red-600 hover:bg-red-50"
+                                        onClick={() => setBulkDeleteModal(true)}
+                                    >
                                         Delete Selected
                                     </Button>
                                 </div>
@@ -373,6 +392,38 @@ export default function UsersPage() {
                         disabled={!newPassword || resetPasswordMutation.isPending}
                     >
                         {resetPasswordMutation.isPending ? 'Resetting...' : 'Reset Password'}
+                    </Button>
+                </ModalFooter>
+            </Modal>
+
+            {/* Bulk Delete Confirmation Modal */}
+            <Modal
+                isOpen={bulkDeleteModal}
+                onClose={() => setBulkDeleteModal(false)}
+                title="Delete Selected Users"
+                description="Are you sure you want to delete the selected users? This action cannot be undone."
+            >
+                <Alert type="warning">
+                    You are about to delete <strong>{selectedUsers.length} users</strong>:
+                    <ul className="mt-2 list-disc list-inside text-sm">
+                        {selectedUsers.slice(0, 5).map(user => (
+                            <li key={user.id}>{user.full_name} ({user.email})</li>
+                        ))}
+                        {selectedUsers.length > 5 && (
+                            <li>...and {selectedUsers.length - 5} more</li>
+                        )}
+                    </ul>
+                </Alert>
+                <ModalFooter>
+                    <Button variant="outline" onClick={() => setBulkDeleteModal(false)}>
+                        Cancel
+                    </Button>
+                    <Button
+                        variant="destructive"
+                        onClick={() => bulkDeleteMutation.mutate(selectedUsers.map(u => u.id))}
+                        disabled={bulkDeleteMutation.isPending}
+                    >
+                        {bulkDeleteMutation.isPending ? 'Deleting...' : `Delete ${selectedUsers.length} Users`}
                     </Button>
                 </ModalFooter>
             </Modal>

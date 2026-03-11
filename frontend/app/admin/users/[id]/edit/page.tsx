@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useRouter, useParams } from "next/navigation";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { useQuery } from "@tanstack/react-query";
 import { useMutationWithInvalidation } from '@/lib/use-mutation-with-invalidation';
 import apiClient from "@/lib/api-client";
 import {
@@ -17,78 +18,85 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Alert } from "@/components/ui/alert";
-import { ArrowLeft, Save, UserPlus } from "lucide-react";
+import { ArrowLeft, Save, Loader2 } from "lucide-react";
 import Link from "next/link";
 
-export default function NewUserPage() {
+export default function EditUserPage() {
   const router = useRouter();
+  const params = useParams();
+  const userId = Number(params.id);
   const [error, setError] = useState("");
 
   const [formData, setFormData] = useState({
     email: "",
-    password: "",
     full_name: "",
     role: "STUDENT",
     student_id: "",
     is_active: true,
-    send_welcome_email: true,
   });
 
-    const createMutation = useMutationWithInvalidation({
-        mutationFn: (data: typeof formData) => apiClient.createUser({
-            email: data.email,
-            password: data.password,
-            full_name: data.full_name,
-            role: data.role,
-            student_id: data.student_id || undefined,
-            is_active: data.is_active,
-            send_welcome_email: data.send_welcome_email,
-        }),
-        invalidateGroups: ['allUsers', 'allDashboards'],
-        onSuccess: () => {
-            router.push('/admin/users');
-        },
-        onError: (err: any) => {
-            setError(err.response?.data?.detail || 'Failed to create user');
-        },
-    });
+  // Fetch user data
+  const { data: user, isLoading: isLoadingUser } = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => apiClient.getUser(userId),
+    enabled: !!userId,
+  });
+
+  // Populate form when user data loads
+  useEffect(() => {
+    if (user) {
+      setFormData({
+        email: user.email || "",
+        full_name: user.full_name || "",
+        role: user.role || "STUDENT",
+        student_id: user.student_id || "",
+        is_active: user.is_active ?? true,
+      });
+    }
+  }, [user]);
+
+  const updateMutation = useMutationWithInvalidation({
+    mutationFn: (data: typeof formData) => apiClient.updateUser(userId, {
+      email: data.email,
+      full_name: data.full_name,
+      role: data.role,
+      student_id: data.student_id || undefined,
+      is_active: data.is_active,
+    }),
+    invalidateGroups: ['allUsers', 'allDashboards'],
+    onSuccess: () => {
+      router.push('/admin/users');
+    },
+    onError: (err: any) => {
+      setError(err.response?.data?.detail || 'Failed to update user');
+    },
+  });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    
     if (formData.role === "STUDENT" && !formData.student_id.trim()) {
       setError("Student ID is required for student accounts");
       return;
     }
 
-    const password = formData.password;
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters long");
-      return;
-    }
-    if (!/[A-Z]/.test(password)) {
-      setError("Password must contain at least one uppercase letter");
-      return;
-    }
-    if (!/[a-z]/.test(password)) {
-      setError("Password must contain at least one lowercase letter");
-      return;
-    }
-    if (!/[0-9]/.test(password)) {
-      setError("Password must contain at least one digit");
-      return;
-    }
-    if (!/[!@#$%^&*()_+\-=[\]{}|;:,.<>?]/.test(password)) {
-      setError("Password must contain at least one special character");
-      return;
-    }
-
-    createMutation.mutate(formData);
+    updateMutation.mutate(formData);
   };
 
   const handleChange = (field: string, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
+
+  if (isLoadingUser) {
+    return (
+      <ProtectedRoute allowedRoles={["ADMIN"]}>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+        </div>
+      </ProtectedRoute>
+    );
+  }
 
   return (
     <ProtectedRoute allowedRoles={["ADMIN"]}>
@@ -102,8 +110,8 @@ export default function NewUserPage() {
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Add New User</h1>
-            <p className="text-gray-500">Create a new user account</p>
+            <h1 className="text-2xl font-bold text-gray-900">Edit User</h1>
+            <p className="text-gray-500">Update user account details</p>
           </div>
         </div>
 
@@ -118,7 +126,7 @@ export default function NewUserPage() {
             <CardHeader>
               <CardTitle>User Information</CardTitle>
               <CardDescription>
-                Enter the details for the new user
+                Update the details for {user?.full_name}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -141,14 +149,6 @@ export default function NewUserPage() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Input
-                  label="Password"
-                  type="password"
-                  value={formData.password}
-                  onChange={(e) => handleChange("password", e.target.value)}
-                  placeholder="••••••••"
-                  required
-                />
                 <Select
                   label="Role"
                   value={formData.role}
@@ -160,16 +160,15 @@ export default function NewUserPage() {
                     { value: "ADMIN", label: "Admin" },
                   ]}
                 />
+                {formData.role === "STUDENT" && (
+                  <Input
+                    label="Student ID"
+                    value={formData.student_id}
+                    onChange={(e) => handleChange("student_id", e.target.value)}
+                    placeholder="STU123456"
+                  />
+                )}
               </div>
-
-              {formData.role === "STUDENT" && (
-                <Input
-                  label="Student ID"
-                  value={formData.student_id}
-                  onChange={(e) => handleChange("student_id", e.target.value)}
-                  placeholder="STU123456"
-                />
-              )}
 
               <div className="pt-4 border-t border-gray-200 space-y-4">
                 <Switch
@@ -177,14 +176,6 @@ export default function NewUserPage() {
                   onChange={(checked) => handleChange("is_active", checked)}
                   label="Active Account"
                   description="User can login and access the system"
-                />
-                <Switch
-                  checked={formData.send_welcome_email}
-                  onChange={(checked) =>
-                    handleChange("send_welcome_email", checked)
-                  }
-                  label="Send Welcome Email"
-                  description="Send an email with login credentials"
                 />
               </div>
             </CardContent>
@@ -196,9 +187,9 @@ export default function NewUserPage() {
                 Cancel
               </Button>
             </Link>
-            <Button type="submit" disabled={createMutation.isPending}>
-              <UserPlus className="w-4 h-4 mr-2" />
-              {createMutation.isPending ? "Creating..." : "Create User"}
+            <Button type="submit" disabled={updateMutation.isPending}>
+              <Save className="w-4 h-4 mr-2" />
+              {updateMutation.isPending ? "Saving..." : "Save Changes"}
             </Button>
           </div>
         </form>

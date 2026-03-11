@@ -74,6 +74,9 @@ class User(Base):
     # Relationships - Audit
     audit_logs = relationship("AuditLog", back_populates="user", cascade="all, delete-orphan")
     
+    # Relationships - Notifications
+    notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
+    
     # Relationships - Announcements
     announcements = relationship("Announcement", back_populates="author", foreign_keys="Announcement.author_id")
     
