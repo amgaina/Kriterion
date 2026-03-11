@@ -66,8 +66,12 @@ class Settings(BaseSettings):
     INITIAL_ADMIN_PASSWORD: str = "Admin@123456"
     
     class Config:
-        env_file = ".env"
+        # Load from backend/.env or project root .env
+        # backend/app/core/config.py -> project root .env is 3 levels up
+        _root_env = os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env")
+        env_file = (".env", _root_env)
         case_sensitive = True
+        extra = "ignore"  # Ignore extra env vars (e.g. POSTGRES_*, frontend vars)
 
 
 settings = Settings()

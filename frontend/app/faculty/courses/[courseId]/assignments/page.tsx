@@ -8,6 +8,7 @@ import apiClient from '@/lib/api-client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { AcknowledgementPopup } from '@/components/ui/acknowledgement-popup';
 import { CourseLoadingPage } from '@/components/course/CourseLoading';
 import { ConfirmDeleteModal } from '@/components/ui/ConfirmDeleteModal';
 import {
@@ -77,11 +78,25 @@ export default function AssignmentsPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'published' | 'draft' | 'closed'>('all');
     const [deleteTarget, setDeleteTarget] = useState<{ id: number; title: string } | null>(null);
-    const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+    const [notification, setNotification] = useState<{
+        open: boolean;
+        type: 'success' | 'error';
+        title: string;
+        message: string;
+    }>({
+        open: false,
+        type: 'success',
+        title: 'Success',
+        message: '',
+    });
 
     const showNotification = (type: 'success' | 'error', message: string) => {
-        setNotification({ type, message });
-        setTimeout(() => setNotification(null), 4000);
+        setNotification({
+            open: true,
+            type,
+            title: type === 'success' ? 'Success' : 'Error',
+            message,
+        });
     };
 
     const { data: allAssignments = [], isLoading, isFetching, refetch } = useQuery({
@@ -149,21 +164,8 @@ export default function AssignmentsPage() {
     }
 
     return (
-        <div className="space-y-6 pb-8">
-                    {/* Notification */}
-                    {notification && (
-                        <div className={`rounded-lg border p-4 flex items-start gap-3 ${
-                            notification.type === 'success' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
-                        }`}>
-                            {notification.type === 'success' ? (
-                                <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
-                            ) : (
-                                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
-                            )}
-                            <p className="text-sm flex-1">{notification.message}</p>
-                            <button onClick={() => setNotification(null)} className="text-gray-400 hover:text-gray-600 text-xs">✕</button>
-                        </div>
-                    )}
+        <>
+            <div className="space-y-6 pb-8">
 
                     {/* ─── Header ─── */}
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -453,6 +455,15 @@ export default function AssignmentsPage() {
                             Updating...
                         </div>
                     )}
-                </div>
+                    </div>
+
+                    <AcknowledgementPopup
+                        isOpen={notification.open}
+                        onClose={() => setNotification((prev) => ({ ...prev, open: false }))}
+                        type={notification.type}
+                        title={notification.title}
+                        message={notification.message}
+                    />
+                </>
     );
 }

@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { AdminLayout } from '@/components/layouts/AdminLayout';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import { DataTable } from '@/components/ui/data-table';
@@ -313,224 +312,222 @@ export default function LanguagesPage() {
 
     return (
         <ProtectedRoute allowedRoles={['ADMIN']}>
-            <AdminLayout>
-                <div className="space-y-6">
-                    {/* Header */}
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                        <div>
-                            <h1 className="text-2xl font-bold text-gray-900">Programming Languages</h1>
-                            <p className="text-gray-500 mt-1">Configure supported programming languages for code execution</p>
-                        </div>
-                        <Button onClick={() => setCreateModal(true)}>
-                            <Plus className="w-4 h-4 mr-2" />
-                            Add Language
-                        </Button>
+            <div className="space-y-6">
+                {/* Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                        <h1 className="text-2xl font-bold text-gray-900">Programming Languages</h1>
+                        <p className="text-gray-500 mt-1">Configure supported programming languages for code execution</p>
                     </div>
+                    <Button onClick={() => setCreateModal(true)}>
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Language
+                    </Button>
+                </div>
 
-                    {/* Stats */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <Card>
-                            <CardContent className="p-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-lg bg-[#862733]/10 flex items-center justify-center">
-                                        <Code className="w-5 h-5 text-[#862733]" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-gray-500">Total Languages</p>
-                                        <p className="text-xl font-bold text-gray-900">{languages.length}</p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="p-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
-                                        <CheckCircle className="w-5 h-5 text-green-600" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-gray-500">Active</p>
-                                        <p className="text-xl font-bold text-green-600">
-                                            {languages.filter((l: Language) => l.is_active).length}
-                                        </p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="p-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">
-                                        <XCircle className="w-5 h-5 text-gray-600" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-gray-500">Disabled</p>
-                                        <p className="text-xl font-bold text-gray-600">
-                                            {languages.filter((l: Language) => !l.is_active).length}
-                                        </p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="p-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                                        <Terminal className="w-5 h-5 text-blue-600" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-gray-500">Compiled</p>
-                                        <p className="text-xl font-bold text-blue-600">
-                                            {languages.filter((l: Language) => l.compile_command).length}
-                                        </p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    </div>
-
-                    {/* Search */}
+                {/* Stats */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <Card>
                         <CardContent className="p-4">
-                            <SearchInput
-                                value={searchQuery}
-                                onChange={setSearchQuery}
-                                placeholder="Search languages..."
-                                className="max-w-md"
-                            />
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-lg bg-[#862733]/10 flex items-center justify-center">
+                                    <Code className="w-5 h-5 text-[#862733]" />
+                                </div>
+                                <div>
+                                    <p className="text-sm text-gray-500">Total Languages</p>
+                                    <p className="text-xl font-bold text-gray-900">{languages.length}</p>
+                                </div>
+                            </div>
                         </CardContent>
                     </Card>
-
-                    {/* Languages Table */}
                     <Card>
-                        <DataTable
-                            columns={columns}
-                            data={filteredLanguages}
-                            isLoading={isLoading}
-                            emptyMessage="No languages configured"
-                        />
+                        <CardContent className="p-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
+                                    <CheckCircle className="w-5 h-5 text-green-600" />
+                                </div>
+                                <div>
+                                    <p className="text-sm text-gray-500">Active</p>
+                                    <p className="text-xl font-bold text-green-600">
+                                        {languages.filter((l: Language) => l.is_active).length}
+                                    </p>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardContent className="p-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">
+                                    <XCircle className="w-5 h-5 text-gray-600" />
+                                </div>
+                                <div>
+                                    <p className="text-sm text-gray-500">Disabled</p>
+                                    <p className="text-xl font-bold text-gray-600">
+                                        {languages.filter((l: Language) => !l.is_active).length}
+                                    </p>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardContent className="p-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                                    <Terminal className="w-5 h-5 text-blue-600" />
+                                </div>
+                                <div>
+                                    <p className="text-sm text-gray-500">Compiled</p>
+                                    <p className="text-xl font-bold text-blue-600">
+                                        {languages.filter((l: Language) => l.compile_command).length}
+                                    </p>
+                                </div>
+                            </div>
+                        </CardContent>
                     </Card>
                 </div>
 
-                {/* Create Language Modal */}
-                <Modal
-                    isOpen={createModal}
-                    onClose={() => { setCreateModal(false); resetForm(); }}
-                    title="Add Programming Language"
-                    description="Configure a new programming language for code execution"
-                    size="lg"
-                >
-                    <div className="mb-4">
-                        <p className="text-sm text-gray-500 mb-2">Quick Templates:</p>
-                        <div className="flex flex-wrap gap-2">
-                            {DEFAULT_LANGUAGES.map(template => (
-                                <button
-                                    key={template.name}
-                                    onClick={() => loadTemplate(template)}
-                                    className="px-3 py-1 text-sm border border-gray-300 rounded-full hover:bg-gray-50 hover:border-[#862733] hover:text-[#862733] transition-colors"
-                                >
-                                    {template.display_name}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                    <LanguageForm onSubmit={() => createMutation.mutate(formData)} submitText="Add Language" />
-                    <ModalFooter>
-                        <Button variant="outline" onClick={() => { setCreateModal(false); resetForm(); }}>
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={() => createMutation.mutate(formData)}
-                            disabled={createMutation.isPending}
-                        >
-                            {createMutation.isPending ? 'Adding...' : 'Add Language'}
-                        </Button>
-                    </ModalFooter>
-                </Modal>
+                {/* Search */}
+                <Card>
+                    <CardContent className="p-4">
+                        <SearchInput
+                            value={searchQuery}
+                            onChange={setSearchQuery}
+                            placeholder="Search languages..."
+                            className="max-w-md"
+                        />
+                    </CardContent>
+                </Card>
 
-                {/* Edit Language Modal */}
-                <Modal
-                    isOpen={editModal.open}
-                    onClose={() => { setEditModal({ open: false }); resetForm(); }}
-                    title="Edit Programming Language"
-                    description={`Update configuration for ${editModal.language?.display_name}`}
-                    size="lg"
-                >
-                    <LanguageForm
-                        onSubmit={() => updateMutation.mutate({ id: editModal.language!.id, data: formData })}
-                        submitText="Save Changes"
+                {/* Languages Table */}
+                <Card>
+                    <DataTable
+                        columns={columns}
+                        data={filteredLanguages}
+                        isLoading={isLoading}
+                        emptyMessage="No languages configured"
                     />
-                    <ModalFooter>
-                        <Button variant="outline" onClick={() => { setEditModal({ open: false }); resetForm(); }}>
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={() => updateMutation.mutate({ id: editModal.language!.id, data: formData })}
-                            disabled={updateMutation.isPending}
-                        >
-                            {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
-                        </Button>
-                    </ModalFooter>
-                </Modal>
+                </Card>
+            </div>
 
-                {/* Test Execution Modal */}
-                <Modal
-                    isOpen={testModal.open}
-                    onClose={() => setTestModal({ open: false })}
-                    title="Test Language Execution"
-                    description={`Test ${testModal.language?.display_name} execution environment`}
-                    size="lg"
-                >
-                    <div className="space-y-4">
-                        <Alert type="info" title="Test Environment">
-                            This will test the code execution environment for {testModal.language?.display_name}.
-                        </Alert>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Test Code</label>
-                            <Textarea
-                                value={testModal.language?.name === 'python'
-                                    ? 'print("Hello, Kriterion!")'
-                                    : testModal.language?.name === 'java'
-                                        ? 'public class Main {\n  public static void main(String[] args) {\n    System.out.println("Hello, Kriterion!");\n  }\n}'
-                                        : 'console.log("Hello, Kriterion!");'}
-                                onChange={() => { }}
-                                rows={8}
-                                className="font-mono text-sm"
-                            />
+            {/* Create Language Modal */}
+            <Modal
+                isOpen={createModal}
+                onClose={() => { setCreateModal(false); resetForm(); }}
+                title="Add Programming Language"
+                description="Configure a new programming language for code execution"
+                size="lg"
+            >
+                <div className="mb-4">
+                    <p className="text-sm text-gray-500 mb-2">Quick Templates:</p>
+                    <div className="flex flex-wrap gap-2">
+                        {DEFAULT_LANGUAGES.map(template => (
+                            <button
+                                key={template.name}
+                                onClick={() => loadTemplate(template)}
+                                className="px-3 py-1 text-sm border border-gray-300 rounded-full hover:bg-gray-50 hover:border-[#862733] hover:text-[#862733] transition-colors"
+                            >
+                                {template.display_name}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                <LanguageForm onSubmit={() => createMutation.mutate(formData)} submitText="Add Language" />
+                <ModalFooter>
+                    <Button variant="outline" onClick={() => { setCreateModal(false); resetForm(); }}>
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={() => createMutation.mutate(formData)}
+                        disabled={createMutation.isPending}
+                    >
+                        {createMutation.isPending ? 'Adding...' : 'Add Language'}
+                    </Button>
+                </ModalFooter>
+            </Modal>
+
+            {/* Edit Language Modal */}
+            <Modal
+                isOpen={editModal.open}
+                onClose={() => { setEditModal({ open: false }); resetForm(); }}
+                title="Edit Programming Language"
+                description={`Update configuration for ${editModal.language?.display_name}`}
+                size="lg"
+            >
+                <LanguageForm
+                    onSubmit={() => updateMutation.mutate({ id: editModal.language!.id, data: formData })}
+                    submitText="Save Changes"
+                />
+                <ModalFooter>
+                    <Button variant="outline" onClick={() => { setEditModal({ open: false }); resetForm(); }}>
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={() => updateMutation.mutate({ id: editModal.language!.id, data: formData })}
+                        disabled={updateMutation.isPending}
+                    >
+                        {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
+                    </Button>
+                </ModalFooter>
+            </Modal>
+
+            {/* Test Execution Modal */}
+            <Modal
+                isOpen={testModal.open}
+                onClose={() => setTestModal({ open: false })}
+                title="Test Language Execution"
+                description={`Test ${testModal.language?.display_name} execution environment`}
+                size="lg"
+            >
+                <div className="space-y-4">
+                    <Alert type="info" title="Test Environment">
+                        This will test the code execution environment for {testModal.language?.display_name}.
+                    </Alert>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Test Code</label>
+                        <Textarea
+                            value={testModal.language?.name === 'python'
+                                ? 'print("Hello, Kriterion!")'
+                                : testModal.language?.name === 'java'
+                                    ? 'public class Main {\n  public static void main(String[] args) {\n    System.out.println("Hello, Kriterion!");\n  }\n}'
+                                    : 'console.log("Hello, Kriterion!");'}
+                            onChange={() => { }}
+                            rows={8}
+                            className="font-mono text-sm"
+                        />
+                    </div>
+                    <div className="bg-gray-900 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm text-gray-400">Output</span>
+                            <Badge variant="success">Passed</Badge>
                         </div>
-                        <div className="bg-gray-900 rounded-lg p-4">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-sm text-gray-400">Output</span>
-                                <Badge variant="success">Passed</Badge>
-                            </div>
-                            <pre className="text-green-400 font-mono text-sm">Hello, Kriterion!</pre>
+                        <pre className="text-green-400 font-mono text-sm">Hello, Kriterion!</pre>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4 text-sm">
+                        <div className="bg-gray-50 rounded p-3">
+                            <p className="text-gray-500">Execution Time</p>
+                            <p className="font-medium">0.023s</p>
                         </div>
-                        <div className="grid grid-cols-3 gap-4 text-sm">
-                            <div className="bg-gray-50 rounded p-3">
-                                <p className="text-gray-500">Execution Time</p>
-                                <p className="font-medium">0.023s</p>
-                            </div>
-                            <div className="bg-gray-50 rounded p-3">
-                                <p className="text-gray-500">Memory Used</p>
-                                <p className="font-medium">12.4 MB</p>
-                            </div>
-                            <div className="bg-gray-50 rounded p-3">
-                                <p className="text-gray-500">Exit Code</p>
-                                <p className="font-medium text-green-600">0</p>
-                            </div>
+                        <div className="bg-gray-50 rounded p-3">
+                            <p className="text-gray-500">Memory Used</p>
+                            <p className="font-medium">12.4 MB</p>
+                        </div>
+                        <div className="bg-gray-50 rounded p-3">
+                            <p className="text-gray-500">Exit Code</p>
+                            <p className="font-medium text-green-600">0</p>
                         </div>
                     </div>
-                    <ModalFooter>
-                        <Button variant="outline" onClick={() => setTestModal({ open: false })}>
-                            Close
-                        </Button>
-                        <Button>
-                            <Play className="w-4 h-4 mr-2" />
-                            Run Test
-                        </Button>
-                    </ModalFooter>
-                </Modal>
-            </AdminLayout>
+                </div>
+                <ModalFooter>
+                    <Button variant="outline" onClick={() => setTestModal({ open: false })}>
+                        Close
+                    </Button>
+                    <Button>
+                        <Play className="w-4 h-4 mr-2" />
+                        Run Test
+                    </Button>
+                </ModalFooter>
+            </Modal>
         </ProtectedRoute>
     );
 }

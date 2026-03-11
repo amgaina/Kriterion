@@ -117,6 +117,9 @@ class SubmissionFile(Base):
     # File hash for duplicate detection
     file_hash = Column(String(64), nullable=True)
     
+    # Size in bytes (required by DB)
+    file_size_bytes = Column(Integer, nullable=False)
+    
     # Metadata
     is_main_file = Column(Boolean, default=False)  # Entry point file
     language_detected = Column(String(50), nullable=True)

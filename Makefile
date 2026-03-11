@@ -1,4 +1,4 @@
-.PHONY: help install build up down restart logs clean test migrate seed
+.PHONY: help install build up down restart logs clean test migrate migrate-local seed
 
 install: ## Install dependencies
 	@echo "Installing backend dependencies..."
@@ -71,9 +71,27 @@ migrate-create: ## Create a new migration
 	@read -p "Enter migration message: " msg; \
 	docker-compose exec backend alembic revision --autogenerate -m "$$msg"
 
-seed: ## Seed database with initial data
+migrate-local: ## Run migrations against Supabase (local, no Docker; set DATABASE_URL in .env)
+	@echo "Running migrations (local → Supabase)..."
+	@if [ -d backend/.venv ]; then \
+		cd backend && .venv/bin/alembic upgrade head; \
+	else \
+		cd backend && alembic upgrade head; \
+	fi
+	@echo "Migrations complete!"
+
+seed: ## Seed database (Docker - requires backend container running)
 	@echo "Seeding database..."
 	docker-compose exec backend python scripts/seed_data.py
+	@echo "Seeding complete!"
+
+seed-local: ## Seed database locally (connects to Supabase, no Docker)
+	@echo "Seeding database (local)..."
+	@if [ -d backend/.venv ]; then \
+		cd backend && .venv/bin/python scripts/seed_data.py; \
+	else \
+		cd backend && python3 scripts/seed_data.py; \
+	fi
 	@echo "Seeding complete!"
 
 shell-backend: ## Open backend shell
@@ -82,8 +100,12 @@ shell-backend: ## Open backend shell
 shell-db: ## Open database shell
 	docker-compose exec db psql -U kriterion -d kriterion
 
-dev-backend: ## Run backend in development mode (outside Docker)
-	cd backend && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+dev-backend: ## Run backend in development mode (outside Docker, uses venv if present)
+	@if [ -d backend/.venv ]; then \
+		cd backend && .venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000; \
+	else \
+		cd backend && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000; \
+	fi
 
 dev-frontend: ## Run frontend in development mode (outside Docker)
 	cd frontend && npm run dev

@@ -47,7 +47,8 @@ class Language(Base):
                                        cascade="all, delete-orphan")
     
     def __repr__(self):
-        return f"<Language {self.display_name} ({self.version})>"
+        version = getattr(self, "version", None)
+        return f"<Language {self.display_name}" + (f" {version}" if version else "") + ">"
 
 
 class FacultyLanguagePermission(Base):

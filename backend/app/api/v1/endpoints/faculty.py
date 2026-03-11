@@ -161,9 +161,11 @@ class FacultyEvent(BaseModel):
     title: str
     course_name: str
     course_code: str
+    course_id: Optional[int] = None
     event_type: str
     date: str
     detail: Optional[str] = None
+    priority: Optional[str] = None  # low, medium, high
 
 
 @router.get("/upcoming-events", response_model=List[FacultyEvent])
@@ -204,29 +206,44 @@ def get_faculty_upcoming_events(
         detail_text = f"{submitted}/{total_enrolled} submitted"
         if pending > 0:
             detail_text += f" · {pending} pending grading"
+        
+        # Determine priority based on time remaining and pending work
+        days_remaining = (a.due_date - datetime.utcnow()).days if not is_past else 0
+        priority = "low"
+        if pending > 0 and is_past:
+            priority = "high"
+        elif days_remaining <= 1:
+            priority = "high"
+        elif days_remaining <= 3:
+            priority = "medium"
 
         events.append(FacultyEvent(
             id=a.id,
             title=a.title,
             course_name=c.name if c else "Unknown",
             course_code=c.code if c else "N/A",
+            course_id=a.course_id,
             event_type=etype,
             date=a.due_date.strftime("%Y-%m-%d"),
             detail=detail_text,
+            priority=priority,
         ))
 
     # Course end-dates as events
     for c in courses:
         if c.end_date:
             is_completed = c.end_date < datetime.utcnow()
+            days_to_end = (c.end_date - datetime.utcnow()).days if not is_completed else 0
             events.append(FacultyEvent(
                 id=c.id,
                 title=f"{c.code} - {'Completed' if is_completed else 'Course Ends'}",
                 course_name=c.name,
                 course_code=c.code,
+                course_id=c.id,
                 event_type="course_end",
                 date=c.end_date.strftime("%Y-%m-%d"),
                 detail="Completed" if is_completed else "Upcoming end date",
+                priority="medium" if days_to_end <= 7 and not is_completed else "low",
             ))
         if c.start_date:
             events.append(FacultyEvent(
@@ -763,7 +780,7 @@ def get_available_languages(
             "id": lang.id,
             "name": lang.name,
             "display_name": lang.display_name,
-            "version": lang.version,
+            "version": getattr(lang, "version", None),
             "file_extension": lang.file_extension
         } for lang in languages
     ]

@@ -39,6 +39,9 @@ api_router.include_router(reports.router, prefix="/reports", tags=["Reports"])
 # User settings & profile
 api_router.include_router(settings.router, prefix="/settings", tags=["Settings"])
 
+# In-app notifications (all roles)
+api_router.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])
+
 # Programming languages
 api_router.include_router(languages.router, prefix="/languages", tags=["Languages"])
 

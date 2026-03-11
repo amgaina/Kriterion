@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { AdminLayout } from '@/components/layouts/AdminLayout';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutationWithInvalidation } from '@/lib/use-mutation-with-invalidation';
 import apiClient from '@/lib/api-client';
 import { DataTable } from '@/components/ui/data-table';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -58,22 +58,22 @@ export default function UsersPage() {
         queryFn: () => apiClient.getUsers(roleFilter || undefined),
     });
 
-    const deleteMutation = useMutation({
+    const deleteMutation = useMutationWithInvalidation({
         mutationFn: (userId: number) => apiClient.deleteUser(userId),
+        invalidateGroups: ['allUsers', 'allDashboards'],
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['users'] });
             setDeleteModal({ open: false });
         },
     });
 
-    const activateMutation = useMutation({
+    const activateMutation = useMutationWithInvalidation({
         mutationFn: (userId: number) => apiClient.activateUser(userId),
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['users'] }),
+        invalidateGroups: ['allUsers'],
     });
 
-    const deactivateMutation = useMutation({
+    const deactivateMutation = useMutationWithInvalidation({
         mutationFn: (userId: number) => apiClient.deactivateUser(userId),
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['users'] }),
+        invalidateGroups: ['allUsers'],
     });
 
     const resetPasswordMutation = useMutation({
@@ -123,7 +123,7 @@ export default function UsersPage() {
                 <Badge variant={
                     user.role === 'ADMIN' ? 'danger' :
                         user.role === 'FACULTY' ? 'primary' :
-                        user.role === 'ASSISTANT' ? 'warning' : 'default'
+                            user.role === 'ASSISTANT' ? 'warning' : 'default'
                 }>
                     {user.role}
                 </Badge>
@@ -192,192 +192,190 @@ export default function UsersPage() {
 
     return (
         <ProtectedRoute allowedRoles={['ADMIN']}>
-            <AdminLayout>
-                <div className="space-y-6">
-                    {/* Header */}
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                        <div>
-                            <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
-                            <p className="text-gray-500 mt-1">Manage all users in the system</p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                            <Button variant="outline" size="sm" onClick={() => refetch()}>
-                                <RefreshCw className="w-4 h-4 mr-2" />
-                                Refresh
+            <div className="space-y-6">
+                {/* Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                        <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
+                        <p className="text-gray-500 mt-1">Manage all users in the system</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <Button variant="outline" size="sm" onClick={() => refetch()}>
+                            <RefreshCw className="w-4 h-4 mr-2" />
+                            Refresh
+                        </Button>
+                        <Link href="/admin/users/new">
+                            <Button size="sm">
+                                <Plus className="w-4 h-4 mr-2" />
+                                Add User
                             </Button>
-                            <Link href="/admin/users/new">
-                                <Button size="sm">
-                                    <Plus className="w-4 h-4 mr-2" />
-                                    Add User
-                                </Button>
-                            </Link>
-                        </div>
+                        </Link>
                     </div>
+                </div>
 
-                    {/* Stats */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <Card>
-                            <CardContent className="p-4">
-                                <p className="text-sm text-gray-500">Total Users</p>
-                                <p className="text-2xl font-bold text-gray-900">{users.length}</p>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="p-4">
-                                <p className="text-sm text-gray-500">Active</p>
-                                <p className="text-2xl font-bold text-green-600">
-                                    {users.filter((u: User) => u.is_active).length}
-                                </p>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="p-4">
-                                <p className="text-sm text-gray-500">Faculty</p>
-                                <p className="text-2xl font-bold text-blue-600">
-                                    {users.filter((u: User) => u.role === 'FACULTY').length}
-                                </p>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="p-4">
-                                <p className="text-sm text-gray-500">Students</p>
-                                <p className="text-2xl font-bold text-purple-600">
-                                    {users.filter((u: User) => u.role === 'STUDENT').length}
-                                </p>
-                            </CardContent>
-                        </Card>
-                    </div>
-
-                    {/* Filters & Search */}
+                {/* Stats */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <Card>
                         <CardContent className="p-4">
-                            <div className="flex flex-col md:flex-row gap-4">
-                                <SearchInput
-                                    value={searchQuery}
-                                    onChange={setSearchQuery}
-                                    placeholder="Search users..."
-                                    className="md:w-80"
-                                />
-                                <Select
-                                    value={roleFilter}
-                                    onChange={(e) => setRoleFilter(e.target.value)}
-                                    options={[
-                                        { value: '', label: 'All Roles' },
-                                        { value: 'ADMIN', label: 'Admin' },
-                                        { value: 'FACULTY', label: 'Faculty' },
-                                        { value: 'ASSISTANT', label: 'Assistant' },
-                                        { value: 'STUDENT', label: 'Student' },
-                                    ]}
-                                    className="md:w-40"
-                                />
-                                <div className="flex-1" />
-                                <div className="flex items-center gap-2">
-                                    <Button variant="outline" size="sm">
-                                        <Upload className="w-4 h-4 mr-2" />
-                                        Import
-                                    </Button>
-                                    <Button variant="outline" size="sm">
-                                        <Download className="w-4 h-4 mr-2" />
-                                        Export
-                                    </Button>
-                                </div>
-                            </div>
-
-                            {selectedUsers.length > 0 && (
-                                <div className="mt-4 p-3 bg-[#862733]/5 rounded-lg flex items-center justify-between">
-                                    <span className="text-sm text-[#862733]">
-                                        {selectedUsers.length} users selected
-                                    </span>
-                                    <div className="flex items-center gap-2">
-                                        <Button variant="outline" size="sm">
-                                            Send Email
-                                        </Button>
-                                        <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50">
-                                            Delete Selected
-                                        </Button>
-                                    </div>
-                                </div>
-                            )}
+                            <p className="text-sm text-gray-500">Total Users</p>
+                            <p className="text-2xl font-bold text-gray-900">{users.length}</p>
                         </CardContent>
                     </Card>
-
-                    {/* Users Table */}
                     <Card>
-                        <DataTable
-                            columns={columns}
-                            data={filteredUsers}
-                            isLoading={isLoading}
-                            emptyMessage="No users found"
-                            selectedRows={selectedUsers}
-                            onSelectRow={handleSelectRow}
-                            onSelectAll={handleSelectAll}
-                        />
+                        <CardContent className="p-4">
+                            <p className="text-sm text-gray-500">Active</p>
+                            <p className="text-2xl font-bold text-green-600">
+                                {users.filter((u: User) => u.is_active).length}
+                            </p>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardContent className="p-4">
+                            <p className="text-sm text-gray-500">Faculty</p>
+                            <p className="text-2xl font-bold text-blue-600">
+                                {users.filter((u: User) => u.role === 'FACULTY').length}
+                            </p>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardContent className="p-4">
+                            <p className="text-sm text-gray-500">Students</p>
+                            <p className="text-2xl font-bold text-purple-600">
+                                {users.filter((u: User) => u.role === 'STUDENT').length}
+                            </p>
+                        </CardContent>
                     </Card>
                 </div>
 
-                {/* Delete Confirmation Modal */}
-                <Modal
-                    isOpen={deleteModal.open}
-                    onClose={() => setDeleteModal({ open: false })}
-                    title="Delete User"
-                    description="Are you sure you want to delete this user? This action cannot be undone."
-                >
-                    <Alert type="warning">
-                        You are about to delete <strong>{deleteModal.user?.full_name}</strong>.
-                        All their data will be permanently removed.
-                    </Alert>
-                    <ModalFooter>
-                        <Button variant="outline" onClick={() => setDeleteModal({ open: false })}>
-                            Cancel
-                        </Button>
-                        <Button
-                            variant="destructive"
-                            onClick={() => deleteModal.user && deleteMutation.mutate(deleteModal.user.id)}
-                            disabled={deleteMutation.isPending}
-                        >
-                            {deleteMutation.isPending ? 'Deleting...' : 'Delete User'}
-                        </Button>
-                    </ModalFooter>
-                </Modal>
+                {/* Filters & Search */}
+                <Card>
+                    <CardContent className="p-4">
+                        <div className="flex flex-col md:flex-row gap-4">
+                            <SearchInput
+                                value={searchQuery}
+                                onChange={setSearchQuery}
+                                placeholder="Search users..."
+                                className="md:w-80"
+                            />
+                            <Select
+                                value={roleFilter}
+                                onChange={(e) => setRoleFilter(e.target.value)}
+                                options={[
+                                    { value: '', label: 'All Roles' },
+                                    { value: 'ADMIN', label: 'Admin' },
+                                    { value: 'FACULTY', label: 'Faculty' },
+                                    { value: 'ASSISTANT', label: 'Assistant' },
+                                    { value: 'STUDENT', label: 'Student' },
+                                ]}
+                                className="md:w-40"
+                            />
+                            <div className="flex-1" />
+                            <div className="flex items-center gap-2">
+                                <Button variant="outline" size="sm">
+                                    <Upload className="w-4 h-4 mr-2" />
+                                    Import
+                                </Button>
+                                <Button variant="outline" size="sm">
+                                    <Download className="w-4 h-4 mr-2" />
+                                    Export
+                                </Button>
+                            </div>
+                        </div>
 
-                {/* Reset Password Modal */}
-                <Modal
-                    isOpen={resetPasswordModal.open}
-                    onClose={() => {
-                        setResetPasswordModal({ open: false });
-                        setNewPassword('');
-                    }}
-                    title="Reset Password"
-                    description={`Set a new password for ${resetPasswordModal.user?.full_name}`}
-                >
-                    <div className="space-y-4">
-                        <Input
-                            label="New Password"
-                            type="password"
-                            value={newPassword}
-                            onChange={(e) => setNewPassword(e.target.value)}
-                            placeholder="Enter new password"
-                        />
-                        <p className="text-sm text-gray-500">
-                            Password must be at least 8 characters with uppercase, lowercase, number, and special character.
-                        </p>
-                    </div>
-                    <ModalFooter>
-                        <Button variant="outline" onClick={() => setResetPasswordModal({ open: false })}>
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={() => resetPasswordModal.user && resetPasswordMutation.mutate({
-                                userId: resetPasswordModal.user.id,
-                                password: newPassword
-                            })}
-                            disabled={!newPassword || resetPasswordMutation.isPending}
-                        >
-                            {resetPasswordMutation.isPending ? 'Resetting...' : 'Reset Password'}
-                        </Button>
-                    </ModalFooter>
-                </Modal>
-            </AdminLayout>
+                        {selectedUsers.length > 0 && (
+                            <div className="mt-4 p-3 bg-[#862733]/5 rounded-lg flex items-center justify-between">
+                                <span className="text-sm text-[#862733]">
+                                    {selectedUsers.length} users selected
+                                </span>
+                                <div className="flex items-center gap-2">
+                                    <Button variant="outline" size="sm">
+                                        Send Email
+                                    </Button>
+                                    <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50">
+                                        Delete Selected
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+
+                {/* Users Table */}
+                <Card>
+                    <DataTable
+                        columns={columns}
+                        data={filteredUsers}
+                        isLoading={isLoading}
+                        emptyMessage="No users found"
+                        selectedRows={selectedUsers}
+                        onSelectRow={handleSelectRow}
+                        onSelectAll={handleSelectAll}
+                    />
+                </Card>
+            </div>
+
+            {/* Delete Confirmation Modal */}
+            <Modal
+                isOpen={deleteModal.open}
+                onClose={() => setDeleteModal({ open: false })}
+                title="Delete User"
+                description="Are you sure you want to delete this user? This action cannot be undone."
+            >
+                <Alert type="warning">
+                    You are about to delete <strong>{deleteModal.user?.full_name}</strong>.
+                    All their data will be permanently removed.
+                </Alert>
+                <ModalFooter>
+                    <Button variant="outline" onClick={() => setDeleteModal({ open: false })}>
+                        Cancel
+                    </Button>
+                    <Button
+                        variant="destructive"
+                        onClick={() => deleteModal.user && deleteMutation.mutate(deleteModal.user.id)}
+                        disabled={deleteMutation.isPending}
+                    >
+                        {deleteMutation.isPending ? 'Deleting...' : 'Delete User'}
+                    </Button>
+                </ModalFooter>
+            </Modal>
+
+            {/* Reset Password Modal */}
+            <Modal
+                isOpen={resetPasswordModal.open}
+                onClose={() => {
+                    setResetPasswordModal({ open: false });
+                    setNewPassword('');
+                }}
+                title="Reset Password"
+                description={`Set a new password for ${resetPasswordModal.user?.full_name}`}
+            >
+                <div className="space-y-4">
+                    <Input
+                        label="New Password"
+                        type="password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="Enter new password"
+                    />
+                    <p className="text-sm text-gray-500">
+                        Password must be at least 8 characters with uppercase, lowercase, number, and special character.
+                    </p>
+                </div>
+                <ModalFooter>
+                    <Button variant="outline" onClick={() => setResetPasswordModal({ open: false })}>
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={() => resetPasswordModal.user && resetPasswordMutation.mutate({
+                            userId: resetPasswordModal.user.id,
+                            password: newPassword
+                        })}
+                        disabled={!newPassword || resetPasswordMutation.isPending}
+                    >
+                        {resetPasswordMutation.isPending ? 'Resetting...' : 'Reset Password'}
+                    </Button>
+                </ModalFooter>
+            </Modal>
         </ProtectedRoute>
     );
 }

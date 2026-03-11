@@ -3,14 +3,16 @@
 import React, { useState, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
+import { useMutationWithInvalidation } from '@/lib/use-mutation-with-invalidation';
+import { queryKeys } from '@/lib/query-keys';
 import apiClient from '@/lib/api-client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Modal } from '@/components/ui/modal';
+import { AcknowledgementPopup } from '@/components/ui/acknowledgement-popup';
 import { DataTable } from '@/components/ui/data-table';
-import { CourseLoadingPage, CourseLoadingSpinner } from '@/components/course/CourseLoading';
+import { CourseLoadingPage } from '@/components/course/CourseLoading';
 import { EnrollStudentModal } from '@/components/course/EnrollStudentModal';
 import { BulkEnrollModal } from '@/components/course/BulkEnrollModal';
 import { ConfirmDeleteModal } from '@/components/ui/ConfirmDeleteModal';
@@ -24,11 +26,7 @@ import {
     UserMinus,
     AlertCircle,
     CheckCircle2,
-    UserCog,
-    X,
-    AlertTriangle,
 } from 'lucide-react';
-import { AnimatePresence, motion } from 'framer-motion';
 
 interface StudentInCourse {
     id: number;
@@ -38,13 +36,6 @@ interface StudentInCourse {
     enrolled_at: string;
     status: string;
     current_grade?: number | null;
-}
-
-interface AssistantInCourse {
-    id: number;
-    email: string;
-    full_name?: string | null;
-    assigned_at: string;
 }
 
 const formatDate = (dateString: string) =>
@@ -57,31 +48,36 @@ const formatGrade = (grade: number | null | undefined) => {
 
 export default function CourseStudentsPage() {
     const params = useParams();
-    const queryClient = useQueryClient();
     const courseId = Number(params?.courseId);
 
     const [searchQuery, setSearchQuery] = useState('');
     const [enrollModal, setEnrollModal] = useState(false);
     const [bulkEnrollModal, setBulkEnrollModal] = useState(false);
-    const [assistantModal, setAssistantModal] = useState(false);
-    const [assistantEmail, setAssistantEmail] = useState('');
     const [inactiveTarget, setInactiveTarget] = useState<{ id: number; full_name: string } | null>(null);
-    const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'warning'; message: string } | null>(null);
+    const [notification, setNotification] = useState<{
+        open: boolean;
+        type: 'success' | 'error' | 'warning';
+        title: string;
+        message: string;
+    }>({
+        open: false,
+        type: 'success',
+        title: 'Success',
+        message: '',
+    });
 
     const showNotification = (type: 'success' | 'error' | 'warning', message: string) => {
-        setNotification({ type, message });
-        setTimeout(() => setNotification(null), 5000);
+        setNotification({
+            open: true,
+            type,
+            title: type === 'success' ? 'Success' : type === 'warning' ? 'Warning' : 'Error',
+            message,
+        });
     };
 
     const { data: students = [], isLoading, isFetching, refetch } = useQuery({
         queryKey: ['course-students', courseId],
         queryFn: () => apiClient.getCourseStudents(courseId) as Promise<StudentInCourse[]>,
-        enabled: !!courseId,
-    });
-
-    const { data: assistants = [] } = useQuery({
-        queryKey: ['course-assistants', courseId],
-        queryFn: () => apiClient.getCourseAssistants(courseId) as Promise<AssistantInCourse[]>,
         enabled: !!courseId,
     });
 
@@ -91,15 +87,14 @@ export default function CourseStudentsPage() {
         enabled: !!courseId,
     });
 
-    const invalidateCourse = () => {
-        queryClient.invalidateQueries({ queryKey: ['course', courseId] });
-    };
-
-    const makeInactiveMutation = useMutation({
+    const makeInactiveMutation = useMutationWithInvalidation({
         mutationFn: (studentId: number) => apiClient.unenrollStudent(courseId, studentId),
+        invalidateKeys: [
+            queryKeys.courses.students(courseId),
+            queryKeys.courses.detail(courseId),
+        ],
+        invalidateGroups: ['allUsers'],
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['course-students', courseId] });
-            invalidateCourse();
             setInactiveTarget(null);
             showNotification('success', 'Student marked as inactive for this course.');
         },
@@ -107,26 +102,6 @@ export default function CourseStudentsPage() {
             const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to make inactive';
             showNotification('error', typeof msg === 'string' ? msg : 'Failed to make inactive');
         },
-    });
-
-    const addAssistantMutation = useMutation({
-        mutationFn: (email: string) => apiClient.addCourseAssistant(courseId, email),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['course-assistants', courseId] });
-            setAssistantModal(false);
-            setAssistantEmail('');
-            showNotification('success', 'Grading assistant added successfully.');
-        },
-        onError: (err: any) => showNotification('error', err.response?.data?.detail || 'Failed to add assistant'),
-    });
-
-    const removeAssistantMutation = useMutation({
-        mutationFn: (assistantId: number) => apiClient.removeCourseAssistant(courseId, assistantId),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['course-assistants', courseId] });
-            showNotification('success', 'Assistant removed from course.');
-        },
-        onError: (err: any) => showNotification('error', err.response?.data?.detail || 'Failed to remove assistant'),
     });
 
     const activeStudents = useMemo(() => students.filter(s => s.status === 'active'), [students]);
@@ -238,38 +213,6 @@ export default function CourseStudentsPage() {
     return (
         <>
             <div className="space-y-6 pb-8">
-                {/* Notification */}
-                <AnimatePresence mode="wait">
-                    {notification && (
-                        <motion.div
-                            initial={{ opacity: 0, y: -8 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -8 }}
-                            className={`rounded-xl border p-4 flex items-start gap-3 ${notification.type === 'success'
-                                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                                    : notification.type === 'warning'
-                                        ? 'bg-amber-50 border-amber-200 text-amber-800'
-                                        : 'bg-red-50 border-red-200 text-red-800'
-                                }`}
-                        >
-                            {notification.type === 'success' ? (
-                                <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                            ) : notification.type === 'warning' ? (
-                                <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                            ) : (
-                                <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                            )}
-                            <p className="text-sm flex-1">{notification.message}</p>
-                            <button
-                                onClick={() => setNotification(null)}
-                                className="text-gray-400 hover:text-gray-600 p-1 rounded transition-colors"
-                            >
-                                <X className="w-4 h-4" />
-                            </button>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-
                 {/* Header */}
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                     <div>
@@ -311,7 +254,7 @@ export default function CourseStudentsPage() {
                 </div>
 
                 {/* Stats */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     <Card className="border-0 shadow-md">
                         <CardContent className="p-4">
                             <div className="flex items-center gap-3">
@@ -351,86 +294,7 @@ export default function CourseStudentsPage() {
                             </div>
                         </CardContent>
                     </Card>
-                    <Card className="border-0 shadow-md">
-                        <CardContent className="p-4">
-                            <div className="flex items-center gap-3">
-                                <div className="w-11 h-11 rounded-xl bg-violet-100 flex items-center justify-center">
-                                    <UserCog className="w-5 h-5 text-violet-600" />
-                                </div>
-                                <div>
-                                    <p className="text-2xl font-bold text-gray-900">{assistants.length}</p>
-                                    <p className="text-xs text-gray-500">Assistants</p>
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
                 </div>
-
-                {/* Add Grading Assistant */}
-                <Card className="border-0 shadow-md">
-                    <CardHeader className="pb-3">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                            <CardTitle className="flex items-center gap-2 text-lg">
-                                <UserCog className="w-5 h-5 text-violet-600" />
-                                Grading Assistants
-                            </CardTitle>
-                            <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setAssistantModal(true)}
-                                className="gap-2 w-fit"
-                            >
-                                <UserPlus className="w-4 h-4" /> Add Assistant
-                            </Button>
-                        </div>
-                    </CardHeader>
-                    <CardContent>
-                        <p className="text-sm text-gray-500 mb-4">
-                            Assistants can grade submissions for this course. Add assistants by their email address.
-                        </p>
-                        {assistants.length === 0 ? (
-                            <div className="py-6 text-center border-2 border-dashed border-gray-200 rounded-xl">
-                                <UserCog className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-                                <p className="text-gray-500 text-sm">No assistants assigned</p>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="mt-3"
-                                    onClick={() => setAssistantModal(true)}
-                                >
-                                    Add Grading Assistant
-                                </Button>
-                            </div>
-                        ) : (
-                            <div className="space-y-2">
-                                {assistants.map((a) => (
-                                    <div
-                                        key={a.id}
-                                        className="flex items-center justify-between p-3 rounded-xl border border-gray-100 bg-gray-50/50"
-                                    >
-                                        <div>
-                                            <p className="font-medium text-gray-900">{a.full_name || a.email}</p>
-                                            <p className="text-xs text-gray-500">{a.email}</p>
-                                        </div>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                                            onClick={() => {
-                                                if (confirm(`Remove ${a.email} from this course?`)) {
-                                                    removeAssistantMutation.mutate(a.id);
-                                                }
-                                            }}
-                                            disabled={removeAssistantMutation.isPending}
-                                        >
-                                            Remove
-                                        </Button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
 
                 {/* Search */}
                 <Card className="border-0 shadow-md">
@@ -536,47 +400,13 @@ export default function CourseStudentsPage() {
                 variant="warning"
             />
 
-            {/* Add Assistant Modal */}
-            <Modal isOpen={assistantModal} onClose={() => setAssistantModal(false)} title="Add Grading Assistant" size="md">
-                <div className="space-y-4">
-                    <p className="text-sm text-gray-500">
-                        Enter the email of an assistant who has an account. They will be able to grade submissions for
-                        this course.
-                    </p>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Assistant Email</label>
-                        <Input
-                            type="email"
-                            placeholder="assistant@university.edu"
-                            value={assistantEmail}
-                            onChange={e => setAssistantEmail(e.target.value)}
-                            onKeyDown={e => {
-                                if (e.key === 'Enter' && assistantEmail.includes('@')) {
-                                    addAssistantMutation.mutate(assistantEmail);
-                                }
-                            }}
-                        />
-                    </div>
-                    <div className="flex justify-end gap-3 pt-2">
-                        <Button variant="outline" onClick={() => setAssistantModal(false)}>
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={() => addAssistantMutation.mutate(assistantEmail)}
-                            disabled={!assistantEmail.includes('@') || addAssistantMutation.isPending}
-                            className="bg-[#862733] hover:bg-[#a03040]"
-                        >
-                            {addAssistantMutation.isPending ? (
-                                <CourseLoadingSpinner size="sm" label="Adding..." />
-                            ) : (
-                                <>
-                                    <UserPlus className="w-4 h-4 mr-2" /> Add Assistant
-                                </>
-                            )}
-                        </Button>
-                    </div>
-                </div>
-            </Modal>
+            <AcknowledgementPopup
+                isOpen={notification.open}
+                onClose={() => setNotification((prev) => ({ ...prev, open: false }))}
+                type={notification.type}
+                title={notification.title}
+                message={notification.message}
+            />
         </>
     );
 }

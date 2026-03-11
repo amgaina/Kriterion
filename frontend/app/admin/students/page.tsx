@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { AdminLayout } from '@/components/layouts/AdminLayout';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
+import { useMutationWithInvalidation } from '@/lib/use-mutation-with-invalidation';
 import apiClient from '@/lib/api-client';
 import { DataTable } from '@/components/ui/data-table';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -47,7 +48,6 @@ interface Student {
 }
 
 export default function StudentsPage() {
-    const queryClient = useQueryClient();
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState('all');
     const [selectedCourse, setSelectedCourse] = useState('');
@@ -64,9 +64,9 @@ export default function StudentsPage() {
         queryFn: () => apiClient.getCourses(),
     });
 
-    const deleteMutation = useMutation({
+    const deleteMutation = useMutationWithInvalidation({
         mutationFn: (userId: number) => apiClient.deleteUser(userId),
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['users'] }),
+        invalidateGroups: ['allUsers', 'allDashboards'],
     });
 
     const filteredStudents = students.filter((student: Student) =>
@@ -224,210 +224,208 @@ export default function StudentsPage() {
 
     return (
         <ProtectedRoute allowedRoles={['ADMIN']}>
-            <AdminLayout>
-                <div className="space-y-6">
-                    {/* Header */}
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                        <div>
-                            <h1 className="text-2xl font-bold text-gray-900">Student Management</h1>
-                            <p className="text-gray-500 mt-1">Manage student accounts and enrollments</p>
-                        </div>
-                        <div className="flex gap-2">
-                            <Button variant="outline" onClick={() => setBulkModal(true)}>
-                                <Upload className="w-4 h-4 mr-2" />
-                                Bulk Import
-                            </Button>
-                            <Button asChild>
-                                <Link href="/admin/users/new">
-                                    <Plus className="w-4 h-4 mr-2" />
-                                    Add Student
-                                </Link>
-                            </Button>
-                        </div>
+            <div className="space-y-6">
+                {/* Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                        <h1 className="text-2xl font-bold text-gray-900">Student Management</h1>
+                        <p className="text-gray-500 mt-1">Manage student accounts and enrollments</p>
                     </div>
-
-                    {/* Stats */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <Card>
-                            <CardContent className="p-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-lg bg-[#862733]/10 flex items-center justify-center">
-                                        <GraduationCap className="w-5 h-5 text-[#862733]" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-gray-500">Total Students</p>
-                                        <p className="text-xl font-bold text-gray-900">{students.length}</p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="p-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
-                                        <CheckCircle className="w-5 h-5 text-green-600" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-gray-500">Active Students</p>
-                                        <p className="text-xl font-bold text-green-600">
-                                            {students.filter((s: Student) => s.is_active).length}
-                                        </p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="p-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                                        <BookOpen className="w-5 h-5 text-blue-600" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-gray-500">Avg. Enrollments</p>
-                                        <p className="text-xl font-bold text-blue-600">
-                                            {Math.round(students.reduce((acc: number, s: Student) =>
-                                                acc + (s.enrolled_courses || 0), 0) / (students.length || 1))}
-                                        </p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="p-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center">
-                                        <AlertCircle className="w-5 h-5 text-red-600" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-gray-500">At Risk</p>
-                                        <p className="text-xl font-bold text-red-600">
-                                            {students.filter((s: Student) => (s.avg_score || 100) < 60).length}
-                                        </p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
+                    <div className="flex gap-2">
+                        <Button variant="outline" onClick={() => setBulkModal(true)}>
+                            <Upload className="w-4 h-4 mr-2" />
+                            Bulk Import
+                        </Button>
+                        <Button asChild>
+                            <Link href="/admin/users/new">
+                                <Plus className="w-4 h-4 mr-2" />
+                                Add Student
+                            </Link>
+                        </Button>
                     </div>
+                </div>
 
-                    {/* Bulk Actions Bar */}
-                    {selectedStudents.length > 0 && (
-                        <Card className="bg-[#862733]/5 border-[#862733]/20">
-                            <CardContent className="p-3">
-                                <div className="flex items-center justify-between">
-                                    <span className="text-sm font-medium text-[#862733]">
-                                        {selectedStudents.length} student(s) selected
-                                    </span>
-                                    <div className="flex gap-2">
-                                        <Button variant="outline" size="sm">
-                                            <Mail className="w-4 h-4 mr-1" />
-                                            Email Selected
-                                        </Button>
-                                        <Button variant="outline" size="sm">
-                                            <Download className="w-4 h-4 mr-1" />
-                                            Export
-                                        </Button>
-                                        <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50">
-                                            <Trash2 className="w-4 h-4 mr-1" />
-                                            Delete
-                                        </Button>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    )}
-
-                    {/* Filters & Tabs */}
+                {/* Stats */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <Card>
                         <CardContent className="p-4">
-                            <div className="flex flex-col md:flex-row md:items-center gap-4">
-                                <Tabs
-                                    tabs={tabs}
-                                    activeTab={activeTab}
-                                    onTabChange={setActiveTab}
-                                    className="flex-1"
-                                />
-                                <div className="flex gap-2">
-                                    <Select
-                                        value={selectedCourse}
-                                        onChange={(e) => setSelectedCourse(e.target.value)}
-                                        options={[
-                                            { value: '', label: 'All Courses' },
-                                            ...courses.map((c: any) => ({ value: c.id.toString(), label: c.name }))
-                                        ]}
-                                        className="w-40"
-                                    />
-                                    <SearchInput
-                                        value={searchQuery}
-                                        onChange={setSearchQuery}
-                                        placeholder="Search students..."
-                                        className="md:w-48"
-                                    />
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-lg bg-[#862733]/10 flex items-center justify-center">
+                                    <GraduationCap className="w-5 h-5 text-[#862733]" />
+                                </div>
+                                <div>
+                                    <p className="text-sm text-gray-500">Total Students</p>
+                                    <p className="text-xl font-bold text-gray-900">{students.length}</p>
                                 </div>
                             </div>
                         </CardContent>
                     </Card>
-
-                    {/* Students Table */}
                     <Card>
-                        <DataTable
-                            columns={columns}
-                            data={getFilteredByTab()}
-                            isLoading={isLoading}
-                            emptyMessage="No students found"
-                        />
+                        <CardContent className="p-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
+                                    <CheckCircle className="w-5 h-5 text-green-600" />
+                                </div>
+                                <div>
+                                    <p className="text-sm text-gray-500">Active Students</p>
+                                    <p className="text-xl font-bold text-green-600">
+                                        {students.filter((s: Student) => s.is_active).length}
+                                    </p>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardContent className="p-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                                    <BookOpen className="w-5 h-5 text-blue-600" />
+                                </div>
+                                <div>
+                                    <p className="text-sm text-gray-500">Avg. Enrollments</p>
+                                    <p className="text-xl font-bold text-blue-600">
+                                        {Math.round(students.reduce((acc: number, s: Student) =>
+                                            acc + (s.enrolled_courses || 0), 0) / (students.length || 1))}
+                                    </p>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardContent className="p-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center">
+                                    <AlertCircle className="w-5 h-5 text-red-600" />
+                                </div>
+                                <div>
+                                    <p className="text-sm text-gray-500">At Risk</p>
+                                    <p className="text-xl font-bold text-red-600">
+                                        {students.filter((s: Student) => (s.avg_score || 100) < 60).length}
+                                    </p>
+                                </div>
+                            </div>
+                        </CardContent>
                     </Card>
                 </div>
 
-                {/* Bulk Import Modal */}
-                <Modal
-                    isOpen={bulkModal}
-                    onClose={() => setBulkModal(false)}
-                    title="Bulk Import Students"
-                    description="Import multiple students from a CSV file"
-                    size="md"
-                >
-                    <div className="space-y-4">
-                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
-                            <Upload className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-                            <p className="text-sm text-gray-600 mb-2">
-                                Drag and drop your CSV file here, or click to browse
-                            </p>
-                            <input type="file" accept=".csv" className="hidden" id="csv-upload" />
-                            <label htmlFor="csv-upload">
-                                <Button variant="outline" asChild>
-                                    <span>Choose File</span>
-                                </Button>
-                            </label>
+                {/* Bulk Actions Bar */}
+                {selectedStudents.length > 0 && (
+                    <Card className="bg-[#862733]/5 border-[#862733]/20">
+                        <CardContent className="p-3">
+                            <div className="flex items-center justify-between">
+                                <span className="text-sm font-medium text-[#862733]">
+                                    {selectedStudents.length} student(s) selected
+                                </span>
+                                <div className="flex gap-2">
+                                    <Button variant="outline" size="sm">
+                                        <Mail className="w-4 h-4 mr-1" />
+                                        Email Selected
+                                    </Button>
+                                    <Button variant="outline" size="sm">
+                                        <Download className="w-4 h-4 mr-1" />
+                                        Export
+                                    </Button>
+                                    <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50">
+                                        <Trash2 className="w-4 h-4 mr-1" />
+                                        Delete
+                                    </Button>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
+
+                {/* Filters & Tabs */}
+                <Card>
+                    <CardContent className="p-4">
+                        <div className="flex flex-col md:flex-row md:items-center gap-4">
+                            <Tabs
+                                tabs={tabs}
+                                activeTab={activeTab}
+                                onTabChange={setActiveTab}
+                                className="flex-1"
+                            />
+                            <div className="flex gap-2">
+                                <Select
+                                    value={selectedCourse}
+                                    onChange={(e) => setSelectedCourse(e.target.value)}
+                                    options={[
+                                        { value: '', label: 'All Courses' },
+                                        ...courses.map((c: any) => ({ value: c.id.toString(), label: c.name }))
+                                    ]}
+                                    className="w-40"
+                                />
+                                <SearchInput
+                                    value={searchQuery}
+                                    onChange={setSearchQuery}
+                                    placeholder="Search students..."
+                                    className="md:w-48"
+                                />
+                            </div>
                         </div>
-                        <div className="bg-gray-50 rounded-lg p-4">
-                            <h4 className="font-medium text-gray-900 mb-2">CSV Format Requirements:</h4>
-                            <ul className="text-sm text-gray-600 space-y-1">
-                                <li>• Headers: full_name, email, student_id (optional)</li>
-                                <li>• Email must be unique</li>
-                                <li>• Passwords will be auto-generated and emailed</li>
-                            </ul>
-                            <button className="text-[#862733] text-sm mt-2 hover:underline">
-                                Download Template
-                            </button>
-                        </div>
-                        <Select
-                            label="Enroll in Course (Optional)"
-                            options={[
-                                { value: '', label: 'Select a course...' },
-                                ...courses.map((c: any) => ({ value: c.id.toString(), label: c.name }))
-                            ]}
-                        />
+                    </CardContent>
+                </Card>
+
+                {/* Students Table */}
+                <Card>
+                    <DataTable
+                        columns={columns}
+                        data={getFilteredByTab()}
+                        isLoading={isLoading}
+                        emptyMessage="No students found"
+                    />
+                </Card>
+            </div>
+
+            {/* Bulk Import Modal */}
+            <Modal
+                isOpen={bulkModal}
+                onClose={() => setBulkModal(false)}
+                title="Bulk Import Students"
+                description="Import multiple students from a CSV file"
+                size="md"
+            >
+                <div className="space-y-4">
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+                        <Upload className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+                        <p className="text-sm text-gray-600 mb-2">
+                            Drag and drop your CSV file here, or click to browse
+                        </p>
+                        <input type="file" accept=".csv" className="hidden" id="csv-upload" />
+                        <label htmlFor="csv-upload">
+                            <Button variant="outline" asChild>
+                                <span>Choose File</span>
+                            </Button>
+                        </label>
                     </div>
-                    <ModalFooter>
-                        <Button variant="outline" onClick={() => setBulkModal(false)}>
-                            Cancel
-                        </Button>
-                        <Button>
-                            Import Students
-                        </Button>
-                    </ModalFooter>
-                </Modal>
-            </AdminLayout>
+                    <div className="bg-gray-50 rounded-lg p-4">
+                        <h4 className="font-medium text-gray-900 mb-2">CSV Format Requirements:</h4>
+                        <ul className="text-sm text-gray-600 space-y-1">
+                            <li>• Headers: full_name, email, student_id (optional)</li>
+                            <li>• Email must be unique</li>
+                            <li>• Passwords will be auto-generated and emailed</li>
+                        </ul>
+                        <button className="text-[#862733] text-sm mt-2 hover:underline">
+                            Download Template
+                        </button>
+                    </div>
+                    <Select
+                        label="Enroll in Course (Optional)"
+                        options={[
+                            { value: '', label: 'Select a course...' },
+                            ...courses.map((c: any) => ({ value: c.id.toString(), label: c.name }))
+                        ]}
+                    />
+                </div>
+                <ModalFooter>
+                    <Button variant="outline" onClick={() => setBulkModal(false)}>
+                        Cancel
+                    </Button>
+                    <Button>
+                        Import Students
+                    </Button>
+                </ModalFooter>
+            </Modal>
         </ProtectedRoute>
     );
 }

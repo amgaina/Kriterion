@@ -226,13 +226,16 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
     if (!user) return null;
 
-    const navItems = getNavItems(user.role);
-    const topNavItems = getTopNavItems(user.role);
-    const isAdmin = user.role === 'ADMIN';
+    const currentUser = user!;
+
+    const navItems = getNavItems(currentUser.role);
+    const topNavItems = getTopNavItems(currentUser.role);
+    const isAdmin = currentUser.role === 'ADMIN';
+    const isAdminDashboard = isAdmin && (pathname === '/admin/dashboard' || pathname.startsWith('/admin/dashboard/'));
 
     // For students, remove the primary learning nav from the sidebar since we show it in the top nav
     // Also remove 'Help' and 'Settings' from the sidebar and surface them in the profile menu
-    const sidebarItems = user.role === 'STUDENT'
+    const sidebarItems = currentUser.role === 'STUDENT'
         ? navItems.filter(i => !['Dashboard', 'My Courses', 'Assignments', 'Grades', 'Progress', 'Schedule', 'Help', 'Settings'].includes(i.label))
         : navItems;
 
@@ -265,8 +268,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
     return (
         <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
-            {/* Sidebar (used only for admin; students and faculty use top nav only) */}
-            {user.role === 'ADMIN' && (
+            {/* Sidebar (was used only for admin; students and faculty use top nav only).
+                We now hide it for all admin pages to match the faculty-style layout. */}
+            {user.role === 'ADMIN' && false && (
                 <>
                     {/* Mobile sidebar backdrop */}
                     {sidebarOpen && (
@@ -283,7 +287,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                     >
                         {/* Logo Section */}
                         <div className="flex h-16 items-center justify-between border-b border-gray-200 px-4">
-                            <Link href={`/${user.role.toLowerCase()}/dashboard`} className="flex items-center gap-3">
+                            <Link href={`/${currentUser.role.toLowerCase()}/dashboard`} className="flex items-center gap-3">
                                 <div className="h-10 w-10 overflow-hidden rounded-lg bg-[#862733] flex items-center justify-center">
                                     <Image
                                         src="/logo.png"
@@ -307,18 +311,18 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                         <div className="border-b border-gray-200 p-4">
                             <div className="flex items-center gap-3">
                                 <div className="h-10 w-10 rounded-full bg-[#862733] flex items-center justify-center text-white font-semibold">
-                                    {user.full_name?.charAt(0).toUpperCase() || 'U'}
+                                    {currentUser.full_name?.charAt(0).toUpperCase() || 'U'}
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <p className="truncate text-sm font-semibold text-gray-900">
-                                        {user.full_name}
+                                        {currentUser.full_name}
                                     </p>
-                                    <p className="truncate text-xs text-gray-500">{user.email}</p>
+                                    <p className="truncate text-xs text-gray-500">{currentUser.email}</p>
                                 </div>
                             </div>
                             <div className="mt-3">
-                                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getRoleBadgeColor(user.role)}`}>
-                                    {user.role}
+                                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getRoleBadgeColor(currentUser.role)}`}>
+                                    {currentUser.role}
                                 </span>
                             </div>
                         </div>
@@ -365,12 +369,12 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             )}
 
             {/* Main Content */}
-            <div className={`flex-1 flex flex-col min-h-0 overflow-hidden ${isAdmin ? 'lg:pl-72' : ''}`}>
+            <div className={`flex-1 flex flex-col min-h-0 overflow-hidden ${isAdmin && false ? 'lg:pl-72' : ''}`}>
                 {/* Top Header */}
                 <header className="flex-shrink-0 z-30 bg-white border-b border-gray-200 shadow-sm">
                     <div className="px-3 sm:px-4 lg:px-6 h-14 sm:h-16 flex items-center justify-between gap-2 min-w-0">
                         {/* Left side */}
-                        {isAdmin ? (
+                        {isAdmin && false ? (
                             <button
                                 onClick={() => setSidebarOpen(true)}
                                 className="rounded-md p-2 text-gray-500 hover:bg-gray-100 lg:hidden"

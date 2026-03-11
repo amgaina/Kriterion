@@ -278,6 +278,67 @@ def get_course_report(
         Assignment.course_id == course_id
     ).scalar()
     
+    # Per-student statistics (average grade and completion)
+    student_reports = []
+    course_scores = []
+    total_assignments = len(assignments)
+    
+    for enrollment in enrollments:
+        student = enrollment.student
+        
+        # Use stored current_grade when available for performance/consistency
+        if enrollment.current_grade is not None:
+            avg_score = float(enrollment.current_grade)
+            completed_assignments = sum(
+                1
+                for assignment in assignments
+                if db.query(Submission)
+                .filter(
+                    Submission.assignment_id == assignment.id,
+                    Submission.student_id == student.id,
+                    Submission.final_score.isnot(None),
+                )
+                .first()
+            )
+        else:
+            # Fallback: compute from latest graded submission per assignment
+            scores = []
+            completed_assignments = 0
+            for assignment in assignments:
+                submission = (
+                    db.query(Submission)
+                    .filter(
+                        Submission.assignment_id == assignment.id,
+                        Submission.student_id == student.id,
+                        Submission.final_score.isnot(None),
+                    )
+                    .order_by(Submission.submitted_at.desc())
+                    .first()
+                )
+                if submission and submission.final_score is not None:
+                    scores.append(float(submission.final_score))
+                    completed_assignments += 1
+            avg_score = sum(scores) / len(scores) if scores else None
+        
+        if avg_score is not None:
+            course_scores.append(avg_score)
+        
+        student_reports.append(
+            {
+                "id": student.id,
+                "name": student.full_name,
+                "email": student.email,
+                "student_id": student.student_id,
+                "average_score": round(avg_score, 2) if avg_score is not None else None,
+                "completed_assignments": completed_assignments,
+                "total_assignments": total_assignments,
+            }
+        )
+    
+    course_average_score = (
+        round(sum(course_scores) / len(course_scores), 2) if course_scores else None
+    )
+    
     return {
         "course": {
             "id": course.id,
@@ -287,11 +348,113 @@ def get_course_report(
             "year": course.year
         },
         "total_students": len(enrollments),
-        "total_assignments": len(assignments),
+        "total_assignments": total_assignments,
         "total_submissions": submission_count,
-        "students": [{"id": e.student.id, "name": e.student.full_name, "email": e.student.email} for e in enrollments],
-        "assignments": assignments
+        "students": [
+            {"id": e.student.id, "name": e.student.full_name, "email": e.student.email}
+            for e in enrollments
+        ],
+        "assignments": assignments,
+        "course_average_score": course_average_score,
+        "student_reports": student_reports,
     }
+
+
+@router.get("/course/{course_id}/export")
+def export_course_report(
+    course_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.FACULTY, UserRole.ADMIN])),
+):
+    """Downloadable CSV summary for a course: per-student averages and completion."""
+    course = db.query(Course).filter(Course.id == course_id).first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    
+    # Verify faculty access
+    if current_user.role == UserRole.FACULTY and course.instructor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    enrollments = db.query(Enrollment).filter(
+        and_(Enrollment.course_id == course_id, Enrollment.status == EnrollmentStatus.ACTIVE)
+    ).all()
+    assignments = db.query(Assignment).filter(Assignment.course_id == course_id).all()
+    total_assignments = len(assignments)
+    
+    # Build per-student stats (same logic as get_course_report)
+    rows = []
+    for enrollment in enrollments:
+        student = enrollment.student
+        
+        if enrollment.current_grade is not None:
+            avg_score = float(enrollment.current_grade)
+            completed_assignments = sum(
+                1
+                for assignment in assignments
+                if db.query(Submission)
+                .filter(
+                    Submission.assignment_id == assignment.id,
+                    Submission.student_id == student.id,
+                    Submission.final_score.isnot(None),
+                )
+                .first()
+            )
+        else:
+            scores = []
+            completed_assignments = 0
+            for assignment in assignments:
+                submission = (
+                    db.query(Submission)
+                    .filter(
+                        Submission.assignment_id == assignment.id,
+                        Submission.student_id == student.id,
+                        Submission.final_score.isnot(None),
+                    )
+                    .order_by(Submission.submitted_at.desc())
+                    .first()
+                )
+                if submission and submission.final_score is not None:
+                    scores.append(float(submission.final_score))
+                    completed_assignments += 1
+            avg_score = sum(scores) / len(scores) if scores else None
+        
+        rows.append(
+            {
+                "Student Name": student.full_name,
+                "Email": student.email,
+                "Student ID": student.student_id or "",
+                "Average Grade": round(avg_score, 2) if avg_score is not None else "",
+                "Completed Assignments": completed_assignments,
+                "Total Assignments": total_assignments,
+            }
+        )
+    
+    # Create CSV
+    output = io.StringIO()
+    writer = csv.DictWriter(
+        output,
+        fieldnames=[
+            "Student Name",
+            "Email",
+            "Student ID",
+            "Average Grade",
+            "Completed Assignments",
+            "Total Assignments",
+        ],
+    )
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(row)
+    
+    csv_data = output.getvalue()
+    output.close()
+    
+    filename = f"course_report_{course.code}.csv"
+    return Response(
+        content=csv_data,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 @router.get("/export/canvas/{course_id}")

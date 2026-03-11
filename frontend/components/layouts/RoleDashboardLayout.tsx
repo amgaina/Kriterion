@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useQuery, UseQueryOptions } from '@tanstack/react-query';
-import { format, isSameDay, parseISO } from 'date-fns';
+import { format, isSameDay, parseISO, differenceInDays, differenceInHours, isPast } from 'date-fns';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { UserRole } from '@/contexts/AuthContext';
 import { DashboardLayout } from '@/components/layouts/DashboardLayout';
@@ -21,6 +21,10 @@ import {
     X,
     BookOpen,
     GraduationCap,
+    Target,
+    Bell,
+    Users,
+    AlertCircle,
 } from 'lucide-react';
 
 /** Generic calendar event shape - roles map their data to this */
@@ -31,7 +35,9 @@ export interface CalendarEvent {
     event_type: string;
     course_code?: string;
     course_name?: string;
+    course_id?: number;
     detail?: string;
+    priority?: 'low' | 'medium' | 'high';
 }
 
 export interface RoleDashboardLayoutProps {
@@ -68,6 +74,9 @@ export default function RoleDashboardLayout({
             events.map((e) => ({
                 date: e.date.slice(0, 10),
                 event_type: e.event_type,
+                course_code: e.course_code,
+                course_id: e.course_id,
+                title: e.title,
             })),
         [events],
     );
@@ -186,19 +195,43 @@ export default function RoleDashboardLayout({
                                         {filteredEvents.length === 0 ? (
                                             <p className="text-[11px] text-gray-400 text-center py-3">No events</p>
                                         ) : (
-                                            filteredEvents.map((event) => (
-                                                <Link
-                                                    key={`mob-${event.id}-${event.event_type}`}
-                                                    href={getEventHref(event)}
-                                                    onClick={() => setMobileDrawerOpen(false)}
-                                                    className="block p-2.5 rounded-lg hover:bg-gray-50 transition-colors"
-                                                >
-                                                    <p className="text-xs font-medium text-gray-900 truncate">{event.title}</p>
-                                                    <p className="text-[11px] text-gray-400">
-                                                        {event.course_code || ''} · {format(parseISO(event.date), 'MMM d')}
-                                                    </p>
-                                                </Link>
-                                            ))
+                                            filteredEvents.map((event) => {
+                                                const timeInfo = getTimeRemaining(event.date);
+                                                const { bg, Icon } = eventStyle(event);
+                                                
+                                                return (
+                                                    <Link
+                                                        key={`mob-${event.id}-${event.event_type}`}
+                                                        href={getEventHref(event)}
+                                                        onClick={() => setMobileDrawerOpen(false)}
+                                                        className="block p-2.5 rounded-lg hover:bg-gray-50 transition-colors"
+                                                    >
+                                                        <div className="flex items-start gap-2">
+                                                            <div className={`w-6 h-6 rounded flex items-center justify-center flex-shrink-0 ${bg}`}>
+                                                                <Icon className="w-3 h-3" />
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <p className="text-xs font-medium text-gray-900 truncate">{event.title}</p>
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <p className="text-[11px] text-gray-400">
+                                                                        {event.course_code || ''} · {format(parseISO(event.date), 'MMM d')}
+                                                                    </p>
+                                                                    <span className={`
+                                                                        text-[9px] px-1.5 py-0.5 rounded-full font-medium
+                                                                        ${timeInfo.overdue 
+                                                                            ? 'bg-gray-100 text-gray-500' 
+                                                                            : timeInfo.urgent 
+                                                                                ? 'bg-red-100 text-red-700' 
+                                                                                : 'bg-gray-100 text-gray-600'}
+                                                                    `}>
+                                                                        {timeInfo.text}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </Link>
+                                                );
+                                            })
                                         )}
                                     </div>
                                 </div>
@@ -211,13 +244,62 @@ export default function RoleDashboardLayout({
     );
 }
 
+// ============== Helpers ==============
+
+function getTimeRemaining(dateStr: string): { text: string; urgent: boolean; overdue: boolean } {
+    const date = parseISO(dateStr + (dateStr.includes('T') ? '' : 'T23:59:59'));
+    const now = new Date();
+    
+    if (isPast(date)) {
+        const daysPast = Math.abs(differenceInDays(date, now));
+        if (daysPast === 0) return { text: 'Today', urgent: true, overdue: true };
+        if (daysPast === 1) return { text: '1d ago', urgent: false, overdue: true };
+        return { text: `${daysPast}d ago`, urgent: false, overdue: true };
+    }
+    
+    const hoursLeft = differenceInHours(date, now);
+    const daysLeft = differenceInDays(date, now);
+    
+    if (hoursLeft < 1) return { text: '< 1h', urgent: true, overdue: false };
+    if (hoursLeft < 24) return { text: `${hoursLeft}h`, urgent: true, overdue: false };
+    if (daysLeft === 1) return { text: '1 day', urgent: true, overdue: false };
+    if (daysLeft <= 3) return { text: `${daysLeft}d`, urgent: true, overdue: false };
+    if (daysLeft <= 7) return { text: `${daysLeft} days`, urgent: false, overdue: false };
+    return { text: format(date, 'MMM d'), urgent: false, overdue: false };
+}
+
+// Course color generator for consistent coloring
+const COURSE_COLORS = [
+    { bg: 'bg-blue-50', text: 'text-blue-600' },
+    { bg: 'bg-emerald-50', text: 'text-emerald-600' },
+    { bg: 'bg-purple-50', text: 'text-purple-600' },
+    { bg: 'bg-amber-50', text: 'text-amber-600' },
+    { bg: 'bg-pink-50', text: 'text-pink-600' },
+    { bg: 'bg-cyan-50', text: 'text-cyan-600' },
+];
+
+function getCourseColor(courseCode?: string) {
+    if (!courseCode) return COURSE_COLORS[0];
+    let hash = 0;
+    for (let i = 0; i < courseCode.length; i++) {
+        hash = courseCode.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return COURSE_COLORS[Math.abs(hash) % COURSE_COLORS.length];
+}
+
 function eventStyle(event: CalendarEvent) {
-    const isPast = new Date(event.date + 'T23:59:59') < new Date();
+    const eventIsPast = isPast(parseISO(event.date + 'T23:59:59'));
     const t = event.event_type;
+    const courseColor = getCourseColor(event.course_code);
+    
     if (t === 'course_start') return { bg: 'bg-blue-50 text-blue-600', Icon: BookOpen };
-    if (t === 'course_end') return { bg: isPast ? 'bg-gray-100 text-gray-500' : 'bg-purple-50 text-purple-600', Icon: GraduationCap };
-    if (isPast) return { bg: 'bg-amber-50 text-amber-600', Icon: AlertTriangle };
-    if (t === 'deadline') return { bg: 'bg-red-50 text-red-500', Icon: FileText };
+    if (t === 'course_end') return { bg: eventIsPast ? 'bg-gray-100 text-gray-500' : 'bg-purple-50 text-purple-600', Icon: GraduationCap };
+    if (t === 'exam') return { bg: eventIsPast ? 'bg-gray-100 text-gray-500' : 'bg-red-100 text-red-600', Icon: AlertCircle };
+    if (t === 'office_hours') return { bg: 'bg-green-50 text-green-600', Icon: Users };
+    if (t === 'reminder' || t === 'announcement') return { bg: 'bg-yellow-50 text-yellow-600', Icon: Bell };
+    if (t === 'grading') return { bg: 'bg-orange-50 text-orange-600', Icon: Target };
+    if (eventIsPast) return { bg: 'bg-gray-100 text-gray-500', Icon: CheckCircle };
+    if (t === 'deadline') return { bg: `${courseColor.bg} ${courseColor.text}`, Icon: FileText };
     return { bg: 'bg-emerald-50 text-emerald-600', Icon: CheckCircle };
 }
 
@@ -247,6 +329,8 @@ function EventsList({
                     <div className="space-y-1">
                         {events.map((event) => {
                             const { bg, Icon } = eventStyle(event);
+                            const timeInfo = getTimeRemaining(event.date);
+                            
                             return (
                                 <Link
                                     key={`${event.id}-${event.event_type}`}
@@ -261,9 +345,22 @@ function EventsList({
                                             <p className="text-[11px] font-medium text-gray-900 truncate group-hover:text-primary transition-colors">
                                                 {event.title}
                                             </p>
-                                            <p className="text-[10px] text-gray-400 truncate">
-                                                {event.course_code ? `${event.course_code} · ` : ''}{format(parseISO(event.date), 'MMM d')}
-                                            </p>
+                                            <div className="flex items-center gap-1.5 mt-0.5">
+                                                <p className="text-[10px] text-gray-400 truncate">
+                                                    {event.course_code ? `${event.course_code} · ` : ''}{format(parseISO(event.date), 'MMM d')}
+                                                </p>
+                                                {/* Time remaining badge */}
+                                                <span className={`
+                                                    text-[9px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0
+                                                    ${timeInfo.overdue 
+                                                        ? 'bg-gray-100 text-gray-500' 
+                                                        : timeInfo.urgent 
+                                                            ? 'bg-red-100 text-red-700 animate-pulse' 
+                                                            : 'bg-gray-100 text-gray-600'}
+                                                `}>
+                                                    {timeInfo.text}
+                                                </span>
+                                            </div>
                                         </div>
                                         <ChevronRight className="w-3 h-3 text-gray-300 group-hover:text-primary flex-shrink-0 mt-0.5 transition-colors" />
                                     </div>

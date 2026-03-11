@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { AdminLayout } from '@/components/layouts/AdminLayout';
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -91,7 +90,6 @@ export default function ReportsPage() {
 
     return (
         <ProtectedRoute allowedRoles={['ADMIN']}>
-            <AdminLayout>
                 <div className="space-y-6">
                     {/* Header */}
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -514,7 +512,6 @@ export default function ReportsPage() {
                         </div>
                     )}
                 </div>
-            </AdminLayout>
         </ProtectedRoute>
     );
 }

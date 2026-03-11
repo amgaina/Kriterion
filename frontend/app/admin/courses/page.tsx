@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { AdminLayout } from '@/components/layouts/AdminLayout';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
+import { useMutationWithInvalidation } from '@/lib/use-mutation-with-invalidation';
 import apiClient from '@/lib/api-client';
 import { DataTable } from '@/components/ui/data-table';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -49,7 +49,6 @@ interface Course {
 }
 
 export default function CoursesPage() {
-    const queryClient = useQueryClient();
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState('all');
     const [createModal, setCreateModal] = useState(false);
@@ -96,10 +95,10 @@ export default function CoursesPage() {
         };
     });
 
-    const createMutation = useMutation({
+    const createMutation = useMutationWithInvalidation({
         mutationFn: (data: any) => apiClient.createCourse(data),
+        invalidateGroups: ['allCourses', 'allDashboards'],
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['courses'] });
             setCreateModal(false);
             setNewCourse({
                 name: '',
@@ -114,18 +113,18 @@ export default function CoursesPage() {
         },
     });
 
-    const updateMutation = useMutation({
+    const updateMutation = useMutationWithInvalidation({
         mutationFn: ({ id, data }: { id: number; data: any }) => apiClient.updateCourse(id, data),
+        invalidateGroups: ['allCourses', 'allDashboards'],
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['courses'] });
             setEditCourseId(null);
             setEditFormData(null);
         },
     });
 
-    const deleteMutation = useMutation({
+    const deleteMutation = useMutationWithInvalidation({
         mutationFn: (courseId: number) => apiClient.deleteCourse(courseId),
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['courses'] }),
+        invalidateGroups: ['allCourses', 'allDashboards'],
     });
 
     const filteredCourses = transformedCourses.filter((course: Course) =>
@@ -243,7 +242,6 @@ export default function CoursesPage() {
 
     return (
         <ProtectedRoute allowedRoles={['ADMIN']}>
-            <AdminLayout>
                 <div className="space-y-6">
                     {/* Header */}
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -556,7 +554,6 @@ export default function CoursesPage() {
                         </Button>
                     </ModalFooter>
                 </Modal>
-            </AdminLayout>
         </ProtectedRoute>
     );
 }

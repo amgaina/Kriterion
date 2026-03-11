@@ -56,9 +56,9 @@ def get_languages(
             id=lang.id,
             name=lang.name,
             display_name=lang.display_name,
-            version=lang.version,
+            version=getattr(lang, "version", None),
             file_extension=lang.file_extension,
-            monaco_language=lang.monaco_language
+            monaco_language=getattr(lang, "monaco_language", None)
         ) for lang in languages
     ]
 

@@ -2,12 +2,14 @@
 AWS S3 Storage Service - Handle file uploads to S3
 """
 import boto3
-from botocore.exceptions import ClientError
+from botocore.config import Config
+from botocore.exceptions import ClientError, NoCredentialsError
 from typing import Optional, BinaryIO
 import hashlib
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import quote
 
 from app.core.config import settings
 from app.core.logging import logger
@@ -15,16 +17,41 @@ from app.core.logging import logger
 
 class S3StorageService:
     """Service for managing file uploads to AWS S3"""
-    
+
     def __init__(self):
-        """Initialize S3 client"""
-        self.s3_client = boto3.client(
-            's3',
-            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-            region_name=settings.AWS_REGION
-        )
-        self.bucket_name = settings.AWS_S3_BUCKET_NAME
+        self._s3_client = None
+        self._bucket_name = None
+
+    @property
+    def s3_client(self):
+        """Lazy-initialize S3 client (ensures config is loaded)"""
+        if self._s3_client is None:
+            key = getattr(settings, 'AWS_ACCESS_KEY_ID', '') or ''
+            secret = getattr(settings, 'AWS_SECRET_ACCESS_KEY', '') or ''
+            region = getattr(settings, 'AWS_REGION', 'us-east-1') or 'us-east-1'
+            if not key or not secret:
+                raise Exception(
+                    "AWS credentials not configured. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in .env"
+                )
+            self._s3_client = boto3.client(
+                's3',
+                aws_access_key_id=key.strip(),
+                aws_secret_access_key=secret.strip(),
+                region_name=region.strip(),
+                config=Config(
+                    retries={'max_attempts': 3, 'mode': 'standard'},
+                    signature_version='s3v4'
+                )
+            )
+        return self._s3_client
+
+    @property
+    def bucket_name(self) -> str:
+        if self._bucket_name is None:
+            self._bucket_name = (getattr(settings, 'AWS_S3_BUCKET_NAME', '') or 'kriterion-submissions').strip()
+            if not self._bucket_name:
+                raise Exception("AWS_S3_BUCKET_NAME is not set in .env")
+        return self._bucket_name
     
     def upload_submission_file(
         self,
@@ -75,8 +102,9 @@ class S3StorageService:
                 }
             )
             
-            # Generate S3 URL
-            s3_url = f"https://{self.bucket_name}.s3.{settings.AWS_REGION}.amazonaws.com/{s3_key}"
+            # Generate S3 URL (quote key for special chars in filenames)
+            region = getattr(settings, 'AWS_REGION', 'us-east-1') or 'us-east-1'
+            s3_url = f"https://{self.bucket_name}.s3.{region}.amazonaws.com/{quote(s3_key, safe='/')}"
             
             logger.info(f"File uploaded to S3: {s3_key}")
             
@@ -86,9 +114,16 @@ class S3StorageService:
                 'file_hash': file_hash
             }
             
+        except NoCredentialsError as e:
+            logger.error(f"S3 credentials missing: {e}")
+            raise Exception(
+                "AWS credentials not found. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in .env"
+            ) from e
         except ClientError as e:
-            logger.error(f"S3 upload failed: {str(e)}")
-            raise Exception(f"Failed to upload file to S3: {str(e)}")
+            code = e.response.get('Error', {}).get('Code', 'Unknown')
+            msg = e.response.get('Error', {}).get('Message', str(e))
+            logger.error(f"S3 upload failed [{code}]: {msg}")
+            raise Exception(f"S3 upload failed ({code}): {msg}") from e
     
     def download_submission_file(self, s3_key: str, local_path: str) -> str:
         """

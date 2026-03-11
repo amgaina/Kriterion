@@ -13,7 +13,7 @@ import asyncio
 from app.api.deps import get_db, get_current_user, require_role
 from app.models import (
     User, UserRole, Assignment, Course, CourseAssistant, Enrollment, EnrollmentStatus,
-    Rubric, RubricCategory, RubricItem, TestCase, AuditLog, Language
+    Rubric, RubricCategory, RubricItem, TestCase, AuditLog, Language, NotificationType
 )
 from app.schemas.assignment import (
     AssignmentCreate,
@@ -28,6 +28,7 @@ from app.schemas.assignment import (
 
 from app.core.logging import logger
 from app.services.autograding import autograding_service
+from app.services.notifications import notify_users, get_active_student_ids_for_course, get_assistant_ids_for_course
 from app.services.sandbox import sandbox_executor
 from app.services.notification import notify_course_students_assignment_posted
 from app.tasks.code_execution import run_code_task, compile_check_task
@@ -556,6 +557,7 @@ def publish_assignment(
     if current_user.role == UserRole.FACULTY and assignment.course.instructor_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized")
     
+    was_published = bool(assignment.is_published)
     assignment.is_published = True
     
     # Audit log

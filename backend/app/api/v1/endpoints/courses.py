@@ -8,7 +8,9 @@ from pydantic import BaseModel, EmailStr
 
 from app.api.deps import get_db, get_current_user, require_roles
 from app.models import User, UserRole, Course, CourseStatus, CourseAssistant, Enrollment, EnrollmentStatus, Assignment, TestCase, AuditLog
+from app.models import NotificationType
 from app.services.email import send_student_add_request_to_admin, send_bulk_student_add_request_to_admin
+from app.services.notifications import create_notification, notify_users, get_active_student_ids_for_course, get_assistant_ids_for_course
 from app.schemas.course import Course as CourseSchema, CourseCreate, CourseUpdate, Enrollment as EnrollmentSchema
 from app.schemas.assignment import Assignment as AssignmentSchema
 
@@ -286,6 +288,8 @@ def update_course(
             detail="Not authorized to update this course"
         )
     
+    old_status = course.status.value if hasattr(course.status, "value") else str(course.status)
+
     # Update fields
     update_data = course_update.dict(exclude_unset=True)
     for field, value in update_data.items():
@@ -293,6 +297,19 @@ def update_course(
     
     db.commit()
     db.refresh(course)
+
+    new_status = course.status.value if hasattr(course.status, "value") else str(course.status)
+    if old_status != "archived" and new_status == "archived":
+        recipient_ids = set(get_active_student_ids_for_course(db, course.id) + get_assistant_ids_for_course(db, course.id))
+        if recipient_ids:
+            notify_users(
+                db,
+                user_ids=recipient_ids,
+                notification_type=NotificationType.ASSIGNMENT_DUE,
+                title=f"Course archived: {course.code}",
+                message=f"{course.code} - {course.name} has been archived. Contact your instructor if you need access details.",
+                course_id=course.id,
+            )
     
     # Audit log
     audit = AuditLog(
@@ -377,6 +394,14 @@ def enroll_student(
         else:
             # Reactivate enrollment
             existing.status = EnrollmentStatus.ACTIVE
+            create_notification(
+                db,
+                user_id=student.id,
+                notification_type=NotificationType.ASSIGNMENT_NEW,
+                title=f"Enrolled in {course.code}",
+                message=f"You were enrolled in {course.code} - {course.name}.",
+                course_id=course.id,
+            )
             db.commit()
             return existing
     
@@ -397,6 +422,14 @@ def enroll_student(
         description=f"Student {student.email} enrolled in {course.code}"
     )
     db.add(audit)
+    create_notification(
+        db,
+        user_id=student.id,
+        notification_type=NotificationType.ASSIGNMENT_NEW,
+        title=f"Enrolled in {course.code}",
+        message=f"You were enrolled in {course.code} - {course.name}.",
+        course_id=course.id,
+    )
     db.commit()
     
     return enrollment
@@ -488,6 +521,14 @@ def add_course_assistant(
         description=f"Assistant {assistant.email} added to course {course.code}"
     )
     db.add(audit)
+    create_notification(
+        db,
+        user_id=assistant.id,
+        notification_type=NotificationType.ASSIGNMENT_NEW,
+        title=f"Assigned as assistant: {course.code}",
+        message=f"You were assigned as a grading assistant for {course.code} - {course.name}.",
+        course_id=course.id,
+    )
     db.commit()
     
     return {"message": "Assistant added successfully", "assistant_id": assistant.id}
@@ -535,6 +576,15 @@ def remove_course_assistant(
         description=f"Assistant {assistant.email if assistant else assistant_id} removed from course {course.code}"
     )
     db.add(audit)
+    if assistant:
+        create_notification(
+            db,
+            user_id=assistant.id,
+            notification_type=NotificationType.ASSIGNMENT_DUE,
+            title=f"Assistant role removed: {course.code}",
+            message=f"You were removed as a grading assistant from {course.code}.",
+            course_id=course.id,
+        )
     db.commit()
     
     return {"message": "Assistant removed successfully"}
@@ -607,6 +657,14 @@ def enroll_student_by_email(
             )
         else:
             existing.status = EnrollmentStatus.ACTIVE
+            create_notification(
+                db,
+                user_id=student.id,
+                notification_type=NotificationType.ASSIGNMENT_NEW,
+                title=f"Enrolled in {course.code}",
+                message=f"You were enrolled in {course.code} - {course.name}.",
+                course_id=course.id,
+            )
             db.commit()
             return {"message": "Student re-enrolled successfully", "student_id": student.id}
     
@@ -626,6 +684,14 @@ def enroll_student_by_email(
         description=f"Student {student.email} enrolled in {course.code}"
     )
     db.add(audit)
+    create_notification(
+        db,
+        user_id=student.id,
+        notification_type=NotificationType.ASSIGNMENT_NEW,
+        title=f"Enrolled in {course.code}",
+        message=f"You were enrolled in {course.code} - {course.name}.",
+        course_id=course.id,
+    )
     db.commit()
     
     return {"message": "Student enrolled successfully", "student_id": student.id}
@@ -658,6 +724,7 @@ def bulk_enroll_students(
     errors = []
     not_found: List[str] = []
     already_enrolled_list: List[str] = []
+    notified_student_ids: List[int] = []
 
     for email in request.emails:
         email_clean = email.strip().lower()
@@ -688,6 +755,7 @@ def bulk_enroll_students(
                 else:
                     existing.status = EnrollmentStatus.ACTIVE
                     enrolled += 1
+                    notified_student_ids.append(student.id)
                     continue
 
             # Create enrollment
@@ -698,6 +766,7 @@ def bulk_enroll_students(
             )
             db.add(enrollment)
             enrolled += 1
+            notified_student_ids.append(student.id)
 
         except Exception as e:
             failed += 1
@@ -722,6 +791,15 @@ def bulk_enroll_students(
         description=f"Bulk enrolled {enrolled} students in {course.code}"
     )
     db.add(audit)
+    if notified_student_ids:
+        notify_users(
+            db,
+            user_ids=notified_student_ids,
+            notification_type=NotificationType.ASSIGNMENT_NEW,
+            title=f"Enrolled in {course.code}",
+            message=f"You were added to {course.code} - {course.name}.",
+            course_id=course.id,
+        )
     db.commit()
 
     return BulkEnrollResponse(

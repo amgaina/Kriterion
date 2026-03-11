@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname, useParams } from 'next/navigation';
-import { LayoutDashboard, FileText, Users } from 'lucide-react';
+import { LayoutDashboard, FileText, Users, UserCog } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function CourseLayout({ children }: { children: React.ReactNode }) {
@@ -15,6 +15,7 @@ export default function CourseLayout({ children }: { children: React.ReactNode }
         { label: 'Overview', href: `/faculty/courses/${courseId}`, icon: LayoutDashboard },
         { label: 'Assignments', href: `/faculty/courses/${courseId}/assignments`, icon: FileText },
         { label: 'Students', href: `/faculty/courses/${courseId}/students`, icon: Users },
+        { label: 'Assistants', href: `/faculty/courses/${courseId}/assistants`, icon: UserCog },
     ];
 
     const isActive = (href: string) => {

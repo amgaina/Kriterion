@@ -38,6 +38,7 @@ import { Button } from '@/components/ui/button'
 import { Modal, ModalFooter } from '@/components/ui/modal'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/use-toast'
+import { ConfettiPopup } from '@/components/ui/confetti-popup'
 
 /* ====================================================================
    TYPES
@@ -152,6 +153,7 @@ export default function StudentAssignmentPage() {
     const [panelOpen, setPanelOpen] = useState(true)
     const [activePanel, setActivePanel] = useState<'output' | 'tests'>('output')
     const [rightPanel, setRightPanel] = useState<'description' | 'instructions' | 'rubric' | 'history' | 'supplementary' | null>(null)
+    const [showConfetti, setShowConfetti] = useState(false)
 
     // API
     const { data: assignment, isLoading, error: loadError } = useQuery<Assignment>({
@@ -278,13 +280,13 @@ export default function StudentAssignmentPage() {
 
     const runCode = async () => {
         if (!files.length) {
-            toast({ title: 'No files', description: 'Create or upload a file first.', variant: 'destructive' })
+            toast({ title: 'No files', description: 'Create or upload a file first.', variant: 'destructive', silent: true })
             return
         }
         // Validate no empty files
         const emptyFiles = files.filter(f => !f.content.trim())
         if (emptyFiles.length === files.length) {
-            toast({ title: 'Empty files', description: 'Write some code before running.', variant: 'destructive' })
+            toast({ title: 'Empty files', description: 'Write some code before running.', variant: 'destructive', silent: true })
             return
         }
 
@@ -300,28 +302,37 @@ export default function StudentAssignmentPage() {
             setActivePanel(response.results.length > 0 ? 'tests' : 'output')
 
             if (response.compilation_status === 'Time Exceeds') {
-                toast({ title: 'Time Exceeds', description: 'Your code took too long to run.', variant: 'destructive' })
+                toast({ title: 'Time Exceeds', description: 'Your code took too long to run.', variant: 'destructive', silent: true })
             } else if (response.compilation_status === 'Not Compiled Successfully') {
-                toast({ title: 'Not Compiled Successfully', description: 'Check the output panel.', variant: 'destructive' })
+                toast({ title: 'Not Compiled Successfully', description: 'Check the output panel.', variant: 'destructive', silent: true })
             } else if (response.compilation_status === 'Compiled Successfully') {
                 if (response.results.length > 0) {
                     const p = response.tests_passed, t = response.tests_total
-                    toast({
-                        title: p === t ? 'All Tests Passed!' : `${p}/${t} Tests Passed`,
-                        variant: p === t ? 'default' : 'destructive',
-                    })
+                    if (p === t) {
+                        // All tests passed - show confetti!
+                        setShowConfetti(true)
+                    } else {
+                        toast({
+                            title: `${p}/${t} Tests Passed`,
+                            variant: 'destructive',
+                            silent: true,
+                        })
+                    }
                 } else {
-                    toast({ title: 'Compiled Successfully', description: 'Your code ran without errors.' })
+                    toast({ title: 'Compiled Successfully', description: 'Your code ran without errors.', silent: true })
                 }
             }
         } catch (err: any) {
-            const msg = err?.response?.data?.detail || 'Failed to run code'
+            const raw = err?.response?.data?.detail
+            const msg = typeof raw === 'string' ? raw
+                : Array.isArray(raw) ? raw.map((e: { msg?: string }) => e?.msg || JSON.stringify(e)).join('. ') || 'Failed to run code'
+                : raw?.message || 'Failed to run code'
             setError(msg)
             setRunResult({
                 success: false, results: [], total_score: 0, max_score: 0,
                 tests_passed: 0, tests_total: 0, message: msg, compilation_status: 'Not Compiled Successfully'
             })
-            toast({ title: 'Execution Failed', description: msg, variant: 'destructive' })
+            toast({ title: 'Execution Failed', description: msg, variant: 'destructive', silent: true })
         } finally {
             setIsRunning(false)
         }
@@ -368,7 +379,10 @@ export default function StudentAssignmentPage() {
                 router.push(`/student/courses/${assignment.course.id}`)
             }, 2500)
         } catch (err: any) {
-            const msg = err?.response?.data?.detail || 'Submission failed'
+            const raw = err?.response?.data?.detail
+            const msg = typeof raw === 'string' ? raw
+                : Array.isArray(raw) ? raw.map((e: { msg?: string; loc?: unknown[] }) => e?.msg || JSON.stringify(e)).join('. ') || 'Submission failed'
+                : raw?.message || 'Submission failed'
             setError(msg)
             toast({ title: 'Submission Failed', description: msg, variant: 'destructive' })
             setShowSubmitDialog(false)
@@ -1137,6 +1151,16 @@ export default function StudentAssignmentPage() {
                     </div>
                 )}
             </Modal>
+
+            {/* Confetti Popup for All Tests Passed */}
+            <ConfettiPopup
+                isOpen={showConfetti}
+                onClose={() => setShowConfetti(false)}
+                title="All Tests Passed!"
+                message={`Congratulations! You passed all ${runResult?.tests_total || 0} test cases.`}
+                description="Your code is working perfectly. Ready to submit?"
+                acknowledgeLabel="Awesome!"
+            />
         </ProtectedRoute>
     )
 }

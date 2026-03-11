@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AdminLayout } from "@/components/layouts/AdminLayout";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutationWithInvalidation } from '@/lib/use-mutation-with-invalidation';
 import apiClient from "@/lib/api-client";
 import {
   Card,
@@ -23,7 +23,6 @@ import Link from "next/link";
 
 export default function NewUserPage() {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const [error, setError] = useState("");
 
   const [formData, setFormData] = useState({
@@ -36,7 +35,7 @@ export default function NewUserPage() {
     send_welcome_email: true,
   });
 
-    const createMutation = useMutation({
+    const createMutation = useMutationWithInvalidation({
         mutationFn: (data: typeof formData) => apiClient.createUser({
             email: data.email,
             password: data.password,
@@ -46,8 +45,8 @@ export default function NewUserPage() {
             is_active: data.is_active,
             send_welcome_email: data.send_welcome_email,
         }),
+        invalidateGroups: ['allUsers', 'allDashboards'],
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['users'] });
             router.push('/admin/users');
         },
         onError: (err: any) => {
@@ -94,119 +93,117 @@ export default function NewUserPage() {
 
   return (
     <ProtectedRoute allowedRoles={["ADMIN"]}>
-      <AdminLayout>
-        <div className="max-w-2xl mx-auto space-y-6">
-          {/* Header */}
-          <div className="flex items-center gap-4">
+      <div className="max-w-2xl mx-auto space-y-6">
+        {/* Header */}
+        <div className="flex items-center gap-4">
+          <Link href="/admin/users">
+            <Button variant="ghost" size="sm">
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Add New User</h1>
+            <p className="text-gray-500">Create a new user account</p>
+          </div>
+        </div>
+
+        {error && (
+          <Alert type="error" onClose={() => setError("")}>
+            {error}
+          </Alert>
+        )}
+
+        <form onSubmit={handleSubmit}>
+          <Card>
+            <CardHeader>
+              <CardTitle>User Information</CardTitle>
+              <CardDescription>
+                Enter the details for the new user
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Input
+                  label="Full Name"
+                  value={formData.full_name}
+                  onChange={(e) => handleChange("full_name", e.target.value)}
+                  placeholder="John Doe"
+                  required
+                />
+                <Input
+                  label="Email"
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => handleChange("email", e.target.value)}
+                  placeholder="john@example.com"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Input
+                  label="Password"
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => handleChange("password", e.target.value)}
+                  placeholder="••••••••"
+                  required
+                />
+                <Select
+                  label="Role"
+                  value={formData.role}
+                  onChange={(e) => handleChange("role", e.target.value)}
+                  options={[
+                    { value: "STUDENT", label: "Student" },
+                    { value: "FACULTY", label: "Faculty" },
+                    { value: "ASSISTANT", label: "Assistant" },
+                    { value: "ADMIN", label: "Admin" },
+                  ]}
+                />
+              </div>
+
+              {formData.role === "STUDENT" && (
+                <Input
+                  label="Student ID"
+                  value={formData.student_id}
+                  onChange={(e) => handleChange("student_id", e.target.value)}
+                  placeholder="STU123456"
+                />
+              )}
+
+              <div className="pt-4 border-t border-gray-200 space-y-4">
+                <Switch
+                  checked={formData.is_active}
+                  onChange={(checked) => handleChange("is_active", checked)}
+                  label="Active Account"
+                  description="User can login and access the system"
+                />
+                <Switch
+                  checked={formData.send_welcome_email}
+                  onChange={(checked) =>
+                    handleChange("send_welcome_email", checked)
+                  }
+                  label="Send Welcome Email"
+                  description="Send an email with login credentials"
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="flex items-center justify-end gap-4 mt-6">
             <Link href="/admin/users">
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back
+              <Button variant="outline" type="button">
+                Cancel
               </Button>
             </Link>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Add New User</h1>
-              <p className="text-gray-500">Create a new user account</p>
-            </div>
+            <Button type="submit" disabled={createMutation.isPending}>
+              <UserPlus className="w-4 h-4 mr-2" />
+              {createMutation.isPending ? "Creating..." : "Create User"}
+            </Button>
           </div>
-
-          {error && (
-            <Alert type="error" onClose={() => setError("")}>
-              {error}
-            </Alert>
-          )}
-
-          <form onSubmit={handleSubmit}>
-            <Card>
-              <CardHeader>
-                <CardTitle>User Information</CardTitle>
-                <CardDescription>
-                  Enter the details for the new user
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input
-                    label="Full Name"
-                    value={formData.full_name}
-                    onChange={(e) => handleChange("full_name", e.target.value)}
-                    placeholder="John Doe"
-                    required
-                  />
-                  <Input
-                    label="Email"
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => handleChange("email", e.target.value)}
-                    placeholder="john@example.com"
-                    required
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input
-                    label="Password"
-                    type="password"
-                    value={formData.password}
-                    onChange={(e) => handleChange("password", e.target.value)}
-                    placeholder="••••••••"
-                    required
-                  />
-                  <Select
-                    label="Role"
-                    value={formData.role}
-                    onChange={(e) => handleChange("role", e.target.value)}
-                    options={[
-                      { value: "STUDENT", label: "Student" },
-                      { value: "FACULTY", label: "Faculty" },
-                      { value: "ASSISTANT", label: "Assistant" },
-                      { value: "ADMIN", label: "Admin" },
-                    ]}
-                  />
-                </div>
-
-                {formData.role === "STUDENT" && (
-                  <Input
-                    label="Student ID"
-                    value={formData.student_id}
-                    onChange={(e) => handleChange("student_id", e.target.value)}
-                    placeholder="STU123456"
-                  />
-                )}
-
-                <div className="pt-4 border-t border-gray-200 space-y-4">
-                  <Switch
-                    checked={formData.is_active}
-                    onChange={(checked) => handleChange("is_active", checked)}
-                    label="Active Account"
-                    description="User can login and access the system"
-                  />
-                  <Switch
-                    checked={formData.send_welcome_email}
-                    onChange={(checked) =>
-                      handleChange("send_welcome_email", checked)
-                    }
-                    label="Send Welcome Email"
-                    description="Send an email with login credentials"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            <div className="flex items-center justify-end gap-4 mt-6">
-              <Link href="/admin/users">
-                <Button variant="outline" type="button">
-                  Cancel
-                </Button>
-              </Link>
-              <Button type="submit" disabled={createMutation.isPending}>
-                <UserPlus className="w-4 h-4 mr-2" />
-                {createMutation.isPending ? "Creating..." : "Create User"}
-              </Button>
-            </div>
-          </form>
-        </div>
-      </AdminLayout>
+        </form>
+      </div>
     </ProtectedRoute>
   );
 }
