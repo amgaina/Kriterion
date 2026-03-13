@@ -95,18 +95,12 @@ export default function FacultyReportsPage() {
     const studentOptions = courseReport?.student_reports ?? [];
 
     const selectedAssignments = useMemo(
-        () =>
-            selectedAssignmentIds.length > 0
-                ? assignmentOptions.filter((assignment) => selectedAssignmentIds.includes(assignment.id))
-                : assignmentOptions,
+        () => assignmentOptions.filter((assignment) => selectedAssignmentIds.includes(assignment.id)),
         [assignmentOptions, selectedAssignmentIds],
     );
 
     const selectedStudents = useMemo(
-        () =>
-            selectedStudentIds.length > 0
-                ? studentOptions.filter((student) => selectedStudentIds.includes(student.id))
-                : studentOptions,
+        () => studentOptions.filter((student) => selectedStudentIds.includes(student.id)),
         [studentOptions, selectedStudentIds],
     );
 
@@ -114,6 +108,7 @@ export default function FacultyReportsPage() {
         studentOptions.length > 0 && selectedStudentIds.length === studentOptions.length;
     const areAllAssignmentsSelected =
         assignmentOptions.length > 0 && selectedAssignmentIds.length === assignmentOptions.length;
+    const shouldShowSelectedReport = selectedStudentIds.length > 0 && selectedAssignmentIds.length > 0;
 
     const getGradeForAssignment = (
         student: NonNullable<CourseReport['student_reports']>[number],
@@ -276,7 +271,7 @@ export default function FacultyReportsPage() {
                             <div className="flex items-center gap-2">
                                 <p className="text-sm font-medium text-gray-800">Students</p>
                                 <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                                    {selectedStudentIds.length > 0 ? selectedStudentIds.length : studentOptions.length} selected
+                                    {selectedStudentIds.length} selected
                                 </span>
                             </div>
                             <Button
@@ -319,7 +314,7 @@ export default function FacultyReportsPage() {
                             <div className="flex items-center gap-2">
                                 <p className="text-sm font-medium text-gray-800">Assignments</p>
                                 <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                                    {selectedAssignmentIds.length > 0 ? selectedAssignmentIds.length : assignmentOptions.length} selected
+                                    {selectedAssignmentIds.length} selected
                                 </span>
                             </div>
                             <Button
@@ -358,6 +353,94 @@ export default function FacultyReportsPage() {
                     </div>
                 </CardContent>
             </Card>
+
+            {/* Selected students x assignments matrix */}
+            {shouldShowSelectedReport ? (
+            <Card>
+                <CardHeader>
+                    <CardTitle>Selected grade report</CardTitle>
+                    <CardDescription>
+                        Displays selected students&apos; grades across selected assignments.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm min-w-[820px]">
+                            <thead>
+                                <tr className="border-b bg-gray-50">
+                                    <th className="text-left py-3 px-4 font-medium text-gray-600 sticky left-0 bg-gray-50">Student</th>
+                                    {selectedAssignments.map((assignment) => (
+                                        <th key={assignment.id} className="text-center py-3 px-4 font-medium text-gray-600 whitespace-nowrap">
+                                            {assignment.title}
+                                        </th>
+                                    ))}
+                                    <th className="text-center py-3 px-4 font-medium text-gray-600">Average</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {selectedStudents.map((student) => {
+                                    const scores = selectedAssignments
+                                        .map((assignment) => getGradeForAssignment(student, assignment.id)?.score)
+                                        .filter((value): value is number => typeof value === 'number');
+                                    const average = scores.length > 0 ? scores.reduce((sum, value) => sum + value, 0) / scores.length : null;
+
+                                    return (
+                                        <tr key={student.id} className="border-b last:border-0 hover:bg-gray-50">
+                                            <td className="py-3 px-4 sticky left-0 bg-white hover:bg-gray-50">
+                                                <p className="font-medium text-gray-900">{student.name}</p>
+                                                {student.student_id && <p className="text-xs text-gray-500">ID: {student.student_id}</p>}
+                                            </td>
+                                            {selectedAssignments.map((assignment) => {
+                                                const grade = getGradeForAssignment(student, assignment.id);
+                                                return (
+                                                    <td key={`${student.id}-${assignment.id}`} className="py-3 px-4 text-center">
+                                                        {grade?.score != null ? (
+                                                            <Badge variant={grade.score >= 75 ? 'success' : 'warning'}>
+                                                                {grade.score.toFixed(1)}%
+                                                            </Badge>
+                                                        ) : grade?.status === 'ungraded' ? (
+                                                            <Badge variant="warning">Ungraded</Badge>
+                                                        ) : grade?.status === 'missing' ? (
+                                                            <Badge variant="destructive">Missing</Badge>
+                                                        ) : grade?.status === 'not_submitted' ? (
+                                                            <span className="text-xs text-gray-500">Not Submitted</span>
+                                                        ) : (
+                                                            <span className="text-xs text-gray-400">—</span>
+                                                        )}
+                                                    </td>
+                                                );
+                                            })}
+                                            <td className="py-3 px-4 text-center">
+                                                {average != null ? (
+                                                    <Badge variant={average >= 75 ? 'success' : 'warning'}>
+                                                        {average.toFixed(1)}%
+                                                    </Badge>
+                                                ) : (
+                                                    <span className="text-xs text-gray-400">No graded work</span>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                                {!isLoading && selectedStudents.length === 0 && (
+                                    <tr>
+                                        <td colSpan={Math.max(2, selectedAssignments.length + 2)} className="py-6 text-center text-sm text-gray-500">
+                                            No students selected.
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </CardContent>
+            </Card>
+            ) : (
+            <Card>
+                <CardContent className="py-6 text-sm text-gray-500">
+                    Select at least one student and one assignment to view the selected grade report.
+                </CardContent>
+            </Card>
+            )}
 
             {/* Key metrics */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -509,86 +592,6 @@ export default function FacultyReportsPage() {
                                             </td>
                                         </tr>
                                     )}
-                            </tbody>
-                        </table>
-                    </div>
-                </CardContent>
-            </Card>
-
-            {/* Selected students x assignments matrix */}
-            <Card>
-                <CardHeader>
-                    <CardTitle>Selected grade report</CardTitle>
-                    <CardDescription>
-                        Displays selected students&apos; grades across selected assignments (or all assignments when none are selected).
-                    </CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm min-w-[820px]">
-                            <thead>
-                                <tr className="border-b bg-gray-50">
-                                    <th className="text-left py-3 px-4 font-medium text-gray-600 sticky left-0 bg-gray-50">Student</th>
-                                    {selectedAssignments.map((assignment) => (
-                                        <th key={assignment.id} className="text-center py-3 px-4 font-medium text-gray-600 whitespace-nowrap">
-                                            {assignment.title}
-                                        </th>
-                                    ))}
-                                    <th className="text-center py-3 px-4 font-medium text-gray-600">Average</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {selectedStudents.map((student) => {
-                                    const scores = selectedAssignments
-                                        .map((assignment) => getGradeForAssignment(student, assignment.id)?.score)
-                                        .filter((value): value is number => typeof value === 'number');
-                                    const average = scores.length > 0 ? scores.reduce((sum, value) => sum + value, 0) / scores.length : null;
-
-                                    return (
-                                        <tr key={student.id} className="border-b last:border-0 hover:bg-gray-50">
-                                            <td className="py-3 px-4 sticky left-0 bg-white hover:bg-gray-50">
-                                                <p className="font-medium text-gray-900">{student.name}</p>
-                                                {student.student_id && <p className="text-xs text-gray-500">ID: {student.student_id}</p>}
-                                            </td>
-                                            {selectedAssignments.map((assignment) => {
-                                                const grade = getGradeForAssignment(student, assignment.id);
-                                                return (
-                                                    <td key={`${student.id}-${assignment.id}`} className="py-3 px-4 text-center">
-                                                        {grade?.score != null ? (
-                                                            <Badge variant={grade.score >= 75 ? 'success' : 'warning'}>
-                                                                {grade.score.toFixed(1)}%
-                                                            </Badge>
-                                                        ) : grade?.status === 'ungraded' ? (
-                                                            <Badge variant="warning">Ungraded</Badge>
-                                                        ) : grade?.status === 'missing' ? (
-                                                            <Badge variant="destructive">Missing</Badge>
-                                                        ) : grade?.status === 'not_submitted' ? (
-                                                            <span className="text-xs text-gray-500">Not Submitted</span>
-                                                        ) : (
-                                                            <span className="text-xs text-gray-400">—</span>
-                                                        )}
-                                                    </td>
-                                                );
-                                            })}
-                                            <td className="py-3 px-4 text-center">
-                                                {average != null ? (
-                                                    <Badge variant={average >= 75 ? 'success' : 'warning'}>
-                                                        {average.toFixed(1)}%
-                                                    </Badge>
-                                                ) : (
-                                                    <span className="text-xs text-gray-400">No graded work</span>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                                {!isLoading && selectedStudents.length === 0 && (
-                                    <tr>
-                                        <td colSpan={Math.max(2, selectedAssignments.length + 2)} className="py-6 text-center text-sm text-gray-500">
-                                            No students selected.
-                                        </td>
-                                    </tr>
-                                )}
                             </tbody>
                         </table>
                     </div>

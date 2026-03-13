@@ -52,8 +52,6 @@ type DashboardCalendarProps = {
     events?: CalendarEvent[];
     selectedDate?: Date | null;
     onSelectDate?: (date: Date | null) => void;
-    showViewToggle?: boolean;
-    defaultView?: 'month';
     compactMode?: boolean;
 };
 
@@ -129,8 +127,6 @@ export function DashboardCalendar({
     events = [],
     selectedDate = null,
     onSelectDate,
-    showViewToggle = true,
-    defaultView = 'month',
     compactMode = false,
 }: DashboardCalendarProps) {
     const [currentMonth, setCurrentMonth] = useState<Date>(
@@ -154,7 +150,7 @@ export function DashboardCalendar({
     const isShowingToday = useMemo(() => {
         const today = new Date();
         return currentMonth.getFullYear() === today.getFullYear() && 
-            currentMonth.getMonth() === today.getMonth();
+               currentMonth.getMonth() === today.getMonth();
     }, [currentMonth]);
 
     // Auto-navigate to nearest upcoming event month once data loads
@@ -254,19 +250,11 @@ export function DashboardCalendar({
 
     // Navigation handlers
     const goToPrevious = () => {
-        if (viewMode === 'month') {
-            setCurrentMonth((p) => new Date(p.getFullYear(), p.getMonth() - 1, 1));
-        } else {
-            setCurrentWeekStart((p) => subWeeks(p, 1));
-        }
+        setCurrentMonth((p) => new Date(p.getFullYear(), p.getMonth() - 1, 1));
     };
 
     const goToNext = () => {
-        if (viewMode === 'month') {
-            setCurrentMonth((p) => new Date(p.getFullYear(), p.getMonth() + 1, 1));
-        } else {
-            setCurrentWeekStart((p) => addWeeks(p, 1));
-        }
+        setCurrentMonth((p) => new Date(p.getFullYear(), p.getMonth() + 1, 1));
     };
 
     // Calendar days for month view
@@ -402,12 +390,12 @@ export function DashboardCalendar({
                     >
                         <ChevronLeft className="w-4 h-4" />
                     </button>
-
+                    
                     <div className="flex items-center gap-2">
                         <span className="text-xs font-medium text-gray-700">
                             {format(currentMonth, 'MMMM yyyy')}
                         </span>
-
+                        
                         {!isShowingToday && (
                             <button
                                 type="button"
@@ -418,7 +406,7 @@ export function DashboardCalendar({
                             </button>
                         )}
                     </div>
-
+                    
                     <button
                         type="button"
                         onClick={goToNext}
