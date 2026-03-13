@@ -13,6 +13,7 @@ import { AcknowledgementPopup } from '@/components/ui/acknowledgement-popup';
 import { DataTable } from '@/components/ui/data-table';
 import { CourseLoadingPage, CourseLoadingSpinner } from '@/components/course/CourseLoading';
 import { ConfirmDeleteModal } from '@/components/ui/ConfirmDeleteModal';
+import { BackLink } from '@/components/ui/BackLink';
 import {
     UserCog,
     UserPlus,
@@ -172,12 +173,7 @@ export default function CourseAssistantsPage() {
                 {/* Header */}
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                     <div>
-                        <Link
-                            href={`/faculty/courses/${courseId}`}
-                            className="inline-flex items-center gap-1.5 text-gray-500 hover:text-gray-700 text-sm mb-2 transition-colors"
-                        >
-                            ← Back to Overview
-                        </Link>
+                        <BackLink href={`/faculty/courses/${courseId}`} label="Back to Overview" className="mb-2" />
                         <h1 className="text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-3">
                             <div className="p-2 bg-violet-100 rounded-xl">
                                 <UserCog className="w-6 h-6 text-violet-600" />

@@ -5,6 +5,9 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
+import { getAssignmentStatusSummaries } from '@/lib/course-report-utils';
+import { AssignmentAttentionBadges } from '@/components/ui/AssignmentAttentionBadges';
+import { BackLink } from '@/components/ui/BackLink';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { CourseLoadingPage } from '@/components/course/CourseLoading';
@@ -22,6 +25,7 @@ import {
     ArrowLeft,
     BarChart3,
     Target,
+    AlertTriangle,
 } from 'lucide-react';
 
 interface Course {
@@ -47,6 +51,17 @@ interface Assignment {
     due_date?: string;
     is_published: boolean;
     max_score: number;
+}
+
+interface CourseReport {
+    assignments?: { id: number; title: string; due_date?: string | null }[];
+    student_reports?: {
+        id: number;
+        assignment_grades?: {
+            assignment_id: number;
+            status: 'graded' | 'ungraded' | 'missing' | 'not_submitted';
+        }[];
+    }[];
 }
 
 const formatDate = (dateString: string) =>
@@ -88,11 +103,32 @@ export default function CourseOverviewPage() {
         enabled: !!courseId,
     });
 
+    const { data: courseReport } = useQuery<CourseReport | null>({
+        queryKey: ['course-report', courseId],
+        queryFn: () => apiClient.getCourseReport(courseId),
+        enabled: !!courseId,
+    });
+
     const activeStudents = students.filter((s: { status: string }) => s.status === 'active');
     const publishedCount = assignments.filter((a: Assignment) => a.is_published).length;
     const upcomingCount = assignments.filter((a: Assignment) => a.due_date && new Date(a.due_date) > new Date()).length;
-    const overdueCount = assignments.filter((a: Assignment) => a.due_date && new Date(a.due_date) < new Date() && !a.is_published).length;
     const recentAssignments = assignments.slice(0, 5);
+    const assignmentSummaries = React.useMemo(
+        () => getAssignmentStatusSummaries(courseReport),
+        [courseReport],
+    );
+    const assignmentSummaryMap = React.useMemo(
+        () => new Map(assignmentSummaries.map((assignment) => [assignment.assignmentId, assignment])),
+        [assignmentSummaries],
+    );
+    const totalNeedsGrading = React.useMemo(
+        () => assignmentSummaries.reduce((sum, assignment) => sum + assignment.ungradedCount, 0),
+        [assignmentSummaries],
+    );
+    const totalMissingSubmissions = React.useMemo(
+        () => assignmentSummaries.reduce((sum, assignment) => sum + assignment.missingCount, 0),
+        [assignmentSummaries],
+    );
 
     if (courseLoading || !course) {
         return <CourseLoadingPage message="Loading course..." />;
@@ -123,12 +159,7 @@ export default function CourseOverviewPage() {
     return (
         <div className="space-y-6 pb-8">
             {/* Back */}
-            <Link
-                href="/faculty/courses"
-                className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors"
-            >
-                <ArrowLeft className="w-4 h-4" /> Back to Courses
-            </Link>
+            <BackLink href="/faculty/courses" label="Back to Courses" />
 
             {/* ─── Course Header Banner (using course color) ─── */}
             <div
@@ -179,7 +210,7 @@ export default function CourseOverviewPage() {
             </div>
 
             {/* ─── Stat Cards (responsive grid) ─── */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
                 <Card className="overflow-hidden border-0 shadow-md hover:shadow-lg transition-shadow">
                     <CardContent className="p-4 md:p-5">
                         <div className="flex items-center gap-3">
@@ -231,6 +262,32 @@ export default function CourseOverviewPage() {
                             <div>
                                 <p className="text-2xl font-bold text-gray-900">{upcomingCount}</p>
                                 <p className="text-xs text-gray-500">Upcoming Due</p>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+                <Card className="overflow-hidden border-0 shadow-md hover:shadow-lg transition-shadow">
+                    <CardContent className="p-4 md:p-5">
+                        <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-xl bg-yellow-100 flex items-center justify-center">
+                                <Clock className="w-6 h-6 text-yellow-700" />
+                            </div>
+                            <div>
+                                <p className="text-2xl font-bold text-gray-900">{totalNeedsGrading}</p>
+                                <p className="text-xs text-gray-500">Needs Grading</p>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+                <Card className="overflow-hidden border-0 shadow-md hover:shadow-lg transition-shadow">
+                    <CardContent className="p-4 md:p-5">
+                        <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-xl bg-red-100 flex items-center justify-center">
+                                <AlertTriangle className="w-6 h-6 text-red-600" />
+                            </div>
+                            <div>
+                                <p className="text-2xl font-bold text-gray-900">{totalMissingSubmissions}</p>
+                                <p className="text-xs text-gray-500">Missing Submissions</p>
                             </div>
                         </div>
                     </CardContent>
@@ -288,6 +345,9 @@ export default function CourseOverviewPage() {
                         ) : (
                             <div className="space-y-2">
                                 {recentAssignments.map((a: Assignment) => (
+                                    (() => {
+                                        const summary = assignmentSummaryMap.get(a.id);
+                                        return (
                                     <Link
                                         key={a.id}
                                         href={`/faculty/courses/${courseId}/assignments/${a.id}`}
@@ -306,6 +366,14 @@ export default function CourseOverviewPage() {
                                                     <span>{a.is_published ? 'Published' : 'Draft'}</span>
                                                     <span className="text-gray-400">{a.max_score} pts</span>
                                                 </div>
+                                                {summary && (
+                                                    <AssignmentAttentionBadges
+                                                        ungradedCount={summary.ungradedCount}
+                                                        missingCount={summary.missingCount}
+                                                        compact
+                                                        className="mt-2"
+                                                    />
+                                                )}
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-2 flex-shrink-0">
@@ -317,6 +385,8 @@ export default function CourseOverviewPage() {
                                             <ChevronRight className="w-4 h-4 text-gray-300 group-hover:translate-x-0.5 transition-transform" />
                                         </div>
                                     </Link>
+                                        );
+                                    })()
                                 ))}
                             </div>
                         )}

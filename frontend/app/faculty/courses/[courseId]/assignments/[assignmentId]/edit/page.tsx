@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
+import { BackLink } from '@/components/ui/BackLink';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -284,10 +285,7 @@ export default function EditAssignmentPage() {
                     <p className="text-gray-500 mb-6 text-sm">
                         {queryError ? (queryError as any)?.message || 'Unknown error' : 'Check if you have access.'}
                     </p>
-                    <Button onClick={() => router.push(`/faculty/courses/${courseId}/assignments`)}
-                        className="bg-[#862733] hover:bg-[#a03040] text-white">
-                        <ArrowLeft className="w-4 h-4 mr-2" /> Back to Assignments
-                    </Button>
+                    <BackLink href={`/faculty/courses/${courseId}/assignments`} label="Back to Assignments" />
                 </div>
             </div>
         );

@@ -774,6 +774,8 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
             });
 
             await queryClient.invalidateQueries({ queryKey: ['assignment-submissions', assignmentId] });
+            await queryClient.invalidateQueries({ queryKey: ['assistant-grading-stats', courseId] });
+            await queryClient.invalidateQueries({ queryKey: ['assistant-grading-stats'] });
             setGradeSaved(true);
         } catch (err: any) {
             toast({ title: 'Error', description: err?.response?.data?.detail || 'Failed to save grade.', variant: 'destructive' });

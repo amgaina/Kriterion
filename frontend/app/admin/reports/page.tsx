@@ -7,6 +7,7 @@ import apiClient from '@/lib/api-client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { ScoreBadge } from '@/components/ui/ScoreBadge';
 import { Select } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
 import { Tabs } from '@/components/ui/tabs';
@@ -218,9 +219,9 @@ export default function ReportsPage() {
                                                         <p className="font-medium text-gray-900">{course.name}</p>
                                                         <p className="text-sm text-gray-500">{course.students} students • {course.submissions} submissions</p>
                                                     </div>
-                                                    <Badge variant={course.avgScore >= 80 ? 'success' : course.avgScore >= 60 ? 'warning' : 'danger'}>
+                                                    <ScoreBadge percent={course.avgScore}>
                                                         {course.avgScore}%
-                                                    </Badge>
+                                                    </ScoreBadge>
                                                 </div>
                                             ))}
                                         </div>
@@ -339,9 +340,9 @@ export default function ReportsPage() {
                                                     <td className="py-3 px-4">8</td>
                                                     <td className="py-3 px-4">{course.submissions}</td>
                                                     <td className="py-3 px-4">
-                                                        <Badge variant={course.avgScore >= 80 ? 'success' : course.avgScore >= 60 ? 'warning' : 'danger'}>
+                                                        <ScoreBadge percent={course.avgScore}>
                                                             {course.avgScore}%
-                                                        </Badge>
+                                                        </ScoreBadge>
                                                     </td>
                                                     <td className="py-3 px-4">
                                                         <div className="flex items-center gap-2">

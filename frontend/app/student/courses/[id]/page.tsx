@@ -20,6 +20,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabPanel } from '@/components/ui/tabs';
 import { InnerHeaderDesign } from '@/components/InnerHeaderDesign';
+import { ScoreBadge } from '@/components/ui/ScoreBadge';
+import { getScoreBgColor, getScoreTextColor } from '@/lib/score-utils';
 import {
     ArrowLeft,
     BookOpen,
@@ -61,22 +63,6 @@ interface Submission {
     final_score?: number | null;
     max_score?: number;
     graded_at?: string | null;
-}
-
-function getScoreColor(pct: number) {
-    if (pct >= 90) return 'text-green-600';
-    if (pct >= 80) return 'text-blue-600';
-    if (pct >= 70) return 'text-amber-600';
-    if (pct >= 60) return 'text-orange-600';
-    return 'text-red-600';
-}
-
-function getScoreBgColor(pct: number) {
-    if (pct >= 90) return 'bg-green-50';
-    if (pct >= 80) return 'bg-blue-50';
-    if (pct >= 70) return 'bg-amber-50';
-    if (pct >= 60) return 'bg-orange-50';
-    return 'bg-red-50';
 }
 
 export default function StudentCourseDetailPage() {
@@ -278,7 +264,7 @@ export default function StudentCourseDetailPage() {
                                                     }`}
                                             >
                                                 <span
-                                                    className={`text-xl sm:text-2xl font-bold ${totalGrade != null ? getScoreColor(totalGrade) : 'text-gray-400'
+                                                    className={`text-xl sm:text-2xl font-bold ${totalGrade != null ? getScoreTextColor(totalGrade) : 'text-gray-400'
                                                         }`}
                                                 >
                                                     {totalGrade != null ? `${totalGrade}%` : '-'}
@@ -385,11 +371,9 @@ export default function StudentCourseDetailPage() {
                                                 </div>
                                                 <div className="flex items-center gap-2 flex-shrink-0">
                                                     {isGraded ? (
-                                                        <Badge
-                                                            variant={(sub!.final_score! / maxScore) >= 0.7 ? 'success' : (sub!.final_score! / maxScore) >= 0.6 ? 'warning' : 'danger'}
-                                                        >
+                                                        <ScoreBadge percent={(sub!.final_score! / maxScore) * 100} successThreshold={70} warningThreshold={60}>
                                                             {Math.round(sub!.final_score!)}/{maxScore}
-                                                        </Badge>
+                                                        </ScoreBadge>
                                                     ) : (
                                                         <span className="text-sm text-gray-400">-/{maxScore}</span>
                                                     )}
@@ -433,7 +417,7 @@ export default function StudentCourseDetailPage() {
                                                             }`}
                                                     >
                                                         {isGraded ? (
-                                                            <span className={`text-sm font-bold ${getScoreColor(pct)}`}>
+                                                            <span className={`text-sm font-bold ${getScoreTextColor(pct)}`}>
                                                                 {pct}%
                                                             </span>
                                                         ) : (
@@ -452,11 +436,9 @@ export default function StudentCourseDetailPage() {
                                                     </div>
                                                     <div className="flex items-center gap-2 flex-shrink-0">
                                                         {isGraded ? (
-                                                            <Badge
-                                                                variant={pct >= 80 ? 'success' : pct >= 60 ? 'warning' : 'danger'}
-                                                            >
+                                                            <ScoreBadge percent={pct}>
                                                                 {Math.round(sub!.final_score!)}/{maxScore}
-                                                            </Badge>
+                                                            </ScoreBadge>
                                                         ) : (
                                                             <Badge variant="outline" className="text-gray-500 border-gray-200">
                                                                 -/{maxScore}

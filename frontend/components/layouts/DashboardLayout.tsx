@@ -203,8 +203,8 @@ export function DashboardLayout({ children, hideTopNav = false }: DashboardLayou
 
         if (closeSidebar) setSidebarOpen(false);
 
-        // If clicking the same route, just ensure content is visible
-        if (pathname === href || pathname.startsWith(href + '/')) {
+        // If clicking the exact same route, just ensure content is visible
+        if (pathname === href) {
             setContentVisible(true);
             return;
         }

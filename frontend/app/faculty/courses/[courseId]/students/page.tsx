@@ -16,6 +16,7 @@ import { CourseLoadingPage } from '@/components/course/CourseLoading';
 import { EnrollStudentModal } from '@/components/course/EnrollStudentModal';
 import { BulkEnrollModal } from '@/components/course/BulkEnrollModal';
 import { ConfirmDeleteModal } from '@/components/ui/ConfirmDeleteModal';
+import { BackLink } from '@/components/ui/BackLink';
 import {
     Users,
     UserPlus,
@@ -216,12 +217,7 @@ export default function CourseStudentsPage() {
                 {/* Header */}
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                     <div>
-                        <Link
-                            href={`/faculty/courses/${courseId}`}
-                            className="inline-flex items-center gap-1.5 text-gray-500 hover:text-gray-700 text-sm mb-2 transition-colors"
-                        >
-                            ← Back to Overview
-                        </Link>
+                        <BackLink href={`/faculty/courses/${courseId}`} label="Back to Overview" className="mb-2" />
                         <h1 className="text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-3">
                             <div className="p-2 bg-[#862733]/10 rounded-xl">
                                 <GraduationCap className="w-6 h-6 text-[#862733]" />

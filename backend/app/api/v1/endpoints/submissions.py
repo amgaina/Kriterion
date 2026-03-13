@@ -35,6 +35,15 @@ from app.services.notification import notify_faculty_submission_received, notify
 router = APIRouter()
 
 
+def _is_submission_graded(submission: Submission) -> bool:
+    """Treat submission as graded if it has a score or a graded/completed status."""
+    status_value = str(submission.status or "").lower()
+    return (
+        submission.final_score is not None
+        or status_value in {"completed", "autograded", "graded"}
+    )
+
+
 def _can_grade_for_course(db: Session, user: User, course_id: int) -> bool:
     """Check if user can grade submissions for this course (instructor, admin, or assigned assistant)."""
     if user.role == UserRole.ADMIN:
@@ -175,24 +184,29 @@ def get_grading_stats(
     submissions = (
         db.query(Submission)
         .filter(Submission.assignment_id.in_(assignment_ids))
-        .order_by(Submission.assignment_id, Submission.student_id, desc(Submission.submitted_at))
         .all()
     )
 
-    # Group by (assignment_id, student_id), take latest (first after desc sort)
-    latest_by_student: Dict[Tuple[int, int], Submission] = {}
+    # Group by (assignment_id, student_id) and select latest deterministically
+    # using submitted_at, then attempt_number, then id.
+    latest_by_student: Dict[Tuple[int, int], Tuple[Tuple[datetime, int, int], Submission]] = {}
     for s in submissions:
         key = (s.assignment_id, s.student_id)
-        if key not in latest_by_student:
-            latest_by_student[key] = s
+        rank = (
+            s.submitted_at or datetime.min,
+            int(s.attempt_number or 0),
+            int(s.id or 0),
+        )
+        existing = latest_by_student.get(key)
+        if existing is None or rank > existing[0]:
+            latest_by_student[key] = (rank, s)
 
     # Per-assignment counts
     by_assignment: Dict[int, Dict[str, int]] = defaultdict(lambda: {"pending": 0, "graded": 0})
     total_pending = 0
     total_graded = 0
-    for (aid, _), sub in latest_by_student.items():
-        is_completed = str(sub.status or "").lower() == "completed"
-        if is_completed:
+    for (aid, _), (_, sub) in latest_by_student.items():
+        if _is_submission_graded(sub):
             by_assignment[aid]["graded"] += 1
             total_graded += 1
         else:
