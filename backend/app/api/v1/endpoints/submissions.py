@@ -460,6 +460,9 @@ async def create_submission(
                 
                 logger.info(f"File {upload_file.filename} saved locally: {file_path}")
         
+        except HTTPException:
+            db.rollback()
+            raise
         except Exception as e:
             logger.error(f"Error uploading file {upload_file.filename}: {str(e)}")
             # Clean up partial submission

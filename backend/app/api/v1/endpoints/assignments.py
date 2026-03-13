@@ -480,6 +480,8 @@ def update_assignment(
     # Update fields
     update_data_in = assignment_in.model_dump(exclude_unset=True)
     
+    test_cases_data = update_data_in.pop("test_cases", None)
+
     # Filter to only include columns that exist in the database
     update_data = {
         key: value for key, value in update_data_in.items() if key in available_columns
@@ -492,6 +494,26 @@ def update_assignment(
         
     for field, value in update_data.items():
         setattr(assignment, field, value)
+
+    if test_cases_data is not None:
+        db.query(TestCase).filter(TestCase.assignment_id == assignment.id).delete(synchronize_session=False)
+        for idx, tc_data in enumerate(test_cases_data):
+            test_case = TestCase(
+                assignment_id=assignment.id,
+                name=tc_data.get("name") or f"Test Case {idx + 1}",
+                description=tc_data.get("description"),
+                input_data=tc_data.get("input_data"),
+                expected_output=tc_data.get("expected_output"),
+                points=tc_data.get("points", 10.0),
+                is_hidden=tc_data.get("is_hidden", False),
+                is_sample=tc_data.get("is_sample", False),
+                ignore_whitespace=tc_data.get("ignore_whitespace", True),
+                ignore_case=tc_data.get("ignore_case", False),
+                time_limit_seconds=tc_data.get("time_limit_seconds"),
+                memory_limit_mb=tc_data.get("memory_limit_mb"),
+                order=tc_data.get("order", idx),
+            )
+            db.add(test_case)
     
     # Audit log
     audit = AuditLog(

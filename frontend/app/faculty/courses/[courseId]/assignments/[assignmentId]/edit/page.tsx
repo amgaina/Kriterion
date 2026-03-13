@@ -12,6 +12,7 @@ import { Select } from '@/components/ui/select';
 import {
     Loader2, ArrowLeft, Trash2, AlertCircle, Save, Eye, EyeOff,
     Clock, FileCode, Shield, Settings, ChevronDown, ChevronUp, CheckCircle2,
+    FlaskConical, Plus,
 } from 'lucide-react';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -19,6 +20,21 @@ import { assignmentCreateSchema, type AssignmentCreateForm } from '@/lib/validat
 import { format as formatDate } from 'date-fns';
 
 type Language = { id: number; name: string; version?: string; display_name?: string };
+
+type EditableTestCase = {
+    name: string;
+    description: string;
+    input_data: string;
+    expected_output: string;
+    points: number;
+    is_hidden: boolean;
+    is_sample: boolean;
+    ignore_whitespace: boolean;
+    ignore_case: boolean;
+    time_limit_seconds: number | null;
+    memory_limit_mb: number | null;
+    order: number;
+};
 
 const parseDateTimeInput = (value?: string): Date | null => {
     if (!value) return null;
@@ -43,8 +59,9 @@ export default function EditAssignmentPage() {
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [testCases, setTestCases] = useState<EditableTestCase[]>([]);
     const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-        basic: true, timing: true, submission: false, late: false, code: false, integrity: false, publish: true,
+        basic: true, timing: true, tests: true, submission: false, late: false, code: false, integrity: false, publish: true,
     });
 
     const toggleSection = (key: string) =>
@@ -110,7 +127,55 @@ export default function EditAssignmentPage() {
         setValue('enable_ai_detection', a.enable_ai_detection ?? true);
         setValue('ai_detection_threshold', a.ai_detection_threshold ?? 50);
         setValue('is_published', a.is_published ?? false);
+
+        const existingTestCases = Array.isArray(a.test_cases) ? a.test_cases : [];
+        setTestCases(existingTestCases.map((tc: any, index: number) => ({
+            name: tc.name || `Test Case ${index + 1}`,
+            description: tc.description || '',
+            input_data: tc.input_data || '',
+            expected_output: tc.expected_output || '',
+            points: tc.points ?? 10,
+            is_hidden: tc.is_hidden ?? false,
+            is_sample: tc.is_sample ?? false,
+            ignore_whitespace: tc.ignore_whitespace ?? true,
+            ignore_case: tc.ignore_case ?? false,
+            time_limit_seconds: tc.time_limit_seconds ?? null,
+            memory_limit_mb: tc.memory_limit_mb ?? null,
+            order: tc.order ?? index,
+        })));
     }, [assignment, setValue]);
+
+    const addTestCase = () => {
+        setTestCases((prev) => ([
+            ...prev,
+            {
+                name: `Test Case ${prev.length + 1}`,
+                description: '',
+                input_data: '',
+                expected_output: '',
+                points: 10,
+                is_hidden: false,
+                is_sample: false,
+                ignore_whitespace: true,
+                ignore_case: false,
+                time_limit_seconds: null,
+                memory_limit_mb: null,
+                order: prev.length,
+            },
+        ]));
+    };
+
+    const removeTestCase = (index: number) => {
+        setTestCases((prev) => prev.filter((_, i) => i !== index).map((tc, i) => ({ ...tc, order: i })));
+    };
+
+    const updateTestCase = <K extends keyof EditableTestCase>(index: number, key: K, value: EditableTestCase[K]) => {
+        setTestCases((prev) => {
+            const next = [...prev];
+            next[index] = { ...next[index], [key]: value };
+            return next;
+        });
+    };
 
     const updateMutation = useMutation({
         mutationFn: async (values: AssignmentCreateForm) => {
@@ -139,6 +204,20 @@ export default function EditAssignmentPage() {
                 enable_ai_detection: values.enable_ai_detection,
                 ai_detection_threshold: values.ai_detection_threshold,
                 is_published: values.is_published,
+                test_cases: testCases.map((tc, idx) => ({
+                    name: tc.name,
+                    description: tc.description || null,
+                    input_data: tc.input_data || null,
+                    expected_output: tc.expected_output || null,
+                    points: tc.points,
+                    is_hidden: tc.is_hidden,
+                    is_sample: tc.is_sample,
+                    ignore_whitespace: tc.ignore_whitespace,
+                    ignore_case: tc.ignore_case,
+                    time_limit_seconds: tc.time_limit_seconds,
+                    memory_limit_mb: tc.memory_limit_mb,
+                    order: idx,
+                })),
             };
             if (values.allowedExtensionsStr?.trim()) {
                 payload.allowed_file_extensions = values.allowedExtensionsStr.split(',').map(s => s.trim()).filter(Boolean);
@@ -173,7 +252,13 @@ export default function EditAssignmentPage() {
         },
     });
 
-    const onSubmit = (values: AssignmentCreateForm) => updateMutation.mutate(values);
+    const onSubmit = (values: AssignmentCreateForm) => {
+        if ((values.test_weight ?? 0) > 0 && testCases.length === 0) {
+            setError('Add at least one test case when test weight is greater than 0%.');
+            return;
+        }
+        updateMutation.mutate(values);
+    };
     const watchStartDate = watch('start_date');
     const watchDueDate = watch('due_date');
 
@@ -322,6 +407,134 @@ export default function EditAssignmentPage() {
                                 <Input label="Passing Score" type="number" min={0} {...register('passing_score', { valueAsNumber: true })} error={errors.passing_score?.message} />
                             </div>
                             {errors.root && <p className="text-xs text-red-500">{errors.root.message}</p>}
+                        </div>
+                    )}
+                </div>
+
+                {/* Test Cases */}
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                    <SectionHeader
+                        id="tests"
+                        icon={FlaskConical}
+                        title="Test Cases"
+                        badge={<span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">{testCases.length}</span>}
+                    />
+                    {expandedSections.tests && (
+                        <div className="px-6 pb-6 space-y-4">
+                            {testCases.length === 0 && (
+                                <div className="rounded-lg border border-dashed border-gray-300 p-4 text-sm text-gray-500">
+                                    No test cases yet. Add at least one for auto-grading.
+                                </div>
+                            )}
+
+                            {testCases.map((testCase, index) => (
+                                <div key={index} className="rounded-xl border border-gray-200 p-4 space-y-3 bg-gray-50/50">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <Input
+                                            label={`Test Case ${index + 1} Name`}
+                                            value={testCase.name}
+                                            onChange={(e) => updateTestCase(index, 'name', e.target.value)}
+                                            placeholder="e.g. Basic input"
+                                        />
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => removeTestCase(index)}
+                                            className="text-red-600 hover:text-red-700 hover:bg-red-50 self-end"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </Button>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Input</label>
+                                        <textarea
+                                            className="w-full min-h-[90px] rounded-xl border border-gray-300 px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#862733]/30 focus:border-[#862733] transition-all"
+                                            value={testCase.input_data}
+                                            onChange={(e) => updateTestCase(index, 'input_data', e.target.value)}
+                                            placeholder="Input data (stdin)"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Expected Output</label>
+                                        <textarea
+                                            className="w-full min-h-[90px] rounded-xl border border-gray-300 px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#862733]/30 focus:border-[#862733] transition-all"
+                                            value={testCase.expected_output}
+                                            onChange={(e) => updateTestCase(index, 'expected_output', e.target.value)}
+                                            placeholder="Expected output"
+                                        />
+                                    </div>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                        <Input
+                                            label="Points"
+                                            type="number"
+                                            min={0}
+                                            value={testCase.points}
+                                            onChange={(e) => updateTestCase(index, 'points', Number(e.target.value))}
+                                        />
+                                        <Input
+                                            label="Time Limit (sec)"
+                                            type="number"
+                                            min={1}
+                                            value={testCase.time_limit_seconds ?? ''}
+                                            onChange={(e) => updateTestCase(index, 'time_limit_seconds', e.target.value ? Number(e.target.value) : null)}
+                                        />
+                                        <Input
+                                            label="Memory Limit (MB)"
+                                            type="number"
+                                            min={1}
+                                            value={testCase.memory_limit_mb ?? ''}
+                                            onChange={(e) => updateTestCase(index, 'memory_limit_mb', e.target.value ? Number(e.target.value) : null)}
+                                        />
+                                    </div>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <label className="flex items-center gap-2 text-sm text-gray-700">
+                                            <input
+                                                type="checkbox"
+                                                checked={testCase.is_hidden}
+                                                onChange={(e) => updateTestCase(index, 'is_hidden', e.target.checked)}
+                                                className="w-4 h-4 rounded border-gray-300 text-[#862733] focus:ring-[#862733]"
+                                            />
+                                            Hidden test case
+                                        </label>
+                                        <label className="flex items-center gap-2 text-sm text-gray-700">
+                                            <input
+                                                type="checkbox"
+                                                checked={testCase.is_sample}
+                                                onChange={(e) => updateTestCase(index, 'is_sample', e.target.checked)}
+                                                className="w-4 h-4 rounded border-gray-300 text-[#862733] focus:ring-[#862733]"
+                                            />
+                                            Sample test case
+                                        </label>
+                                        <label className="flex items-center gap-2 text-sm text-gray-700">
+                                            <input
+                                                type="checkbox"
+                                                checked={testCase.ignore_whitespace}
+                                                onChange={(e) => updateTestCase(index, 'ignore_whitespace', e.target.checked)}
+                                                className="w-4 h-4 rounded border-gray-300 text-[#862733] focus:ring-[#862733]"
+                                            />
+                                            Ignore whitespace
+                                        </label>
+                                        <label className="flex items-center gap-2 text-sm text-gray-700">
+                                            <input
+                                                type="checkbox"
+                                                checked={testCase.ignore_case}
+                                                onChange={(e) => updateTestCase(index, 'ignore_case', e.target.checked)}
+                                                className="w-4 h-4 rounded border-gray-300 text-[#862733] focus:ring-[#862733]"
+                                            />
+                                            Ignore case
+                                        </label>
+                                    </div>
+                                </div>
+                            ))}
+
+                            <Button type="button" variant="outline" onClick={addTestCase} className="w-full border-dashed">
+                                <Plus className="w-4 h-4 mr-2" /> Add Test Case
+                            </Button>
                         </div>
                     )}
                 </div>

@@ -497,6 +497,11 @@ export default function StudentAssignmentPage() {
         if (!files.length) {
             toast({ title: 'No files', description: 'Upload files before submitting.', variant: 'destructive' }); return
         }
+        const emptyFiles = files.filter(f => !f.content.trim())
+        if (emptyFiles.length > 0) {
+            const names = emptyFiles.map(f => f.name).join(', ')
+            toast({ title: 'Empty file detected', description: `Please add code to: ${names}`, variant: 'destructive' }); return
+        }
         if (files.every(f => !f.content.trim())) {
             toast({ title: 'Empty files', description: 'Write code before submitting.', variant: 'destructive' }); return
         }

@@ -165,6 +165,7 @@ class AssignmentUpdate(BaseModel):
     solution_code: Optional[str] = None
     
     is_published: Optional[bool] = None
+    test_cases: Optional[List[TestCaseCreate]] = None
     rubric: Optional[RubricUpdate] = None
 
     @model_validator(mode='after')

@@ -37,6 +37,12 @@ type CourseReport = {
     total_assignments: number;
     total_submissions: number;
     course_average_score?: number | null;
+    assignments?: {
+        id: number;
+        title: string;
+        max_score: number;
+        due_date?: string | null;
+    }[];
     student_reports?: {
         id: number;
         name: string;
@@ -45,11 +51,21 @@ type CourseReport = {
         average_score?: number | null;
         completed_assignments: number;
         total_assignments: number;
+        assignment_grades?: {
+            assignment_id: number;
+            assignment_title: string;
+            score?: number | null;
+            max_score?: number;
+            status: 'graded' | 'submitted' | 'not_submitted';
+            submitted_at?: string | null;
+        }[];
     }[];
 };
 
 export default function FacultyReportsPage() {
     const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
+    const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
+    const [selectedAssignmentIds, setSelectedAssignmentIds] = useState<number[]>([]);
 
     const { data: courses = [], isLoading: loadingCourses } = useQuery<FacultyCourse[]>({
         queryKey: ['faculty-courses'],
@@ -74,6 +90,30 @@ export default function FacultyReportsPage() {
         () => courses.find((c) => c.id === effectiveCourseId) || null,
         [courses, effectiveCourseId],
     );
+
+    const assignmentOptions = courseReport?.assignments ?? [];
+    const studentOptions = courseReport?.student_reports ?? [];
+
+    const selectedAssignments = useMemo(
+        () =>
+            selectedAssignmentIds.length > 0
+                ? assignmentOptions.filter((assignment) => selectedAssignmentIds.includes(assignment.id))
+                : assignmentOptions,
+        [assignmentOptions, selectedAssignmentIds],
+    );
+
+    const selectedStudents = useMemo(
+        () =>
+            selectedStudentIds.length > 0
+                ? studentOptions.filter((student) => selectedStudentIds.includes(student.id))
+                : studentOptions,
+        [studentOptions, selectedStudentIds],
+    );
+
+    const getGradeForAssignment = (
+        student: NonNullable<CourseReport['student_reports']>[number],
+        assignmentId: number,
+    ) => student.assignment_grades?.find((grade) => grade.assignment_id === assignmentId) ?? null;
 
     const totalStudents = courseReport?.total_students ?? 0;
     const overallAverage = courseReport?.course_average_score ?? null;
@@ -117,7 +157,11 @@ export default function FacultyReportsPage() {
     const handleDownloadCourseReport = async () => {
         if (!effectiveCourseId) return;
         try {
-            const blob = await apiClient.exportCourseReport(effectiveCourseId);
+            const blob = await apiClient.exportCourseReport(
+                effectiveCourseId,
+                selectedStudentIds.length > 0 ? selectedStudentIds : undefined,
+                selectedAssignmentIds.length > 0 ? selectedAssignmentIds : undefined,
+            );
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -165,7 +209,7 @@ export default function FacultyReportsPage() {
                             variant="outline"
                             onClick={handleDownloadCanvas}
                             disabled={!effectiveCourseId || isLoading}
-                            className="border-white/30 text-white hover:bg-white/20 hover:text-white"
+                            className="bg-transparent border-white/30 text-white hover:bg-white/20 hover:text-white disabled:bg-transparent disabled:text-white/60"
                         >
                             <Download className="w-4 h-4 mr-2" />
                             Canvas gradebook CSV
@@ -190,7 +234,11 @@ export default function FacultyReportsPage() {
                             <select
                                 className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#862733] focus:border-transparent min-w-[220px]"
                                 value={effectiveCourseId ?? ''}
-                                onChange={(e) => setSelectedCourseId(Number(e.target.value) || null)}
+                                onChange={(e) => {
+                                    setSelectedCourseId(Number(e.target.value) || null);
+                                    setSelectedStudentIds([]);
+                                    setSelectedAssignmentIds([]);
+                                }}
                             >
                                 {courses.map((c) => (
                                     <option key={c.id} value={c.id}>
@@ -205,6 +253,73 @@ export default function FacultyReportsPage() {
                                 · {courseReport?.course.semester} {courseReport?.course.year}
                             </div>
                         )}
+                    </div>
+                </CardContent>
+            </Card>
+
+            {/* Selection filters */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>Grade report filters</CardTitle>
+                    <CardDescription>
+                        Select specific students and assignments, or leave both empty to show all.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="border rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-3">
+                            <p className="text-sm font-medium text-gray-800">Students</p>
+                            <Button variant="ghost" size="sm" onClick={() => setSelectedStudentIds([])}>
+                                All students
+                            </Button>
+                        </div>
+                        <div className="max-h-44 overflow-auto space-y-2 pr-1">
+                            {studentOptions.map((student) => (
+                                <label key={student.id} className="flex items-center gap-2 text-sm text-gray-700">
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedStudentIds.includes(student.id)}
+                                        onChange={(e) => {
+                                            if (e.target.checked) {
+                                                setSelectedStudentIds((prev) => [...prev, student.id]);
+                                            } else {
+                                                setSelectedStudentIds((prev) => prev.filter((id) => id !== student.id));
+                                            }
+                                        }}
+                                        className="w-4 h-4 rounded border-gray-300 text-[#862733] focus:ring-[#862733]"
+                                    />
+                                    <span className="truncate">{student.name}</span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="border rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-3">
+                            <p className="text-sm font-medium text-gray-800">Assignments</p>
+                            <Button variant="ghost" size="sm" onClick={() => setSelectedAssignmentIds([])}>
+                                All assignments
+                            </Button>
+                        </div>
+                        <div className="max-h-44 overflow-auto space-y-2 pr-1">
+                            {assignmentOptions.map((assignment) => (
+                                <label key={assignment.id} className="flex items-center gap-2 text-sm text-gray-700">
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedAssignmentIds.includes(assignment.id)}
+                                        onChange={(e) => {
+                                            if (e.target.checked) {
+                                                setSelectedAssignmentIds((prev) => [...prev, assignment.id]);
+                                            } else {
+                                                setSelectedAssignmentIds((prev) => prev.filter((id) => id !== assignment.id));
+                                            }
+                                        }}
+                                        className="w-4 h-4 rounded border-gray-300 text-[#862733] focus:ring-[#862733]"
+                                    />
+                                    <span className="truncate">{assignment.title}</span>
+                                </label>
+                            ))}
+                        </div>
                     </div>
                 </CardContent>
             </Card>
@@ -359,6 +474,82 @@ export default function FacultyReportsPage() {
                                             </td>
                                         </tr>
                                     )}
+                            </tbody>
+                        </table>
+                    </div>
+                </CardContent>
+            </Card>
+
+            {/* Selected students x assignments matrix */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>Selected grade report</CardTitle>
+                    <CardDescription>
+                        Displays selected students&apos; grades across selected assignments (or all assignments when none are selected).
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm min-w-[820px]">
+                            <thead>
+                                <tr className="border-b bg-gray-50">
+                                    <th className="text-left py-3 px-4 font-medium text-gray-600 sticky left-0 bg-gray-50">Student</th>
+                                    {selectedAssignments.map((assignment) => (
+                                        <th key={assignment.id} className="text-center py-3 px-4 font-medium text-gray-600 whitespace-nowrap">
+                                            {assignment.title}
+                                        </th>
+                                    ))}
+                                    <th className="text-center py-3 px-4 font-medium text-gray-600">Average</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {selectedStudents.map((student) => {
+                                    const scores = selectedAssignments
+                                        .map((assignment) => getGradeForAssignment(student, assignment.id)?.score)
+                                        .filter((value): value is number => typeof value === 'number');
+                                    const average = scores.length > 0 ? scores.reduce((sum, value) => sum + value, 0) / scores.length : null;
+
+                                    return (
+                                        <tr key={student.id} className="border-b last:border-0 hover:bg-gray-50">
+                                            <td className="py-3 px-4 sticky left-0 bg-white hover:bg-gray-50">
+                                                <p className="font-medium text-gray-900">{student.name}</p>
+                                                {student.student_id && <p className="text-xs text-gray-500">ID: {student.student_id}</p>}
+                                            </td>
+                                            {selectedAssignments.map((assignment) => {
+                                                const grade = getGradeForAssignment(student, assignment.id);
+                                                return (
+                                                    <td key={`${student.id}-${assignment.id}`} className="py-3 px-4 text-center">
+                                                        {grade?.score != null ? (
+                                                            <Badge variant={grade.score >= 75 ? 'success' : 'warning'}>
+                                                                {grade.score.toFixed(1)}%
+                                                            </Badge>
+                                                        ) : grade?.status === 'submitted' ? (
+                                                            <span className="text-xs text-amber-600">Submitted</span>
+                                                        ) : (
+                                                            <span className="text-xs text-gray-400">—</span>
+                                                        )}
+                                                    </td>
+                                                );
+                                            })}
+                                            <td className="py-3 px-4 text-center">
+                                                {average != null ? (
+                                                    <Badge variant={average >= 75 ? 'success' : 'warning'}>
+                                                        {average.toFixed(1)}%
+                                                    </Badge>
+                                                ) : (
+                                                    <span className="text-xs text-gray-400">No graded work</span>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                                {!isLoading && selectedStudents.length === 0 && (
+                                    <tr>
+                                        <td colSpan={Math.max(2, selectedAssignments.length + 2)} className="py-6 text-center text-sm text-gray-500">
+                                            No students selected.
+                                        </td>
+                                    </tr>
+                                )}
                             </tbody>
                         </table>
                     </div>

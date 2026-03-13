@@ -480,8 +480,16 @@ class ApiClient {
         return response.data;
     }
 
-    async exportCourseReport(courseId: number) {
+    async exportCourseReport(courseId: number, selectedStudentIds?: number[], selectedAssignmentIds?: number[]) {
+        const params: Record<string, string> = {};
+        if (selectedStudentIds && selectedStudentIds.length > 0) {
+            params.student_ids = selectedStudentIds.join(',');
+        }
+        if (selectedAssignmentIds && selectedAssignmentIds.length > 0) {
+            params.assignment_ids = selectedAssignmentIds.join(',');
+        }
         const response = await this.client.get(`/reports/course/${courseId}/export`, {
+            params,
             responseType: 'blob',
         });
         return response.data as Blob;

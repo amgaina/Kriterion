@@ -269,14 +269,37 @@ def get_course_report(
     ).all()
     
     # Get assignments
-    assignments = db.query(Assignment).filter(Assignment.course_id == course_id).all()
-    
-    # Get all submissions for this course
-    submission_count = db.query(func.count(Submission.id)).join(
-        Assignment
-    ).filter(
-        Assignment.course_id == course_id
-    ).scalar()
+    assignments = (
+        db.query(Assignment)
+        .filter(Assignment.course_id == course_id)
+        .order_by(Assignment.due_date.asc(), Assignment.id.asc())
+        .all()
+    )
+
+    assignment_ids = [a.id for a in assignments]
+    student_ids = [e.student_id for e in enrollments]
+
+    # Get submissions for enrolled students in this course assignments
+    if assignment_ids and student_ids:
+        submissions = (
+            db.query(Submission)
+            .filter(
+                Submission.assignment_id.in_(assignment_ids),
+                Submission.student_id.in_(student_ids),
+            )
+            .order_by(Submission.submitted_at.desc())
+            .all()
+        )
+    else:
+        submissions = []
+
+    submission_count = len(submissions)
+
+    latest_by_student_assignment = {}
+    for submission in submissions:
+        key = (submission.student_id, submission.assignment_id)
+        if key not in latest_by_student_assignment:
+            latest_by_student_assignment[key] = submission
     
     # Per-student statistics (average grade and completion)
     student_reports = []
@@ -286,39 +309,35 @@ def get_course_report(
     for enrollment in enrollments:
         student = enrollment.student
         
-        # Use stored current_grade when available for performance/consistency
-        if enrollment.current_grade is not None:
-            avg_score = float(enrollment.current_grade)
-            completed_assignments = sum(
-                1
-                for assignment in assignments
-                if db.query(Submission)
-                .filter(
-                    Submission.assignment_id == assignment.id,
-                    Submission.student_id == student.id,
-                    Submission.final_score.isnot(None),
-                )
-                .first()
+        scores = []
+        completed_assignments = 0
+        assignment_grades = []
+        for assignment in assignments:
+            submission = latest_by_student_assignment.get((student.id, assignment.id))
+            score = float(submission.final_score) if submission and submission.final_score is not None else None
+
+            if score is not None:
+                scores.append(score)
+                completed_assignments += 1
+
+            assignment_grades.append(
+                {
+                    "assignment_id": assignment.id,
+                    "assignment_title": assignment.title,
+                    "score": round(score, 2) if score is not None else None,
+                    "max_score": assignment.max_score,
+                    "status": (
+                        "graded"
+                        if score is not None
+                        else "submitted"
+                        if submission is not None
+                        else "not_submitted"
+                    ),
+                    "submitted_at": submission.submitted_at.isoformat() if submission and submission.submitted_at else None,
+                }
             )
-        else:
-            # Fallback: compute from latest graded submission per assignment
-            scores = []
-            completed_assignments = 0
-            for assignment in assignments:
-                submission = (
-                    db.query(Submission)
-                    .filter(
-                        Submission.assignment_id == assignment.id,
-                        Submission.student_id == student.id,
-                        Submission.final_score.isnot(None),
-                    )
-                    .order_by(Submission.submitted_at.desc())
-                    .first()
-                )
-                if submission and submission.final_score is not None:
-                    scores.append(float(submission.final_score))
-                    completed_assignments += 1
-            avg_score = sum(scores) / len(scores) if scores else None
+
+        avg_score = sum(scores) / len(scores) if scores else None
         
         if avg_score is not None:
             course_scores.append(avg_score)
@@ -332,6 +351,7 @@ def get_course_report(
                 "average_score": round(avg_score, 2) if avg_score is not None else None,
                 "completed_assignments": completed_assignments,
                 "total_assignments": total_assignments,
+                "assignment_grades": assignment_grades,
             }
         )
     
@@ -354,7 +374,15 @@ def get_course_report(
             {"id": e.student.id, "name": e.student.full_name, "email": e.student.email}
             for e in enrollments
         ],
-        "assignments": assignments,
+        "assignments": [
+            {
+                "id": assignment.id,
+                "title": assignment.title,
+                "max_score": assignment.max_score,
+                "due_date": assignment.due_date.isoformat() if assignment.due_date else None,
+            }
+            for assignment in assignments
+        ],
         "course_average_score": course_average_score,
         "student_reports": student_reports,
     }
@@ -363,10 +391,12 @@ def get_course_report(
 @router.get("/course/{course_id}/export")
 def export_course_report(
     course_id: int,
+    student_ids: Optional[str] = None,
+    assignment_ids: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.FACULTY, UserRole.ADMIN])),
 ):
-    """Downloadable CSV summary for a course: per-student averages and completion."""
+    """Downloadable CSV report for a course with optional student/assignment filters."""
     course = db.query(Course).filter(Course.id == course_id).first()
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
@@ -375,73 +405,102 @@ def export_course_report(
     if current_user.role == UserRole.FACULTY and course.instructor_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized")
     
+    def parse_ids_csv(raw: Optional[str]) -> Optional[set[int]]:
+        if not raw:
+            return None
+        try:
+            parsed = {int(chunk.strip()) for chunk in raw.split(",") if chunk.strip()}
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Invalid filter format. Expected comma-separated integer IDs.")
+        return parsed if parsed else None
+
+    selected_student_ids = parse_ids_csv(student_ids)
+    selected_assignment_ids = parse_ids_csv(assignment_ids)
+
     enrollments = db.query(Enrollment).filter(
         and_(Enrollment.course_id == course_id, Enrollment.status == EnrollmentStatus.ACTIVE)
     ).all()
-    assignments = db.query(Assignment).filter(Assignment.course_id == course_id).all()
+
+    if selected_student_ids is not None:
+        enrollments = [enrollment for enrollment in enrollments if enrollment.student_id in selected_student_ids]
+
+    assignments_query = db.query(Assignment).filter(Assignment.course_id == course_id)
+    if selected_assignment_ids is not None:
+        assignments_query = assignments_query.filter(Assignment.id.in_(selected_assignment_ids))
+    assignments = assignments_query.order_by(Assignment.due_date.asc(), Assignment.id.asc()).all()
+
+    assignment_ids_list = [assignment.id for assignment in assignments]
+    student_ids_list = [enrollment.student_id for enrollment in enrollments]
+
+    submissions = []
+    if assignment_ids_list and student_ids_list:
+        submissions = (
+            db.query(Submission)
+            .filter(
+                Submission.assignment_id.in_(assignment_ids_list),
+                Submission.student_id.in_(student_ids_list),
+            )
+            .order_by(Submission.submitted_at.desc())
+            .all()
+        )
+
+    latest_by_student_assignment = {}
+    for submission in submissions:
+        key = (submission.student_id, submission.assignment_id)
+        if key not in latest_by_student_assignment:
+            latest_by_student_assignment[key] = submission
+
     total_assignments = len(assignments)
-    
-    # Build per-student stats (same logic as get_course_report)
+    now = datetime.utcnow()
+
+    # Build per-student stats
     rows = []
     for enrollment in enrollments:
         student = enrollment.student
-        
-        if enrollment.current_grade is not None:
-            avg_score = float(enrollment.current_grade)
-            completed_assignments = sum(
-                1
-                for assignment in assignments
-                if db.query(Submission)
-                .filter(
-                    Submission.assignment_id == assignment.id,
-                    Submission.student_id == student.id,
-                    Submission.final_score.isnot(None),
-                )
-                .first()
-            )
-        else:
-            scores = []
-            completed_assignments = 0
-            for assignment in assignments:
-                submission = (
-                    db.query(Submission)
-                    .filter(
-                        Submission.assignment_id == assignment.id,
-                        Submission.student_id == student.id,
-                        Submission.final_score.isnot(None),
-                    )
-                    .order_by(Submission.submitted_at.desc())
-                    .first()
-                )
-                if submission and submission.final_score is not None:
-                    scores.append(float(submission.final_score))
-                    completed_assignments += 1
-            avg_score = sum(scores) / len(scores) if scores else None
-        
-        rows.append(
-            {
-                "Student Name": student.full_name,
-                "Email": student.email,
-                "Student ID": student.student_id or "",
-                "Average Grade": round(avg_score, 2) if avg_score is not None else "",
-                "Completed Assignments": completed_assignments,
-                "Total Assignments": total_assignments,
-            }
-        )
+        row = {
+            "Student Name": student.full_name,
+            "Email": student.email,
+            "Student ID": student.student_id or "",
+        }
+
+        scores = []
+        completed_assignments = 0
+        for assignment in assignments:
+            submission = latest_by_student_assignment.get((student.id, assignment.id))
+            score_value = float(submission.final_score) if submission and submission.final_score is not None else None
+
+            if score_value is not None:
+                scores.append(score_value)
+                completed_assignments += 1
+
+            if score_value is not None:
+                status = "Graded"
+            elif submission is not None:
+                status = "Ungraded"
+            elif assignment.due_date and assignment.due_date < now:
+                status = "Missing"
+            else:
+                status = "Not Submitted"
+
+            row[f"{assignment.title} - Score"] = round(score_value, 2) if score_value is not None else ""
+            row[f"{assignment.title} - Status"] = status
+
+        avg_score = sum(scores) / len(scores) if scores else None
+        row["Average Grade"] = round(avg_score, 2) if avg_score is not None else ""
+        row["Completed Assignments"] = completed_assignments
+        row["Total Assignments"] = total_assignments
+
+        rows.append(row)
     
     # Create CSV
     output = io.StringIO()
-    writer = csv.DictWriter(
-        output,
-        fieldnames=[
-            "Student Name",
-            "Email",
-            "Student ID",
-            "Average Grade",
-            "Completed Assignments",
-            "Total Assignments",
-        ],
-    )
+    fieldnames = ["Student Name", "Email", "Student ID"]
+    for assignment in assignments:
+        fieldnames.append(f"{assignment.title} - Score")
+        fieldnames.append(f"{assignment.title} - Status")
+    fieldnames.extend(["Average Grade", "Completed Assignments", "Total Assignments"])
+
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
     writer.writeheader()
     for row in rows:
         writer.writerow(row)
