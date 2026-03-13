@@ -305,6 +305,7 @@ def get_course_report(
     student_reports = []
     course_scores = []
     total_assignments = len(assignments)
+    now = datetime.utcnow()
     
     for enrollment in enrollments:
         student = enrollment.student
@@ -329,8 +330,10 @@ def get_course_report(
                     "status": (
                         "graded"
                         if score is not None
-                        else "submitted"
+                        else "ungraded"
                         if submission is not None
+                        else "missing"
+                        if assignment.due_date and assignment.due_date < now
                         else "not_submitted"
                     ),
                     "submitted_at": submission.submitted_at.isoformat() if submission and submission.submitted_at else None,

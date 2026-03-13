@@ -56,7 +56,7 @@ type CourseReport = {
             assignment_title: string;
             score?: number | null;
             max_score?: number;
-            status: 'graded' | 'submitted' | 'not_submitted';
+            status: 'graded' | 'ungraded' | 'missing' | 'not_submitted';
             submitted_at?: string | null;
         }[];
     }[];
@@ -109,6 +109,11 @@ export default function FacultyReportsPage() {
                 : studentOptions,
         [studentOptions, selectedStudentIds],
     );
+
+    const areAllStudentsSelected =
+        studentOptions.length > 0 && selectedStudentIds.length === studentOptions.length;
+    const areAllAssignmentsSelected =
+        assignmentOptions.length > 0 && selectedAssignmentIds.length === assignmentOptions.length;
 
     const getGradeForAssignment = (
         student: NonNullable<CourseReport['student_reports']>[number],
@@ -268,9 +273,24 @@ export default function FacultyReportsPage() {
                 <CardContent className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <div className="border rounded-lg p-4">
                         <div className="flex items-center justify-between mb-3">
-                            <p className="text-sm font-medium text-gray-800">Students</p>
-                            <Button variant="ghost" size="sm" onClick={() => setSelectedStudentIds([])}>
-                                All students
+                            <div className="flex items-center gap-2">
+                                <p className="text-sm font-medium text-gray-800">Students</p>
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                                    {selectedStudentIds.length > 0 ? selectedStudentIds.length : studentOptions.length} selected
+                                </span>
+                            </div>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                    if (areAllStudentsSelected) {
+                                        setSelectedStudentIds([]);
+                                    } else {
+                                        setSelectedStudentIds(studentOptions.map((student) => student.id));
+                                    }
+                                }}
+                            >
+                                {areAllStudentsSelected ? 'Deselect all' : 'Select all'}
                             </Button>
                         </div>
                         <div className="max-h-44 overflow-auto space-y-2 pr-1">
@@ -296,9 +316,24 @@ export default function FacultyReportsPage() {
 
                     <div className="border rounded-lg p-4">
                         <div className="flex items-center justify-between mb-3">
-                            <p className="text-sm font-medium text-gray-800">Assignments</p>
-                            <Button variant="ghost" size="sm" onClick={() => setSelectedAssignmentIds([])}>
-                                All assignments
+                            <div className="flex items-center gap-2">
+                                <p className="text-sm font-medium text-gray-800">Assignments</p>
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                                    {selectedAssignmentIds.length > 0 ? selectedAssignmentIds.length : assignmentOptions.length} selected
+                                </span>
+                            </div>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                    if (areAllAssignmentsSelected) {
+                                        setSelectedAssignmentIds([]);
+                                    } else {
+                                        setSelectedAssignmentIds(assignmentOptions.map((assignment) => assignment.id));
+                                    }
+                                }}
+                            >
+                                {areAllAssignmentsSelected ? 'Deselect all' : 'Select all'}
                             </Button>
                         </div>
                         <div className="max-h-44 overflow-auto space-y-2 pr-1">
@@ -523,8 +558,12 @@ export default function FacultyReportsPage() {
                                                             <Badge variant={grade.score >= 75 ? 'success' : 'warning'}>
                                                                 {grade.score.toFixed(1)}%
                                                             </Badge>
-                                                        ) : grade?.status === 'submitted' ? (
-                                                            <span className="text-xs text-amber-600">Submitted</span>
+                                                        ) : grade?.status === 'ungraded' ? (
+                                                            <Badge variant="warning">Ungraded</Badge>
+                                                        ) : grade?.status === 'missing' ? (
+                                                            <Badge variant="destructive">Missing</Badge>
+                                                        ) : grade?.status === 'not_submitted' ? (
+                                                            <span className="text-xs text-gray-500">Not Submitted</span>
                                                         ) : (
                                                             <span className="text-xs text-gray-400">—</span>
                                                         )}

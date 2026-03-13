@@ -5,27 +5,16 @@ import {
     format, 
     isSameDay, 
     isToday, 
-    startOfWeek, 
-    endOfWeek, 
-    addDays, 
     differenceInDays,
     differenceInHours,
     isPast,
-    isFuture,
     parseISO,
-    isWithinInterval,
-    addWeeks,
-    subWeeks
 } from 'date-fns';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
     CalendarDays, 
     ChevronLeft, 
     ChevronRight, 
-    Calendar as CalendarIcon,
-    List,
-    LayoutGrid,
-    Clock,
     AlertCircle,
     CheckCircle2,
     BookOpen,
@@ -37,8 +26,6 @@ import {
 } from 'lucide-react';
 
 // ============== Types ==============
-
-export type CalendarViewMode = 'month' | 'week' | 'list';
 
 export type CalendarEventType = 
     | 'deadline' 
@@ -66,7 +53,7 @@ type DashboardCalendarProps = {
     selectedDate?: Date | null;
     onSelectDate?: (date: Date | null) => void;
     showViewToggle?: boolean;
-    defaultView?: CalendarViewMode;
+    defaultView?: 'month';
     compactMode?: boolean;
 };
 
@@ -149,8 +136,6 @@ export function DashboardCalendar({
     const [currentMonth, setCurrentMonth] = useState<Date>(
         () => new Date(new Date().getFullYear(), new Date().getMonth(), 1),
     );
-    const [viewMode, setViewMode] = useState<CalendarViewMode>(defaultView);
-    const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => startOfWeek(new Date()));
     const didAutoNav = useRef(false);
     const calendarRef = useRef<HTMLDivElement>(null);
     
@@ -162,19 +147,15 @@ export function DashboardCalendar({
     const goToToday = useCallback(() => {
         const today = new Date();
         setCurrentMonth(new Date(today.getFullYear(), today.getMonth(), 1));
-        setCurrentWeekStart(startOfWeek(today));
         onSelectDate?.(today);
     }, [onSelectDate]);
 
     // Check if currently showing today's month/week
     const isShowingToday = useMemo(() => {
         const today = new Date();
-        if (viewMode === 'month') {
-            return currentMonth.getFullYear() === today.getFullYear() && 
-                   currentMonth.getMonth() === today.getMonth();
-        }
-        return isWithinInterval(today, { start: currentWeekStart, end: endOfWeek(currentWeekStart) });
-    }, [currentMonth, currentWeekStart, viewMode]);
+        return currentMonth.getFullYear() === today.getFullYear() && 
+            currentMonth.getMonth() === today.getMonth();
+    }, [currentMonth]);
 
     // Auto-navigate to nearest upcoming event month once data loads
     useEffect(() => {
@@ -202,18 +183,10 @@ export function DashboardCalendar({
             
             if (e.key === 'ArrowLeft') {
                 e.preventDefault();
-                if (viewMode === 'month') {
-                    setCurrentMonth((p) => new Date(p.getFullYear(), p.getMonth() - 1, 1));
-                } else {
-                    setCurrentWeekStart((p) => subWeeks(p, 1));
-                }
+                setCurrentMonth((p) => new Date(p.getFullYear(), p.getMonth() - 1, 1));
             } else if (e.key === 'ArrowRight') {
                 e.preventDefault();
-                if (viewMode === 'month') {
-                    setCurrentMonth((p) => new Date(p.getFullYear(), p.getMonth() + 1, 1));
-                } else {
-                    setCurrentWeekStart((p) => addWeeks(p, 1));
-                }
+                setCurrentMonth((p) => new Date(p.getFullYear(), p.getMonth() + 1, 1));
             } else if (e.key === 't' || e.key === 'T') {
                 e.preventDefault();
                 goToToday();
@@ -222,7 +195,7 @@ export function DashboardCalendar({
 
         document.addEventListener('keydown', handleKeyDown);
         return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [viewMode, goToToday]);
+    }, [goToToday]);
 
     // Touch gesture handlers for swipe navigation
     const handleTouchStart = (e: React.TouchEvent) => {
@@ -239,19 +212,9 @@ export function DashboardCalendar({
         // Only trigger swipe if horizontal movement is greater than vertical
         if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
             if (deltaX > 0) {
-                // Swipe right - go to previous
-                if (viewMode === 'month') {
-                    setCurrentMonth((p) => new Date(p.getFullYear(), p.getMonth() - 1, 1));
-                } else {
-                    setCurrentWeekStart((p) => subWeeks(p, 1));
-                }
+                setCurrentMonth((p) => new Date(p.getFullYear(), p.getMonth() - 1, 1));
             } else {
-                // Swipe left - go to next
-                if (viewMode === 'month') {
-                    setCurrentMonth((p) => new Date(p.getFullYear(), p.getMonth() + 1, 1));
-                } else {
-                    setCurrentWeekStart((p) => addWeeks(p, 1));
-                }
+                setCurrentMonth((p) => new Date(p.getFullYear(), p.getMonth() + 1, 1));
             }
         }
     };
@@ -317,24 +280,6 @@ export function DashboardCalendar({
         while (days.length % 7 !== 0) days.push(null);
         return days;
     }, [currentMonth]);
-
-    // Week days for week view
-    const weekDays = useMemo(() => {
-        const days: Date[] = [];
-        for (let i = 0; i < 7; i++) {
-            days.push(addDays(currentWeekStart, i));
-        }
-        return days;
-    }, [currentWeekStart]);
-
-    // Sorted events for list view
-    const sortedEvents = useMemo(() => {
-        const todayStr = new Date().toISOString().slice(0, 10);
-        return [...events]
-            .filter((e) => e.date >= todayStr)
-            .sort((a, b) => a.date.localeCompare(b.date))
-            .slice(0, 15);
-    }, [events]);
 
     const weekdayLabels = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
@@ -431,107 +376,6 @@ export function DashboardCalendar({
         </div>
     );
 
-    const renderWeekView = () => (
-        <div className="space-y-2">
-            <div className="grid grid-cols-7 gap-1">
-                {weekDays.map((date, index) => (
-                    <div key={index} className="text-center">
-                        <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">
-                            {weekdayLabels[index]}
-                        </div>
-                        {renderDayCell(date.getDate(), index, true, date)}
-                    </div>
-                ))}
-            </div>
-            
-            {/* Week events summary */}
-            <div className="border-t pt-2 mt-2 max-h-32 overflow-y-auto">
-                {weekDays.map((date) => {
-                    const dateKey = format(date, 'yyyy-MM-dd');
-                    const dayEvents = eventsByDate.get(dateKey) || [];
-                    if (dayEvents.length === 0) return null;
-                    
-                    return (
-                        <div key={dateKey} className="mb-2">
-                            <p className="text-[10px] font-semibold text-gray-500 uppercase">
-                                {format(date, 'EEE, MMM d')}
-                            </p>
-                            {dayEvents.slice(0, 2).map((ev, i) => {
-                                const courseColor = getCourseColor(ev.course_code, ev.course_id);
-                                const timeInfo = getTimeRemaining(ev.date);
-                                return (
-                                    <div 
-                                        key={i} 
-                                        className={`text-[11px] px-2 py-1 rounded mt-0.5 ${courseColor.bg} ${courseColor.text} truncate flex items-center justify-between`}
-                                    >
-                                        <span className="truncate">{ev.title || ev.course_code || ev.event_type}</span>
-                                        {!timeInfo.overdue && (
-                                            <span className={`text-[9px] ml-1 flex-shrink-0 ${timeInfo.urgent ? 'font-bold' : ''}`}>
-                                                {timeInfo.text}
-                                            </span>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                            {dayEvents.length > 2 && (
-                                <p className="text-[10px] text-gray-400 mt-0.5">+{dayEvents.length - 2} more</p>
-                            )}
-                        </div>
-                    );
-                })}
-            </div>
-        </div>
-    );
-
-    const renderListView = () => (
-        <div className="space-y-1 max-h-64 overflow-y-auto">
-            {sortedEvents.length === 0 ? (
-                <p className="text-[11px] text-gray-400 text-center py-4">No upcoming events</p>
-            ) : (
-                sortedEvents.map((event, index) => {
-                    const courseColor = getCourseColor(event.course_code, event.course_id);
-                    const timeInfo = getTimeRemaining(event.date);
-                    const style = getEventTypeStyle(event.event_type);
-                    const IconComponent = style.icon;
-                    
-                    return (
-                        <button
-                            key={index}
-                            type="button"
-                            onClick={() => onSelectDate?.(parseISO(event.date))}
-                            className={`w-full flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 transition-colors text-left border ${courseColor.border}`}
-                        >
-                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${courseColor.bg}`}>
-                                <IconComponent className={`w-4 h-4 ${style.color}`} />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <p className="text-[11px] font-medium text-gray-900 truncate">
-                                    {event.title || event.course_code || style.label}
-                                </p>
-                                <p className="text-[10px] text-gray-500">
-                                    {event.course_code && <span className="mr-1">{event.course_code} ·</span>}
-                                    {format(parseISO(event.date), 'MMM d, yyyy')}
-                                </p>
-                            </div>
-                            <div className="flex-shrink-0 text-right">
-                                <span className={`
-                                    text-[10px] px-1.5 py-0.5 rounded-full font-medium
-                                    ${timeInfo.overdue 
-                                        ? 'bg-gray-100 text-gray-500' 
-                                        : timeInfo.urgent 
-                                            ? 'bg-red-100 text-red-700' 
-                                            : 'bg-gray-100 text-gray-600'}
-                                `}>
-                                    {timeInfo.text}
-                                </span>
-                            </div>
-                        </button>
-                    );
-                })
-            )}
-        </div>
-    );
-
     return (
         <Card 
             ref={calendarRef} 
@@ -546,101 +390,59 @@ export function DashboardCalendar({
                         <CalendarDays className="w-4 h-4 text-primary" />
                         Calendar
                     </span>
-                    
-                    {/* View mode toggle */}
-                    {showViewToggle && (
-                        <div className="flex items-center gap-0.5 bg-gray-100 rounded-md p-0.5">
-                            <button
-                                type="button"
-                                onClick={() => setViewMode('month')}
-                                className={`p-1 rounded ${viewMode === 'month' ? 'bg-white shadow-sm text-primary' : 'text-gray-500 hover:text-gray-700'}`}
-                                title="Month view"
-                            >
-                                <LayoutGrid className="w-3 h-3" />
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setViewMode('week')}
-                                className={`p-1 rounded ${viewMode === 'week' ? 'bg-white shadow-sm text-primary' : 'text-gray-500 hover:text-gray-700'}`}
-                                title="Week view"
-                            >
-                                <CalendarIcon className="w-3 h-3" />
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setViewMode('list')}
-                                className={`p-1 rounded ${viewMode === 'list' ? 'bg-white shadow-sm text-primary' : 'text-gray-500 hover:text-gray-700'}`}
-                                title="List view"
-                            >
-                                <List className="w-3 h-3" />
-                            </button>
-                        </div>
-                    )}
                 </CardTitle>
                 
                 {/* Navigation */}
-                {viewMode !== 'list' && (
-                    <div className="flex items-center justify-between mt-2">
-                        <button
-                            type="button"
-                            onClick={goToPrevious}
-                            className="p-1 rounded-md hover:bg-gray-100 transition-colors text-gray-500"
-                            aria-label={viewMode === 'month' ? 'Previous month' : 'Previous week'}
-                        >
-                            <ChevronLeft className="w-4 h-4" />
-                        </button>
-                        
-                        <div className="flex items-center gap-2">
-                            <span className="text-xs font-medium text-gray-700">
-                                {viewMode === 'month' 
-                                    ? format(currentMonth, 'MMMM yyyy')
-                                    : `${format(currentWeekStart, 'MMM d')} - ${format(endOfWeek(currentWeekStart), 'MMM d, yyyy')}`
-                                }
-                            </span>
-                            
-                            {/* Today button */}
-                            {!isShowingToday && (
-                                <button
-                                    type="button"
-                                    onClick={goToToday}
-                                    className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium hover:bg-primary/20 transition-colors"
-                                >
-                                    Today
-                                </button>
-                            )}
-                        </div>
-                        
-                        <button
-                            type="button"
-                            onClick={goToNext}
-                            className="p-1 rounded-md hover:bg-gray-100 transition-colors text-gray-500"
-                            aria-label={viewMode === 'month' ? 'Next month' : 'Next week'}
-                        >
-                            <ChevronRight className="w-4 h-4" />
-                        </button>
+                <div className="flex items-center justify-between mt-2">
+                    <button
+                        type="button"
+                        onClick={goToPrevious}
+                        className="p-1 rounded-md hover:bg-gray-100 transition-colors text-gray-500"
+                        aria-label="Previous month"
+                    >
+                        <ChevronLeft className="w-4 h-4" />
+                    </button>
+
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-gray-700">
+                            {format(currentMonth, 'MMMM yyyy')}
+                        </span>
+
+                        {!isShowingToday && (
+                            <button
+                                type="button"
+                                onClick={goToToday}
+                                className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium hover:bg-primary/20 transition-colors"
+                            >
+                                Today
+                            </button>
+                        )}
                     </div>
-                )}
+
+                    <button
+                        type="button"
+                        onClick={goToNext}
+                        className="p-1 rounded-md hover:bg-gray-100 transition-colors text-gray-500"
+                        aria-label="Next month"
+                    >
+                        <ChevronRight className="w-4 h-4" />
+                    </button>
+                </div>
             </CardHeader>
             
             <CardContent className="px-4 pb-4">
-                {/* Weekday headers for month view */}
-                {viewMode === 'month' && (
-                    <div className="grid grid-cols-7 gap-1 mb-1">
-                        {weekdayLabels.map((day) => (
-                            <div
-                                key={day}
-                                className="text-center text-[10px] font-semibold uppercase tracking-wider text-gray-400 py-1"
-                            >
-                                {day}
-                            </div>
-                        ))}
-                    </div>
-                )}
+                <div className="grid grid-cols-7 gap-1 mb-1">
+                    {weekdayLabels.map((day) => (
+                        <div
+                            key={day}
+                            className="text-center text-[10px] font-semibold uppercase tracking-wider text-gray-400 py-1"
+                        >
+                            {day}
+                        </div>
+                    ))}
+                </div>
 
-                {/* Calendar content based on view mode */}
-                {viewMode === 'month' && renderMonthView()}
-                {viewMode === 'week' && renderWeekView()}
-                {viewMode === 'list' && renderListView()}
+                {renderMonthView()}
 
                 {/* Legend */}
                 <div className="mt-3 pt-2 border-t border-gray-100">
