@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
@@ -61,6 +61,7 @@ export default function EditAssignmentPage() {
     const [success, setSuccess] = useState<string | null>(null);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [testCases, setTestCases] = useState<EditableTestCase[]>([]);
+    const topAnchorRef = useRef<HTMLDivElement>(null);
     const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
         basic: true, timing: true, tests: true, submission: false, late: false, code: false, integrity: false, publish: true,
     });
@@ -82,14 +83,14 @@ export default function EditAssignmentPage() {
             title: '', description: '', instructions: '',
             language_id: undefined as unknown as number,
             starter_code: '', solution_code: '',
-            max_score: 100, passing_score: 60,
-            start_date: '', due_date: '', allow_late: true, late_penalty_per_day: 10,
+            max_score: 100, passing_score: 60, difficulty: 'medium',
+            start_date: '', due_date: '', grading_due_at: '', allow_late: true, late_penalty_per_day: 10,
             max_late_days: 7, max_attempts: 0, max_file_size_mb: 10,
-            allowedExtensionsStr: '',
+            allowedExtensionsStr: '', requiredFilesStr: '',
             allow_groups: false, max_group_size: 4,
             enable_plagiarism_check: true, plagiarism_threshold: 30,
             enable_ai_detection: true, ai_detection_threshold: 50,
-            is_published: false,
+            test_weight: 70, rubric_weight: 30, is_published: false,
         },
     });
 
@@ -113,20 +114,25 @@ export default function EditAssignmentPage() {
         setValue('solution_code', a.solution_code ?? '');
         setValue('max_score', a.max_score ?? 100);
         setValue('passing_score', a.passing_score ?? 60);
+        setValue('difficulty', a.difficulty ?? 'medium');
         if (a.start_date) setValue('start_date', toDateTimeInput(new Date(a.start_date)));
         if (a.due_date) setValue('due_date', toDateTimeInput(new Date(a.due_date)));
+        if (a.grading_due_at) setValue('grading_due_at', toDateTimeInput(new Date(a.grading_due_at)));
         setValue('allow_late', a.allow_late ?? true);
         setValue('late_penalty_per_day', a.late_penalty_per_day ?? 10);
         setValue('max_late_days', a.max_late_days ?? 7);
         setValue('max_attempts', a.max_attempts ?? 0);
         setValue('max_file_size_mb', a.max_file_size_mb ?? 10);
         setValue('allowedExtensionsStr', (a.allowed_file_extensions ?? []).join(', '));
+        setValue('requiredFilesStr', (a.required_files ?? []).join(', '));
         setValue('allow_groups', a.allow_groups ?? false);
         setValue('max_group_size', a.max_group_size ?? 4);
         setValue('enable_plagiarism_check', a.enable_plagiarism_check ?? true);
         setValue('plagiarism_threshold', a.plagiarism_threshold ?? 30);
         setValue('enable_ai_detection', a.enable_ai_detection ?? true);
         setValue('ai_detection_threshold', a.ai_detection_threshold ?? 50);
+        setValue('test_weight', a.test_weight ?? 70);
+        setValue('rubric_weight', a.rubric_weight ?? 30);
         setValue('is_published', a.is_published ?? false);
 
         const existingTestCases = Array.isArray(a.test_cases) ? a.test_cases : [];
@@ -191,8 +197,10 @@ export default function EditAssignmentPage() {
                 solution_code: values.solution_code || undefined,
                 max_score: values.max_score,
                 passing_score: values.passing_score,
+                difficulty: values.difficulty,
                 start_date: values.start_date ? new Date(values.start_date).toISOString() : null,
                 due_date: new Date(values.due_date).toISOString(),
+                grading_due_at: values.grading_due_at ? new Date(values.grading_due_at).toISOString() : null,
                 allow_late: values.allow_late,
                 late_penalty_per_day: values.late_penalty_per_day,
                 max_late_days: values.max_late_days,
@@ -204,6 +212,8 @@ export default function EditAssignmentPage() {
                 plagiarism_threshold: values.plagiarism_threshold,
                 enable_ai_detection: values.enable_ai_detection,
                 ai_detection_threshold: values.ai_detection_threshold,
+                test_weight: values.test_weight,
+                rubric_weight: values.rubric_weight,
                 is_published: values.is_published,
                 test_cases: testCases.map((tc, idx) => ({
                     name: tc.name,
@@ -223,12 +233,18 @@ export default function EditAssignmentPage() {
             if (values.allowedExtensionsStr?.trim()) {
                 payload.allowed_file_extensions = values.allowedExtensionsStr.split(',').map(s => s.trim()).filter(Boolean);
             }
+            if (values.requiredFilesStr?.trim()) {
+                payload.required_files = values.requiredFilesStr.split(',').map(s => s.trim()).filter(Boolean);
+            }
             await apiClient.updateAssignment(assignmentId, payload);
         },
         onSuccess: () => {
             setSuccess('Assignment updated successfully!');
             queryClient.invalidateQueries({ queryKey: ['assignment', assignmentId] });
             queryClient.invalidateQueries({ queryKey: ['assignments'] });
+            requestAnimationFrame(() => {
+                topAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
             setTimeout(() => setSuccess(null), 4000);
         },
         onError: (err: any) => {
@@ -305,6 +321,7 @@ export default function EditAssignmentPage() {
 
     return (
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+            <div ref={topAnchorRef} />
             {/* Header */}
             <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
@@ -371,7 +388,7 @@ export default function EditAssignmentPage() {
                     <SectionHeader id="timing" icon={Clock} title="Timing & Scoring" />
                     {expandedSections.timing && (
                         <div className="px-6 pb-6 space-y-4">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
                                 <Controller
                                     name="start_date"
                                     control={control}
@@ -401,8 +418,32 @@ export default function EditAssignmentPage() {
                                         />
                                     )}
                                 />
+                                <Controller
+                                    name="grading_due_at"
+                                    control={control}
+                                    render={({ field }) => (
+                                        <Calendar
+                                            label="Assistant Grading Deadline"
+                                            selectedDate={parseDateTimeInput(field.value)}
+                                            onDateChange={(date) => field.onChange(date ? toDateTimeInput(date) : '')}
+                                            minDate={parseDateTimeInput(watchDueDate) || undefined}
+                                            includeTime
+                                            error={errors.grading_due_at?.message}
+                                        />
+                                    )}
+                                />
                                 <Input label="Max Score" type="number" min={0} {...register('max_score', { valueAsNumber: true })} error={errors.max_score?.message} />
                                 <Input label="Passing Score" type="number" min={0} {...register('passing_score', { valueAsNumber: true })} error={errors.passing_score?.message} />
+                            </div>
+                            <p className="text-xs text-gray-500 -mt-2">
+                                Optional deadline for assistants to complete grading. This appears in assistant notifications and calendar.
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                                <Select label="Difficulty" {...register('difficulty')} options={[
+                                    { value: 'easy', label: 'Easy' }, { value: 'medium', label: 'Medium' }, { value: 'hard', label: 'Hard' },
+                                ]} />
+                                <Input label="Test Weight (%)" type="number" min={0} max={100} {...register('test_weight', { valueAsNumber: true })} />
+                                <Input label="Rubric Weight (%)" type="number" min={0} max={100} {...register('rubric_weight', { valueAsNumber: true })} />
                             </div>
                             {errors.root && <p className="text-xs text-red-500">{errors.root.message}</p>}
                         </div>
@@ -546,7 +587,10 @@ export default function EditAssignmentPage() {
                                 <Input label="Max Attempts (0 = unlimited)" type="number" min={0} {...register('max_attempts', { valueAsNumber: true })} />
                                 <Input label="Max File Size (MB)" type="number" min={1} {...register('max_file_size_mb', { valueAsNumber: true })} />
                             </div>
-                            <Input label="Allowed Extensions (comma-separated)" {...register('allowedExtensionsStr')} placeholder=".py, .java, .txt" />
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <Input label="Allowed Extensions (comma-separated)" {...register('allowedExtensionsStr')} placeholder=".py, .java, .txt" />
+                                <Input label="Required Files (comma-separated)" {...register('requiredFilesStr')} placeholder="main.py, utils.py" />
+                            </div>
                             <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                                 <label className="flex items-center gap-3 cursor-pointer">
                                     <input type="checkbox" {...register('allow_groups')} className="w-4 h-4 rounded border-gray-300 text-[#862733] focus:ring-[#862733]" />

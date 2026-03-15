@@ -17,8 +17,21 @@ export interface NotificationItem {
     created_at: string;
 }
 
-export function supportsRole(type: NotificationType, role: UserRole): boolean {
-    return NOTIFICATION_TYPE_CONFIG[type].roles.includes(role);
+type NotificationTypeWithFallback = NotificationType | string;
+
+function normalizeNotificationType(type: NotificationTypeWithFallback): NotificationTypeWithFallback {
+    if (type in NOTIFICATION_TYPE_CONFIG) return type;
+    const upper = String(type).toUpperCase();
+    if (upper in NOTIFICATION_TYPE_CONFIG) return upper;
+    return type;
+}
+
+export function supportsRole(type: NotificationTypeWithFallback, role: UserRole): boolean {
+    const normalizedType = normalizeNotificationType(type);
+    if (!(normalizedType in NOTIFICATION_TYPE_CONFIG)) {
+        return false;
+    }
+    return NOTIFICATION_TYPE_CONFIG[normalizedType as NotificationType].roles.includes(role);
 }
 
 export function filterNotificationsByRole(

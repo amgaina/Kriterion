@@ -34,7 +34,9 @@ interface NotificationRowProps {
 }
 
 function NotificationRow({ notification, onClick }: NotificationRowProps) {
-    const typeLabel = NOTIFICATION_TYPE_CONFIG[notification.type].label;
+    const typeConfig = NOTIFICATION_TYPE_CONFIG[notification.type as keyof typeof NOTIFICATION_TYPE_CONFIG]
+        || NOTIFICATION_TYPE_CONFIG[String(notification.type).toUpperCase() as keyof typeof NOTIFICATION_TYPE_CONFIG];
+    const typeLabel = typeConfig?.label || 'Notification';
     
     // Parse timestamp - backend sends UTC, append 'Z' if not present to ensure proper parsing
     const timestamp = notification.created_at.endsWith('Z') 

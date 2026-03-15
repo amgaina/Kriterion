@@ -5,6 +5,7 @@ import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMutationWithInvalidation } from '@/lib/use-mutation-with-invalidation';
 import apiClient from '@/lib/api-client';
+import { parseBulkUsersFromFile, type BulkUserCreateInput, type BulkUserParseError } from '@/lib/parse-bulk-users';
 import { DataTable } from '@/components/ui/data-table';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -29,7 +30,9 @@ import {
     Download,
     Upload,
     Filter,
-    RefreshCw
+    RefreshCw,
+    AlertCircle,
+    CheckCircle2
 } from 'lucide-react';
 
 interface User {
@@ -44,6 +47,12 @@ interface User {
     last_login?: string;
 }
 
+interface BulkImportSummary {
+    created: number;
+    failed: number;
+    errors: string[];
+}
+
 export default function UsersPage() {
     const queryClient = useQueryClient();
     const [searchQuery, setSearchQuery] = useState('');
@@ -53,6 +62,11 @@ export default function UsersPage() {
     const [bulkDeleteModal, setBulkDeleteModal] = useState(false);
     const [resetPasswordModal, setResetPasswordModal] = useState<{ open: boolean; user?: User }>({ open: false });
     const [newPassword, setNewPassword] = useState('');
+    const [bulkImportModalOpen, setBulkImportModalOpen] = useState(false);
+    const [bulkImportFile, setBulkImportFile] = useState<File | null>(null);
+    const [parsedUsers, setParsedUsers] = useState<BulkUserCreateInput[]>([]);
+    const [parseErrors, setParseErrors] = useState<BulkUserParseError[]>([]);
+    const [bulkImportSummary, setBulkImportSummary] = useState<BulkImportSummary | null>(null);
 
     const { data: users = [], isLoading, refetch } = useQuery({
         queryKey: ['users', roleFilter],
@@ -98,6 +112,74 @@ export default function UsersPage() {
             setNewPassword('');
         },
     });
+
+    const bulkImportMutation = useMutation({
+        mutationFn: async (rows: BulkUserCreateInput[]) => {
+            const errors: string[] = [];
+            let created = 0;
+
+            for (const row of rows) {
+                try {
+                    await apiClient.createUser({
+                        email: row.email,
+                        full_name: row.full_name,
+                        role: row.role,
+                        password: row.password,
+                        student_id: row.student_id,
+                        is_active: row.is_active,
+                        send_welcome_email: row.send_welcome_email,
+                    });
+                    created += 1;
+                } catch (error: any) {
+                    const detail = error?.response?.data?.detail;
+                    const detailText = Array.isArray(detail)
+                        ? detail.map((item: any) => item?.msg).filter(Boolean).join(', ')
+                        : (typeof detail === 'string' ? detail : 'Failed to create user');
+                    errors.push(`${row.email}: ${detailText}`);
+                }
+            }
+
+            return {
+                created,
+                failed: rows.length - created,
+                errors,
+            };
+        },
+        onSuccess: (result) => {
+            setBulkImportSummary(result);
+            queryClient.invalidateQueries({ queryKey: ['users'] });
+        },
+    });
+
+    const resetBulkImportState = () => {
+        setBulkImportFile(null);
+        setParsedUsers([]);
+        setParseErrors([]);
+        setBulkImportSummary(null);
+    };
+
+    const handleBulkImportFile = async (file: File | null) => {
+        setBulkImportFile(file);
+        setParsedUsers([]);
+        setParseErrors([]);
+        setBulkImportSummary(null);
+
+        if (!file) return;
+
+        try {
+            const result = await parseBulkUsersFromFile(file);
+            setParsedUsers(result.users);
+            setParseErrors(result.errors);
+        } catch {
+            setParseErrors([{ row: 1, message: 'Unable to parse the selected file.' }]);
+        }
+    };
+
+    const closeBulkImportModal = () => {
+        if (bulkImportMutation.isPending) return;
+        setBulkImportModalOpen(false);
+        resetBulkImportState();
+    };
 
     const filteredUsers = users.filter((user: User) =>
         user.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -285,7 +367,14 @@ export default function UsersPage() {
                             />
                             <div className="flex-1" />
                             <div className="flex items-center gap-2">
-                                <Button variant="outline" size="sm">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                        resetBulkImportState();
+                                        setBulkImportModalOpen(true);
+                                    }}
+                                >
                                     <Upload className="w-4 h-4 mr-2" />
                                     Import
                                 </Button>
@@ -424,6 +513,108 @@ export default function UsersPage() {
                         disabled={bulkDeleteMutation.isPending}
                     >
                         {bulkDeleteMutation.isPending ? 'Deleting...' : `Delete ${selectedUsers.length} Users`}
+                    </Button>
+                </ModalFooter>
+            </Modal>
+
+            <Modal
+                isOpen={bulkImportModalOpen}
+                onClose={closeBulkImportModal}
+                title="Bulk Create Users"
+                description="Upload one template for STUDENT, FACULTY, ASSISTANT, and ADMIN users."
+                size="lg"
+            >
+                <div className="space-y-4">
+                    <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+                        <p className="text-sm text-gray-700">
+                            Required columns: <strong>email, full_name, role, password</strong>. Student rows also require <strong>student_id</strong>.
+                        </p>
+                        <a
+                            href="/bulk-user-template.csv"
+                            download="bulk-user-template.csv"
+                            className="inline-flex items-center gap-2 text-sm text-[#862733] hover:underline"
+                        >
+                            <Download className="w-4 h-4" />
+                            Download template
+                        </a>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Upload CSV or Excel</label>
+                        <input
+                            type="file"
+                            accept=".csv,.xlsx,.xls"
+                            onChange={(e) => handleBulkImportFile(e.target.files?.[0] || null)}
+                            className="block w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border file:border-gray-300 file:bg-gray-50 file:text-gray-700 hover:file:bg-gray-100"
+                        />
+                        {bulkImportFile && (
+                            <p className="mt-2 text-xs text-gray-500">Selected: {bulkImportFile.name}</p>
+                        )}
+                    </div>
+
+                    {parseErrors.length > 0 && (
+                        <Alert type="warning">
+                            <div className="space-y-1">
+                                <p className="font-medium">Some rows are invalid and will be skipped.</p>
+                                <ul className="list-disc list-inside text-sm">
+                                    {parseErrors.slice(0, 8).map((error, index) => (
+                                        <li key={`${error.row}-${index}`}>
+                                            Row {error.row}: {error.message}
+                                        </li>
+                                    ))}
+                                    {parseErrors.length > 8 && (
+                                        <li>...and {parseErrors.length - 8} more</li>
+                                    )}
+                                </ul>
+                            </div>
+                        </Alert>
+                    )}
+
+                    {(parsedUsers.length > 0 || parseErrors.length > 0) && (
+                        <div className="rounded-lg border border-gray-200 px-4 py-3 text-sm text-gray-700 flex items-center gap-2">
+                            {parsedUsers.length > 0 ? (
+                                <CheckCircle2 className="w-4 h-4 text-green-600" />
+                            ) : (
+                                <AlertCircle className="w-4 h-4 text-amber-600" />
+                            )}
+                            Ready to create <strong>{parsedUsers.length}</strong> user{parsedUsers.length === 1 ? '' : 's'}.
+                            {parseErrors.length > 0 && (
+                                <span className="text-gray-500">Skipped invalid rows: {parseErrors.length}</span>
+                            )}
+                        </div>
+                    )}
+
+                    {bulkImportSummary && (
+                        <Alert type={bulkImportSummary.failed > 0 ? 'warning' : 'success'}>
+                            <div className="space-y-1">
+                                <p className="font-medium">
+                                    Created {bulkImportSummary.created} user{bulkImportSummary.created === 1 ? '' : 's'}
+                                    {bulkImportSummary.failed > 0 ? `, failed ${bulkImportSummary.failed}` : ''}.
+                                </p>
+                                {bulkImportSummary.errors.length > 0 && (
+                                    <ul className="list-disc list-inside text-sm">
+                                        {bulkImportSummary.errors.slice(0, 8).map((error, index) => (
+                                            <li key={index}>{error}</li>
+                                        ))}
+                                        {bulkImportSummary.errors.length > 8 && (
+                                            <li>...and {bulkImportSummary.errors.length - 8} more</li>
+                                        )}
+                                    </ul>
+                                )}
+                            </div>
+                        </Alert>
+                    )}
+                </div>
+
+                <ModalFooter>
+                    <Button variant="outline" onClick={closeBulkImportModal} disabled={bulkImportMutation.isPending}>
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={() => bulkImportMutation.mutate(parsedUsers)}
+                        disabled={bulkImportMutation.isPending || parsedUsers.length === 0}
+                    >
+                        {bulkImportMutation.isPending ? 'Creating Users...' : `Create ${parsedUsers.length} Users`}
                     </Button>
                 </ModalFooter>
             </Modal>

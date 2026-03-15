@@ -103,10 +103,10 @@ export default function FacultyDashboard() {
                     </div>
                     {stats && !isLoading && stats.pending_grading > 0 && (
                         <Link
-                            href="/faculty/assignments"
+                            href="/faculty/courses"
                             className="hidden sm:flex items-center gap-1.5 text-xs bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg transition-colors"
                         >
-                            View assignments <ArrowRight className="w-3 h-3" />
+                            Open courses <ArrowRight className="w-3 h-3" />
                         </Link>
                     )}
                 </div>
@@ -115,17 +115,16 @@ export default function FacultyDashboard() {
             {/* Stats row */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
                 <DashboardStatTile label="Active Courses" value={stats?.total_courses} icon={BookOpen} loading={isLoading} color="text-blue-600" bg="bg-blue-50" />
-                <DashboardStatTile label="Students" value={stats?.total_students} icon={Users} loading={isLoading} color="text-violet-600" bg="bg-violet-50" sub="enrolled" />
-                <DashboardStatTile label="Assignments" value={stats?.total_assignments} icon={FileText} loading={isLoading} color="text-emerald-600" bg="bg-emerald-50" sub="created" />
+                <DashboardStatTile label="Students" value={stats?.total_students} icon={Users} loading={isLoading} color="text-violet-600" bg="bg-violet-50" />
+                <DashboardStatTile label="Assignments" value={stats?.total_assignments} icon={FileText} loading={isLoading} color="text-emerald-600" bg="bg-emerald-50" />
                 <DashboardStatTile
-                    label="Pending"
+                    label="Pending Review"
                     value={stats?.pending_grading}
                     icon={Clock}
                     loading={isLoading}
                     color="text-amber-600"
                     bg="bg-amber-50"
                     highlight={!!stats?.pending_grading && stats.pending_grading > 0}
-                    sub="not past due"
                 />
             </div>
 
@@ -220,11 +219,10 @@ export default function FacultyDashboard() {
                                     return (
                                         <div
                                             key={lang.id}
-                                            className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 ${colorClass}`}
+                                            className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 ${colorClass}`}
                                         >
                                             <span className="text-xs font-semibold">{lang.display_name}</span>
                                             <span className="text-[10px] opacity-60">{lang.version}</span>
-                                            <span className="text-[10px] font-mono opacity-50">{lang.file_extension}</span>
                                         </div>
                                     );
                                 })}
@@ -238,9 +236,8 @@ export default function FacultyDashboard() {
             <DashboardQuickLinks
                 items={[
                     { label: 'Courses', href: '/faculty/courses', icon: BookOpen, grad: 'from-blue-500 to-blue-600' },
-                    { label: 'Assignments', href: '/faculty/assignments', icon: FileText, grad: 'from-emerald-500 to-emerald-600' },
-                    { label: 'Submissions', href: '/faculty/submissions', icon: Clock, grad: 'from-amber-500 to-amber-600' },
                     { label: 'Reports', href: '/faculty/reports', icon: Users, grad: 'from-violet-500 to-violet-600' },
+                    { label: 'Settings', href: '/faculty/settings', icon: Clock, grad: 'from-gray-400 to-gray-500' },
                 ].map((item) => ({
                     label: item.label,
                     href: item.href,

@@ -154,35 +154,35 @@ const getRoleBadgeColor = (role: UserRole) => {
 const getTopNavItems = (role: UserRole) => {
     if (role === 'STUDENT') {
         return [
-            { label: 'Dashboard', href: '/student/dashboard' },
-            { label: 'My Courses', href: '/student/courses' },
-            { label: 'Assignments', href: '/student/assignments' },
-            { label: 'Grades', href: '/student/grades' }
+            { label: 'Dashboard', href: '/student/dashboard', icon: <DashboardIcon /> },
+            { label: 'Courses', href: '/student/courses', icon: <BookIcon /> },
+            { label: 'Assignments', href: '/student/assignments', icon: <AssignmentIcon /> },
+            { label: 'Grades', href: '/student/grades', icon: <GradeIcon /> },
         ];
     }
 
     if (role === 'FACULTY') {
         return [
-            { label: 'Dashboard', href: '/faculty/dashboard' },
-            { label: 'Courses', href: '/faculty/courses' },
-            { label: 'Reports', href: '/faculty/reports' },
+            { label: 'Dashboard', href: '/faculty/dashboard', icon: <DashboardIcon /> },
+            { label: 'Courses', href: '/faculty/courses', icon: <BookIcon /> },
+            { label: 'Reports', href: '/faculty/reports', icon: <ReportIcon /> },
         ];
     }
 
     if (role === 'ASSISTANT') {
         return [
-            { label: 'Dashboard', href: '/assistant/dashboard' },
-            { label: 'My Courses', href: '/assistant/courses' },
+            { label: 'Dashboard', href: '/assistant/dashboard', icon: <DashboardIcon /> },
+            { label: 'Courses', href: '/assistant/courses', icon: <BookIcon /> },
         ];
     }
 
     // ADMIN
     return [
-        { label: 'Dashboard', href: '/admin/dashboard' },
-        { label: 'Users', href: '/admin/users' },
-        { label: 'Courses', href: '/admin/courses' },
-        { label: 'Reports', href: '/admin/reports' },
-        { label: 'Settings', href: '/admin/settings' },
+        { label: 'Dashboard', href: '/admin/dashboard', icon: <DashboardIcon /> },
+        { label: 'Users', href: '/admin/users', icon: <UsersIcon /> },
+        { label: 'Courses', href: '/admin/courses', icon: <BookIcon /> },
+        { label: 'Reports', href: '/admin/reports', icon: <ReportIcon /> },
+        { label: 'Settings', href: '/admin/settings', icon: <SettingsIcon /> },
     ];
 };
 
@@ -494,7 +494,7 @@ export function DashboardLayout({ children, hideTopNav = false }: DashboardLayou
 
                     <div className="md:hidden border-t border-gray-200 bg-gray-50/80">
                         <nav
-                            className="grid gap-2 px-3 py-2.5"
+                            className="grid gap-1.5 px-3 py-2"
                             style={{ gridTemplateColumns: `repeat(${topNavItems.length}, minmax(0, 1fr))` }}
                         >
                             {topNavItems.map((item) => {
@@ -504,13 +504,16 @@ export function DashboardLayout({ children, hideTopNav = false }: DashboardLayou
                                         key={item.href}
                                         href={item.href}
                                         onClick={(e) => handleNavClick(e, item.href)}
-                                        className={`flex items-center justify-center py-2.5 px-3 rounded-lg text-xs sm:text-sm font-medium transition-all min-h-[40px] ${
+                                        className={`flex flex-col items-center justify-center gap-0.5 py-2 px-1 rounded-lg text-[10px] font-medium transition-all min-h-[46px] ${
                                             isActive
                                                 ? 'text-white bg-[#862733] shadow-sm'
-                                                : 'text-gray-600 hover:text-[#862733] hover:bg-white'
+                                                : 'text-gray-500 hover:text-[#862733] hover:bg-white'
                                         }`}
                                     >
-                                        {item.label}
+                                        <span className={`[&>svg]:w-4 [&>svg]:h-4 ${isActive ? 'opacity-100' : 'opacity-60'}`}>
+                                            {item.icon}
+                                        </span>
+                                        <span className="leading-none">{item.label}</span>
                                     </Link>
                                 );
                             })}

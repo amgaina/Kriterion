@@ -15,7 +15,6 @@ import {
     Upload,
     GraduationCap,
     BookOpen,
-    FileCode,
 } from 'lucide-react';
 
 /** Course status for styling */
@@ -247,41 +246,6 @@ export function CourseCard({ course, variant, basePath, actions }: CourseCardPro
                             onClick={() => handleClick()}
                         >
                             <ChevronRight className="w-4 h-4" />
-                        </Button>
-                    </div>
-                )}
-
-                {variant === 'student' && (
-                    <div className="mt-4 pt-3 border-t border-gray-100">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full gap-2 text-xs"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                router.push(courseUrl);
-                            }}
-                        >
-                            View Course
-                            <ChevronRight className="w-3.5 h-3.5" />
-                        </Button>
-                    </div>
-                )}
-
-                {variant === 'assistant' && (
-                    <div className="mt-4 pt-3 border-t border-gray-100">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full gap-2 text-xs"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                router.push(courseUrl);
-                            }}
-                        >
-                            <FileCode className="w-3.5 h-3.5" />
-                            Grade Submissions
-                            <ChevronRight className="w-3.5 h-3.5" />
                         </Button>
                     </div>
                 )}

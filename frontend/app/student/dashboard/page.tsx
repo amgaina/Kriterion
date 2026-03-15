@@ -282,13 +282,13 @@ export default function StudentDashboardPage() {
                 </div>
             </div>
 
-            {/* Quick links row - same style as faculty */}
+            {/* Quick links row */}
             <DashboardQuickLinks
                 items={[
                     { label: 'Courses', href: '/student/courses', icon: BookOpen, grad: 'from-blue-500 to-blue-600' },
                     { label: 'Assignments', href: '/student/assignments', icon: FileCode, grad: 'from-emerald-500 to-emerald-600' },
                     { label: 'Grades', href: '/student/grades', icon: Award, grad: 'from-amber-500 to-amber-600' },
-                    { label: 'Progress', href: '/student/progress', icon: CalendarDays, grad: 'from-violet-500 to-violet-600' },
+                    { label: 'Settings', href: '/student/settings', icon: CalendarDays, grad: 'from-violet-500 to-violet-600' },
                 ].map((item) => ({
                     label: item.label,
                     href: item.href,

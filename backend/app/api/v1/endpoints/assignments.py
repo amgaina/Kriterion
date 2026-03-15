@@ -52,6 +52,52 @@ from app.services.s3_storage import s3_service
 router = APIRouter()
 
 
+def _format_deadline_utc(deadline: datetime) -> str:
+    return deadline.strftime("%b %d, %Y at %I:%M %p UTC")
+
+
+def _notify_assistants_grading_deadline_change(
+    db: Session,
+    *,
+    course_id: int,
+    assignment_id: int,
+    assignment_title: str,
+    course_code: str,
+    new_deadline: Optional[datetime],
+    previous_deadline: Optional[datetime] = None,
+) -> int:
+    assistant_ids = get_assistant_ids_for_course(db, course_id)
+    if not assistant_ids:
+        return 0
+
+    if new_deadline is None:
+        title = "Grading deadline removed"
+        message = f"The grading deadline was removed for '{assignment_title}' in {course_code}."
+    elif previous_deadline is None:
+        title = "New grading deadline"
+        message = (
+            f"Please finish grading '{assignment_title}' in {course_code} by "
+            f"{_format_deadline_utc(new_deadline)}."
+        )
+    else:
+        title = "Grading deadline updated"
+        message = (
+            f"The grading deadline for '{assignment_title}' in {course_code} changed from "
+            f"{_format_deadline_utc(previous_deadline)} to {_format_deadline_utc(new_deadline)}."
+        )
+
+    return notify_users(
+        db,
+        user_ids=assistant_ids,
+        notification_type=NotificationType.GRADING_PENDING,
+        title=title,
+        message=message,
+        link=f"/assistant/courses/{course_id}/assignments/{assignment_id}",
+        course_id=course_id,
+        assignment_id=assignment_id,
+    )
+
+
 # ============== Request/Response Models ==============
 
 class CodeFile(BaseModel):
@@ -332,6 +378,8 @@ async def create_assignment(
 
         if assignment_in.start_date and assignment_in.start_date > assignment_in.due_date:
             raise HTTPException(status_code=422, detail="Start date must be on or before due date")
+        if assignment_in.grading_due_at and assignment_in.grading_due_at < assignment_in.due_date:
+            raise HTTPException(status_code=422, detail="Assistant grading deadline must be on or after due date")
 
         course = db.query(Course).filter(Course.id == assignment_in.course_id).first()
         if not course:
@@ -441,6 +489,20 @@ async def create_assignment(
             description=f"Assignment '{assignment.title}' created",
         )
         db.add(audit)
+
+        if assignment.grading_due_at:
+            try:
+                _notify_assistants_grading_deadline_change(
+                    db,
+                    course_id=assignment.course_id,
+                    assignment_id=assignment.id,
+                    assignment_title=assignment.title,
+                    course_code=course.code,
+                    new_deadline=assignment.grading_due_at,
+                )
+            except Exception as notif_err:
+                logger.warning(f"Failed to send grading deadline notifications: {str(notif_err)}")
+
         db.commit()
         
         db.refresh(assignment)
@@ -477,6 +539,8 @@ def update_assignment(
     # Get available columns from the model directly
     available_columns = {c.name for c in Assignment.__table__.columns}
 
+    previous_grading_due_at = assignment.grading_due_at
+
     # Update fields
     update_data_in = assignment_in.model_dump(exclude_unset=True)
     
@@ -489,8 +553,11 @@ def update_assignment(
     
     effective_start_date = update_data.get("start_date", assignment.start_date)
     effective_due_date = update_data.get("due_date", assignment.due_date)
+    effective_grading_due_at = update_data.get("grading_due_at", assignment.grading_due_at)
     if effective_start_date and effective_due_date and effective_start_date > effective_due_date:
         raise HTTPException(status_code=422, detail="Start date must be on or before due date")
+    if effective_grading_due_at and effective_grading_due_at < effective_due_date:
+        raise HTTPException(status_code=422, detail="Assistant grading deadline must be on or after due date")
         
     for field, value in update_data.items():
         setattr(assignment, field, value)
@@ -522,6 +589,20 @@ def update_assignment(
         description=f"Assignment '{assignment.title}' updated",
     )
     db.add(audit)
+
+    if "grading_due_at" in update_data and previous_grading_due_at != assignment.grading_due_at:
+        try:
+            _notify_assistants_grading_deadline_change(
+                db,
+                course_id=assignment.course_id,
+                assignment_id=assignment.id,
+                assignment_title=assignment.title,
+                course_code=assignment.course.code,
+                new_deadline=assignment.grading_due_at,
+                previous_deadline=previous_grading_due_at,
+            )
+        except Exception as notif_err:
+            logger.warning(f"Failed to send grading deadline update notifications: {str(notif_err)}")
     
     # The 'updated_at' field on assignment is handled by 'onupdate' in the model
     db.commit()

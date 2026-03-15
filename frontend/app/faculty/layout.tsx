@@ -16,9 +16,14 @@ export default function FacultyLayout({ children }: { children: React.ReactNode 
                 queryFn: () => apiClient.getFacultyUpcomingEvents(),
             }}
             getEventHref={(event: CalendarEvent) => {
-                if (event.event_type === 'course_start' || event.event_type === 'course_end')
-                    return `/faculty/courses/${event.id}`;
-                return `/faculty/assignments/${event.id}`;
+                if (event.event_type === 'course_start' || event.event_type === 'course_end') {
+                    const courseId = event.course_id ?? event.id;
+                    return `/faculty/courses/${courseId}`;
+                }
+                if (event.course_id) {
+                    return `/faculty/courses/${event.course_id}/assignments/${event.id}`;
+                }
+                return '/faculty/courses';
             }}
             hideCalendarSidebar={isGradingPage}
         >
