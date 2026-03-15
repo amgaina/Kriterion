@@ -64,14 +64,14 @@ export default function EditAssignmentPage() {
             title: '', description: '', instructions: '',
             language_id: undefined as unknown as number,
             starter_code: '', solution_code: '',
-            max_score: 100, passing_score: 60, difficulty: 'medium',
+            max_score: 100, passing_score: 60,
             start_date: '', due_date: '', allow_late: true, late_penalty_per_day: 10,
             max_late_days: 7, max_attempts: 0, max_file_size_mb: 10,
-            allowedExtensionsStr: '', requiredFilesStr: '',
+            allowedExtensionsStr: '',
             allow_groups: false, max_group_size: 4,
             enable_plagiarism_check: true, plagiarism_threshold: 30,
             enable_ai_detection: true, ai_detection_threshold: 50,
-            test_weight: 70, rubric_weight: 30, is_published: false,
+            is_published: false,
         },
     });
 
@@ -95,7 +95,6 @@ export default function EditAssignmentPage() {
         setValue('solution_code', a.solution_code ?? '');
         setValue('max_score', a.max_score ?? 100);
         setValue('passing_score', a.passing_score ?? 60);
-        setValue('difficulty', a.difficulty ?? 'medium');
         if (a.start_date) setValue('start_date', toDateTimeInput(new Date(a.start_date)));
         if (a.due_date) setValue('due_date', toDateTimeInput(new Date(a.due_date)));
         setValue('allow_late', a.allow_late ?? true);
@@ -104,15 +103,12 @@ export default function EditAssignmentPage() {
         setValue('max_attempts', a.max_attempts ?? 0);
         setValue('max_file_size_mb', a.max_file_size_mb ?? 10);
         setValue('allowedExtensionsStr', (a.allowed_file_extensions ?? []).join(', '));
-        setValue('requiredFilesStr', (a.required_files ?? []).join(', '));
         setValue('allow_groups', a.allow_groups ?? false);
         setValue('max_group_size', a.max_group_size ?? 4);
         setValue('enable_plagiarism_check', a.enable_plagiarism_check ?? true);
         setValue('plagiarism_threshold', a.plagiarism_threshold ?? 30);
         setValue('enable_ai_detection', a.enable_ai_detection ?? true);
         setValue('ai_detection_threshold', a.ai_detection_threshold ?? 50);
-        setValue('test_weight', a.test_weight ?? 70);
-        setValue('rubric_weight', a.rubric_weight ?? 30);
         setValue('is_published', a.is_published ?? false);
     }, [assignment, setValue]);
 
@@ -129,7 +125,6 @@ export default function EditAssignmentPage() {
                 solution_code: values.solution_code || undefined,
                 max_score: values.max_score,
                 passing_score: values.passing_score,
-                difficulty: values.difficulty,
                 start_date: values.start_date ? new Date(values.start_date).toISOString() : null,
                 due_date: new Date(values.due_date).toISOString(),
                 allow_late: values.allow_late,
@@ -143,15 +138,10 @@ export default function EditAssignmentPage() {
                 plagiarism_threshold: values.plagiarism_threshold,
                 enable_ai_detection: values.enable_ai_detection,
                 ai_detection_threshold: values.ai_detection_threshold,
-                test_weight: values.test_weight,
-                rubric_weight: values.rubric_weight,
                 is_published: values.is_published,
             };
             if (values.allowedExtensionsStr?.trim()) {
                 payload.allowed_file_extensions = values.allowedExtensionsStr.split(',').map(s => s.trim()).filter(Boolean);
-            }
-            if (values.requiredFilesStr?.trim()) {
-                payload.required_files = values.requiredFilesStr.split(',').map(s => s.trim()).filter(Boolean);
             }
             await apiClient.updateAssignment(assignmentId, payload);
         },
@@ -331,13 +321,6 @@ export default function EditAssignmentPage() {
                                 <Input label="Max Score" type="number" min={0} {...register('max_score', { valueAsNumber: true })} error={errors.max_score?.message} />
                                 <Input label="Passing Score" type="number" min={0} {...register('passing_score', { valueAsNumber: true })} error={errors.passing_score?.message} />
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                                <Select label="Difficulty" {...register('difficulty')} options={[
-                                    { value: 'easy', label: 'Easy' }, { value: 'medium', label: 'Medium' }, { value: 'hard', label: 'Hard' },
-                                ]} />
-                                <Input label="Test Weight (%)" type="number" min={0} max={100} {...register('test_weight', { valueAsNumber: true })} />
-                                <Input label="Rubric Weight (%)" type="number" min={0} max={100} {...register('rubric_weight', { valueAsNumber: true })} />
-                            </div>
                             {errors.root && <p className="text-xs text-red-500">{errors.root.message}</p>}
                         </div>
                     )}
@@ -352,10 +335,7 @@ export default function EditAssignmentPage() {
                                 <Input label="Max Attempts (0 = unlimited)" type="number" min={0} {...register('max_attempts', { valueAsNumber: true })} />
                                 <Input label="Max File Size (MB)" type="number" min={1} {...register('max_file_size_mb', { valueAsNumber: true })} />
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <Input label="Allowed Extensions (comma-separated)" {...register('allowedExtensionsStr')} placeholder=".py, .java, .txt" />
-                                <Input label="Required Files (comma-separated)" {...register('requiredFilesStr')} placeholder="main.py, utils.py" />
-                            </div>
+                            <Input label="Allowed Extensions (comma-separated)" {...register('allowedExtensionsStr')} placeholder=".py, .java, .txt" />
                             <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                                 <label className="flex items-center gap-3 cursor-pointer">
                                     <input type="checkbox" {...register('allow_groups')} className="w-4 h-4 rounded border-gray-300 text-[#862733] focus:ring-[#862733]" />

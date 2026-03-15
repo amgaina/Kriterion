@@ -44,7 +44,6 @@ interface Assignment {
     id: number;
     title: string;
     description?: string;
-    difficulty?: string;
     due_date?: string;
     is_published: boolean;
     max_score: number;
@@ -242,16 +241,32 @@ export default function CourseOverviewPage() {
             <div className="grid md:grid-cols-3 gap-6">
                 <Card className="md:col-span-2 border-0 shadow-md">
                     <CardHeader className="pb-3">
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between gap-3">
                             <CardTitle className="flex items-center gap-2 text-lg">
                                 <BarChart3 className="w-5 h-5" style={{ color: accentColor }} />
                                 Assignments
+                                {assignments.length > 0 && (
+                                    <span className="ml-1 inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">
+                                        {assignments.length} total · {publishedCount} published
+                                    </span>
+                                )}
                             </CardTitle>
-                            <Link href={`/faculty/courses/${courseId}/assignments`}>
-                                <Button variant="ghost" size="sm" className="gap-1 text-gray-600 hover:text-gray-900">
-                                    View All <ChevronRight className="w-4 h-4" />
-                                </Button>
-                            </Link>
+                            <div className="flex items-center gap-2">
+                                <Link href={`/faculty/courses/${courseId}/assignments/new`}>
+                                    <Button
+                                        size="sm"
+                                        className="gap-1.5 h-8 rounded-full px-3.5"
+                                        style={{ backgroundColor: accentColor }}
+                                    >
+                                        <Plus className="w-3.5 h-3.5" /> New
+                                    </Button>
+                                </Link>
+                                <Link href={`/faculty/courses/${courseId}/assignments`}>
+                                    <Button variant="ghost" size="sm" className="gap-1 text-gray-600 hover:text-gray-900 h-8 rounded-full px-3.5">
+                                        View All <ChevronRight className="w-3.5 h-3.5" />
+                                    </Button>
+                                </Link>
+                            </div>
                         </div>
                     </CardHeader>
                     <CardContent>
@@ -289,9 +304,6 @@ export default function CourseOverviewPage() {
                                                 </p>
                                                 <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
                                                     <span>{a.is_published ? 'Published' : 'Draft'}</span>
-                                                    {a.difficulty && (
-                                                        <span className="capitalize text-gray-400">· {a.difficulty}</span>
-                                                    )}
                                                     <span className="text-gray-400">{a.max_score} pts</span>
                                                 </div>
                                             </div>

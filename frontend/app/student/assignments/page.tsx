@@ -41,7 +41,6 @@ interface Assignment {
     course_id: number;
     due_date: string;
     max_score: number;
-    difficulty?: string;
     is_published?: boolean;
     course?: { id: number; code: string; name: string };
 }
@@ -79,12 +78,6 @@ const STATUS_CONFIG: Record<AssignmentStatus, { label: string; variant: 'default
     submitted: { label: 'Submitted', variant: 'info', icon: Clock },
     graded: { label: 'Graded', variant: 'success', icon: CheckCircle2 },
     overdue: { label: 'Overdue', variant: 'danger', icon: AlertCircle },
-};
-
-const DIFFICULTY_STYLES: Record<string, string> = {
-    easy: 'bg-green-100 text-green-700',
-    medium: 'bg-amber-100 text-amber-700',
-    hard: 'bg-red-100 text-red-700',
 };
 
 export default function StudentAssignmentsPage() {
@@ -295,7 +288,6 @@ export default function StudentAssignmentsPage() {
                         const config = STATUS_CONFIG[assignment.status];
                         const timeText = getTimeText(assignment.due_date);
                         const isUrgent = assignment.status === 'pending' || assignment.status === 'overdue';
-                        const difficultyStyle = DIFFICULTY_STYLES[(assignment.difficulty || '').toLowerCase()] ?? 'bg-gray-100 text-gray-700';
 
                         return (
                             <Link
@@ -328,11 +320,6 @@ export default function StudentAssignmentsPage() {
                                                         {assignment.title}
                                                     </h3>
                                                     <Badge variant={config.variant}>{config.label}</Badge>
-                                                    {assignment.difficulty && (
-                                                        <Badge variant="outline" className={difficultyStyle}>
-                                                            {assignment.difficulty}
-                                                        </Badge>
-                                                    )}
                                                 </div>
                                                 <p className="text-sm text-gray-500 line-clamp-1 mb-2">
                                                     {assignment.description || 'No description'}

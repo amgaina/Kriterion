@@ -3,7 +3,7 @@ Assignment Model - Comprehensive assignment management with test cases and gradi
 """
 from datetime import datetime
 from enum import Enum as PyEnum
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Text, Float, Enum, JSON
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Text, Float, JSON
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -12,12 +12,6 @@ class AssignmentStatus(str, PyEnum):
     DRAFT = "draft"
     PUBLISHED = "published"
     CLOSED = "closed"
-
-
-class DifficultyLevel(str, PyEnum):
-    EASY = "easy"
-    MEDIUM = "medium"
-    HARD = "hard"
 
 
 class Assignment(Base):
@@ -43,7 +37,6 @@ class Assignment(Base):
     # Scoring
     max_score = Column(Float, default=100.0)
     passing_score = Column(Float, default=60.0)
-    difficulty = Column(Enum(DifficultyLevel), default=DifficultyLevel.MEDIUM)
     
     # Due date & late policy
     start_date = Column(DateTime, nullable=True)
@@ -56,7 +49,6 @@ class Assignment(Base):
     max_attempts = Column(Integer, default=0)  # 0 = unlimited
     max_file_size_mb = Column(Integer, default=10)
     allowed_file_extensions = Column(JSON, nullable=True)  # [".py", ".java"]
-    required_files = Column(JSON, nullable=True)  # ["main.py", "helper.py"]
     
     # Group settings
     allow_groups = Column(Boolean, default=False)
@@ -67,10 +59,6 @@ class Assignment(Base):
     plagiarism_threshold = Column(Float, default=30.0)  # Percentage to flag
     enable_ai_detection = Column(Boolean, default=True)
     ai_detection_threshold = Column(Float, default=50.0)  # Percentage to flag
-    
-    # Auto-grading weight distribution
-    test_weight = Column(Float, default=70.0)  # Percentage from test cases
-    rubric_weight = Column(Float, default=30.0)  # Percentage from manual rubric
     
     # Status and publishing
     is_published = Column(Boolean, default=False)
@@ -84,9 +72,30 @@ class Assignment(Base):
     language = relationship("Language", back_populates="assignments")
     test_cases = relationship("TestCase", back_populates="assignment", cascade="all, delete-orphan",
                              order_by="TestCase.order")
-    rubric = relationship("Rubric", back_populates="assignment", uselist=False, cascade="all, delete-orphan")
+    rubric_rows = relationship("Rubric", back_populates="assignment", cascade="all, delete-orphan",
+                               order_by="Rubric.id")
     submissions = relationship("Submission", back_populates="assignment", cascade="all, delete-orphan")
-    
+
+    @property
+    def rubric(self):
+        """For API response: build rubric payload from rubric_rows (id, name, description, weight, points)."""
+        if not self.rubric_rows:
+            return None
+        total = sum(getattr(row, "points", 0) or 0 for row in self.rubric_rows)
+        return {
+            "items": [
+                {
+                    "id": row.rubric_item.id,
+                    "name": row.rubric_item.name,
+                    "description": getattr(row.rubric_item, "description", None) or None,
+                    "weight": row.weight,
+                    "points": getattr(row, "points", 0) or 0,
+                }
+                for row in self.rubric_rows
+            ],
+            "total_points": total,
+        }
+
     def __repr__(self):
         return f"<Assignment {self.title}>"
 
@@ -105,22 +114,23 @@ class TestCase(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     
-    # Input/Output
+    # Input/Output: stdin or file for input; text or file for expected output
     input_data = Column(Text, nullable=True)
+    input_type = Column(String(20), default="stdin", nullable=False)  # 'stdin' | 'file'
+    input_file_s3_key = Column(String(512), nullable=True)
+    input_filename = Column(String(255), nullable=True)  # e.g. input.txt (single file; used when input_files_json is empty)
+    input_files_json = Column(JSON, nullable=True)  # list of {"filename": str, "s3_key": str} for multiple input files
     expected_output = Column(Text, nullable=True)
-    
-    # For unit tests (code-based)
-    test_code = Column(Text, nullable=True)
-    setup_code = Column(Text, nullable=True)
-    teardown_code = Column(Text, nullable=True)
-    
+    expected_output_type = Column(String(20), default="text", nullable=False)  # 'text' | 'file'
+    expected_output_file_s3_key = Column(String(512), nullable=True)
+    expected_output_files_json = Column(JSON, nullable=True)  # list of {"filename": str, "s3_key": str} for multiple expected files
+
     # Scoring
     points = Column(Float, default=10.0)
-    
+
     # Visibility
     is_hidden = Column(Boolean, default=False)  # Hidden tests only shown after grading
-    is_sample = Column(Boolean, default=False)  # Sample test case for students
-    
+
     # Comparison settings
     ignore_whitespace = Column(Boolean, default=True)
     ignore_case = Column(Boolean, default=False)
@@ -146,71 +156,36 @@ class TestCase(Base):
 
 
 class Rubric(Base):
-    """
-    Rubric - Manual grading rubric for an assignment.
-    Allows faculty to define grading criteria beyond auto-graded tests.
-    """
     __tablename__ = "rubrics"
-    
     id = Column(Integer, primary_key=True, index=True)
-    assignment_id = Column(Integer, ForeignKey("assignments.id"), nullable=False, unique=True)
-    
-    # Total points from rubric (usually assignment.max_score * assignment.rubric_weight / 100)
-    total_points = Column(Float, default=30.0)
-    
+    assignment_id = Column(Integer, ForeignKey("assignments.id"), nullable=False, index=True)
+    rubric_item_id = Column(Integer, ForeignKey("rubric_items.id"), nullable=False, index=True)
+    # Percentage weight (0–100) of this criterion in the assignment's max_score.
+    weight = Column(Float, default=0.0)
+    # Points allocated to this criterion (for display and validation).
+    points = Column(Float, default=0.0)
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
-    assignment = relationship("Assignment", back_populates="rubric")
-    categories = relationship("RubricCategory", back_populates="rubric", cascade="all, delete-orphan",
-                             order_by="RubricCategory.order")
+    assignment = relationship("Assignment", back_populates="rubric_rows")
+    rubric_item = relationship("RubricItem")
     
     def __repr__(self):
-        return f"<Rubric for assignment {self.assignment_id}>"
-
-
-class RubricCategory(Base):
-    """
-    RubricCategory - Category in a rubric (e.g., Code Style, Documentation).
-    """
-    __tablename__ = "rubric_categories"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    rubric_id = Column(Integer, ForeignKey("rubrics.id"), nullable=False)
-    
-    name = Column(String(100), nullable=False)
-    description = Column(Text, nullable=True)
-    weight = Column(Float, default=100.0)  # Relative weight within rubric
-    order = Column(Integer, default=0)
-    
-    # Relationships
-    rubric = relationship("Rubric", back_populates="categories")
-    items = relationship("RubricItem", back_populates="category", cascade="all, delete-orphan",
-                        order_by="RubricItem.order")
-    
-    def __repr__(self):
-        return f"<RubricCategory {self.name}>"
+        return f"<Rubric assignment={self.assignment_id} item={self.rubric_item_id}>"
 
 
 class RubricItem(Base):
-    """
-    RubricItem - Individual grading criterion within a category.
-    """
     __tablename__ = "rubric_items"
-    
+
     id = Column(Integer, primary_key=True, index=True)
-    category_id = Column(Integer, ForeignKey("rubric_categories.id"), nullable=False)
-    
-    name = Column(String(100), nullable=False)
+    name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
-    max_points = Column(Float, default=5.0)
-    order = Column(Integer, default=0)
-    
+
     # Relationships
-    category = relationship("RubricCategory", back_populates="items")
     scores = relationship("RubricScore", back_populates="item", cascade="all, delete-orphan")
-    
+
     def __repr__(self):
         return f"<RubricItem {self.name}>"

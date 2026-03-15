@@ -64,45 +64,45 @@ class GradingService:
             passed_count = sum(1 for r in test_results if r.get('passed'))
             total_count = len(test_results)
             
-            # Calculate rubric scores (if rubric exists)
-            rubric_score = self._calculate_rubric_score(submission, test_score)
-            
-            # Calculate weighted final score
-            test_weight = assignment.test_weight or 70.0
-            rubric_weight = assignment.rubric_weight or 30.0
-            
-            if assignment.rubric:
-                raw_score = (test_score * (test_weight / 100)) + (rubric_score * (rubric_weight / 100))
-            else:
-                raw_score = test_score
-            
-            # Apply late penalty
-            final_score = raw_score * (1 - (submission.late_penalty_applied or 0) / 100)
-            
-            # Update submission
+            # Manual rubric only: do not set final_score from tests; faculty grades via rubric
             submission.tests_passed = passed_count
             submission.tests_total = total_count
-            submission.test_score = test_score
-            submission.rubric_score = rubric_score
-            submission.raw_score = raw_score
-            submission.final_score = final_score
-            submission.status = SubmissionStatus.AUTOGRADED
-            submission.graded_at = datetime.utcnow()
+            submission.test_score = test_score if total_count > 0 else None
             
-            self.db.commit()
-            
-            logger.info(f"Grading completed for submission {submission_id}: {final_score:.2f}%")
-            
-            return {
-                "submission_id": submission_id,
-                "status": "graded",
-                "test_score": test_score,
-                "rubric_score": rubric_score,
-                "raw_score": raw_score,
-                "final_score": final_score,
-                "tests_passed": passed_count,
-                "total_tests": total_count
-            }
+            if assignment.rubric:
+                submission.rubric_score = None
+                submission.raw_score = None
+                submission.final_score = None
+                submission.status = SubmissionStatus.MANUAL_REVIEW
+                submission.graded_at = None
+                self.db.commit()
+                logger.info(f"Submission {submission_id} ready for manual rubric grading")
+                return {
+                    "submission_id": submission_id,
+                    "status": "manual_review",
+                    "test_score": test_score,
+                    "tests_passed": passed_count,
+                    "total_tests": total_count
+                }
+            else:
+                raw_score = test_score
+                final_score = raw_score * (1 - (submission.late_penalty_applied or 0) / 100)
+                submission.rubric_score = None
+                submission.raw_score = raw_score
+                submission.final_score = final_score
+                submission.status = SubmissionStatus.AUTOGRADED
+                submission.graded_at = datetime.utcnow()
+                self.db.commit()
+                logger.info(f"Grading completed for submission {submission_id}: {final_score:.2f}%")
+                return {
+                    "submission_id": submission_id,
+                    "status": "graded",
+                    "test_score": test_score,
+                    "raw_score": raw_score,
+                    "final_score": final_score,
+                    "tests_passed": passed_count,
+                    "total_tests": total_count
+                }
             
         except Exception as e:
             logger.error(f"Error grading submission {submission_id}: {str(e)}")

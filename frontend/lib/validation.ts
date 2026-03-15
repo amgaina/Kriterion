@@ -86,25 +86,15 @@ export type ResetPasswordFormData = z.infer<typeof resetPasswordSchema>;
 // Assignment creation validation schema (complete)
 export const assignmentCreateSchema = z.object({
     // Required fields
-    course_id: z.coerce.number().int().positive('Course ID is required'),
     title: z.string().min(1, 'Title is required'),
     language_id: z.coerce.number().int().positive('Language is required'),
     description: z.string().min(1, 'Description is required'),
-    start_date: z
-        .string()
-        .optional()
-        .or(z.literal(''))
-        .refine((v: any) => !v || !Number.isNaN(Date.parse(v)), {
-            message: 'Invalid start date/time',
-        }),
     due_date: z
         .string()
         .min(1, 'Due date is required')
         .refine((v: any) => !Number.isNaN(Date.parse(v)), {
             message: 'Invalid date/time',
         }),
-    starter_code: z.string().optional().or(z.literal('')),
-    solution_code: z.string().optional().or(z.literal('')),
     
     // Optional fields with defaults
     instructions: z.string().optional().or(z.literal('')),
@@ -145,14 +135,7 @@ export const assignmentCreateSchema = z.object({
     message: 'Passing score cannot exceed max score',
     path: ['passing_score'],
 })
-.refine((data: any) => {
-    if (!data.start_date || !data.due_date) return true;
-    return new Date(data.start_date) <= new Date(data.due_date);
-}, {
-    message: 'Start date must be on or before due date',
-    path: ['start_date'],
-})
-.refine((data: any) => Math.abs((data.test_weight ?? 0) + (data.rubric_weight ?? 0) - 100) < 0.01, {
+.refine((data: any) => data.test_weight + data.rubric_weight === 100, {
     message: 'Test weight and manual weight must sum to 100%',
     path: ['rubric_weight'],
 });

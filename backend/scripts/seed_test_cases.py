@@ -63,7 +63,6 @@ def create_python_test_cases(assignment_id: int):
             expected_output="Hello, World!",
             points=10.0,
             is_hidden=False,
-            is_sample=True,
             ignore_whitespace=True,
             ignore_case=False,
             order=1
@@ -76,7 +75,6 @@ def create_python_test_cases(assignment_id: int):
             expected_output="Result: 5",
             points=15.0,
             is_hidden=False,
-            is_sample=True,
             ignore_whitespace=True,
             ignore_case=False,
             order=2
@@ -89,7 +87,6 @@ def create_python_test_cases(assignment_id: int):
             expected_output="Result: 0",
             points=15.0,
             is_hidden=True,
-            is_sample=False,
             ignore_whitespace=True,
             ignore_case=False,
             order=3
@@ -108,7 +105,6 @@ def create_java_test_cases(assignment_id: int):
             expected_output="Hello World",
             points=10.0,
             is_hidden=False,
-            is_sample=True,
             ignore_whitespace=True,
             ignore_case=False,
             order=1
@@ -121,7 +117,6 @@ def create_java_test_cases(assignment_id: int):
             expected_output="Output: 10",
             points=15.0,
             is_hidden=False,
-            is_sample=True,
             ignore_whitespace=True,
             ignore_case=False,
             order=2
@@ -140,7 +135,6 @@ def create_cpp_test_cases(assignment_id: int):
             expected_output="Hello, World!",
             points=10.0,
             is_hidden=False,
-            is_sample=True,
             ignore_whitespace=True,
             ignore_case=False,
             order=1
@@ -153,7 +147,6 @@ def create_cpp_test_cases(assignment_id: int):
             expected_output="Result: 42",
             points=15.0,
             is_hidden=False,
-            is_sample=True,
             ignore_whitespace=True,
             ignore_case=False,
             order=2
@@ -172,7 +165,6 @@ def create_generic_test_cases(assignment_id: int):
             expected_output="Success",
             points=10.0,
             is_hidden=False,
-            is_sample=True,
             ignore_whitespace=True,
             ignore_case=False,
             order=1

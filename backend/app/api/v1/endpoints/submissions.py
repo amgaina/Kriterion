@@ -15,7 +15,7 @@ from app.models import (
     User, UserRole, Assignment, Course, CourseAssistant, Submission, SubmissionFile, TestResult, RubricScore,
     Enrollment, EnrollmentStatus, Group, GroupMembership, AuditLog, NotificationType
 )
-from app.models.assignment import Rubric, RubricCategory, RubricItem, TestCase
+from app.models.assignment import Rubric, RubricItem, TestCase
 from app.schemas.submission import (
     SubmissionCreate,
     Submission as SubmissionSchema,
@@ -306,16 +306,6 @@ async def create_submission(
         if not group_member:
             raise HTTPException(status_code=403, detail="Not a member of this group")
     
-    # Validate required files
-    if assignment.required_files:
-        uploaded_filenames = [f.filename for f in files]
-        for required_file in assignment.required_files:
-            if required_file not in uploaded_filenames:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Required file missing: {required_file}"
-                )
-
     # Validate allowed file extensions
     allowed_extensions = assignment.allowed_file_extensions
     if allowed_extensions:

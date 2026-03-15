@@ -2,6 +2,8 @@ from typing import List, Optional, Any
 from datetime import datetime
 from pydantic import BaseModel, model_validator
 
+from app.schemas.language import Language as LanguageSchema
+
 # --- Test Case Schemas ---
 
 class TestCaseBase(BaseModel):
@@ -9,12 +11,12 @@ class TestCaseBase(BaseModel):
     description: Optional[str] = None
     input_data: Optional[str] = None
     expected_output: Optional[str] = None
-    test_code: Optional[str] = None
-    setup_code: Optional[str] = None
-    teardown_code: Optional[str] = None
+    input_type: Optional[str] = "stdin"  # 'stdin' | 'file'
+    input_filename: Optional[str] = None  # e.g. input.txt (when input_type=file)
+    expected_output_type: Optional[str] = "text"  # 'text' | 'file'
+    expected_output_files_json: Optional[List[dict]] = None  # list of {"filename": str, "s3_key": str}
     points: float = 10.0
     is_hidden: bool = False
-    is_sample: bool = False
     ignore_whitespace: bool = True
     ignore_case: bool = False
     use_regex: bool = False
@@ -22,15 +24,25 @@ class TestCaseBase(BaseModel):
     memory_limit_mb: Optional[int] = None
     order: int = 0
 
+
 class TestCaseCreate(TestCaseBase):
-    pass
+    """Create test case. Optional base64 file content for input/expected file. For multiple input/expected files use input_files/expected_output_files."""
+    input_file_base64: Optional[str] = None  # base64-encoded content when input_type=file (single file)
+    input_files: Optional[List[dict]] = None  # list of {"filename": str, "content_base64": str} or {"filename": str, "s3_key": str}
+    expected_output_file_base64: Optional[str] = None  # base64 when expected_output_type=file (single file)
+    expected_output_files: Optional[List[dict]] = None  # list of {"filename": str, "content_base64": str} or {"filename": str, "s3_key": str}
+
 
 class TestCase(TestCaseBase):
     id: int
     assignment_id: int
+    input_file_s3_key: Optional[str] = None
+    input_files_json: Optional[List[dict]] = None  # list of {"filename": str, "s3_key": str}
+    expected_output_file_s3_key: Optional[str] = None
+    expected_output_files_json: Optional[List[dict]] = None  # list of {"filename": str, "s3_key": str}
     created_at: datetime
     updated_at: Optional[datetime] = None
-    
+
     class Config:
         from_attributes = True
 
@@ -39,53 +51,39 @@ class TestCase(TestCaseBase):
 class RubricItemBase(BaseModel):
     name: str
     description: Optional[str] = None
-    max_points: float
-    order: int
+    # Percentage weight (0–100) of this criterion in the final score
+    weight: float = 0.0
+    # Points allocated to this criterion
+    points: float = 0.0
+
 
 class RubricItemCreate(RubricItemBase):
     pass
 
+
 class RubricItem(RubricItemBase):
     id: int
-    category_id: int
-    
+
     class Config:
         from_attributes = True
 
-class RubricCategoryBase(BaseModel):
-    name: str
-    description: Optional[str] = None
-    weight: float  # Percentage (0-100) - category's share of total rubric points
-    order: int
 
-class RubricCategoryCreate(RubricCategoryBase):
+class RubricCreate(BaseModel):
     items: List[RubricItemCreate]
 
-class RubricCategory(RubricCategoryBase):
-    id: int
-    rubric_id: int
-    items: List[RubricItem] = []
-    
+
+class Rubric(BaseModel):
+    items: List[RubricItem]
+    # For compatibility; frontends should rely on Assignment.max_score instead.
+    total_points: float = 0
+
     class Config:
         from_attributes = True
 
-class RubricBase(BaseModel):
-    total_points: Optional[float] = None  # Computed as max_score * rubric_weight/100 if omitted
-
-class RubricCreate(RubricBase):
-    categories: List[RubricCategoryCreate]
 
 class RubricUpdate(BaseModel):
-    total_points: Optional[float] = None
-    categories: Optional[List[RubricCategoryCreate]] = None
-
-class Rubric(RubricBase):
-    id: int
-    assignment_id: int
-    categories: List[RubricCategory] = []
-    
-    class Config:
-        from_attributes = True
+    """Partial update for rubric on an assignment."""
+    items: Optional[List[RubricItemCreate]] = None
 
 # --- Assignment Schemas ---
 
@@ -99,9 +97,6 @@ class AssignmentBase(BaseModel):
     # Scoring
     max_score: float = 100.0
     passing_score: float = 60.0
-    difficulty: str = "medium"
-    test_weight: float = 70.0
-    rubric_weight: float = 30.0
     
     # Submission settings
     allow_late: bool = True
@@ -110,7 +105,6 @@ class AssignmentBase(BaseModel):
     max_attempts: int = 0
     max_file_size_mb: int = 10
     allowed_file_extensions: Optional[List[str]] = None
-    required_files: Optional[List[str]] = None
     
     # Group settings
     allow_groups: bool = False
@@ -151,9 +145,6 @@ class AssignmentUpdate(BaseModel):
     
     max_score: Optional[float] = None
     passing_score: Optional[float] = None
-    difficulty: Optional[str] = None
-    test_weight: Optional[float] = None
-    rubric_weight: Optional[float] = None
     
     allow_late: Optional[bool] = None
     late_penalty_per_day: Optional[float] = None
@@ -161,7 +152,6 @@ class AssignmentUpdate(BaseModel):
     max_attempts: Optional[int] = None
     max_file_size_mb: Optional[int] = None
     allowed_file_extensions: Optional[List[str]] = None
-    required_files: Optional[List[str]] = None
     
     allow_groups: Optional[bool] = None
     max_group_size: Optional[int] = None
@@ -199,6 +189,7 @@ class Assignment(AssignmentBase):
     created_at: datetime
     updated_at: Optional[datetime] = None
     course: Optional[CourseForAssignment] = None
+    language: Optional[LanguageSchema] = None
     
     class Config:
         from_attributes = True

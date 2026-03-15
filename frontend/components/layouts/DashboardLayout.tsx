@@ -15,6 +15,8 @@ interface NavItem {
 
 interface DashboardLayoutProps {
     children: React.ReactNode;
+    /** When true, hide the top nav bar (e.g. full-screen assignment or grading workspace). */
+    hideTopNav?: boolean;
 }
 
 // Icons as components
@@ -184,7 +186,7 @@ const getTopNavItems = (role: UserRole) => {
     ];
 };
 
-export function DashboardLayout({ children }: DashboardLayoutProps) {
+export function DashboardLayout({ children, hideTopNav = false }: DashboardLayoutProps) {
     const { user, logout } = useAuth();
     const pathname = usePathname();
     const router = useRouter();
@@ -370,7 +372,8 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
             {/* Main Content */}
             <div className={`flex-1 flex flex-col min-h-0 overflow-hidden ${isAdmin && false ? 'lg:pl-72' : ''}`}>
-                {/* Top Header */}
+                {/* Top Header - hidden in full-screen workspace (e.g. student assignment, faculty grading) */}
+                {!hideTopNav ? (
                 <header className="flex-shrink-0 z-30 bg-white border-b border-gray-200 shadow-sm">
                     <div className="px-3 sm:px-4 lg:px-6 h-14 sm:h-16 flex items-center justify-between gap-2 min-w-0">
                         {/* Left side */}
@@ -514,6 +517,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                         </nav>
                     </div>
                 </header>
+                ) : null}
 
                 {/* Logout Confirmation Modal */}
                 {showLogoutConfirm && (

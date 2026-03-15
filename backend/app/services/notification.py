@@ -60,7 +60,7 @@ def notify_course_students_assignment_posted(
             create_notification(
                 db=db,
                 user_id=enrollment.student_id,
-                notification_type=NotificationType.HOMEWORK_POSTED,
+                notification_type=NotificationType.ASSIGNMENT_NEW,
                 title="Assignment Posted",
                 message=f"{assignment_title} has been posted for {course_code}.",
                 link=f"/student/assignments/{assignment_id}",

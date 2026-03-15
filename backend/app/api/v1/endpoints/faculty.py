@@ -9,12 +9,28 @@ from sqlalchemy import and_, func, desc, case
 
 from app.api.deps import get_db, get_current_user, require_role
 from app.models import (
-    User, UserRole, Course, CourseStatus, Enrollment, EnrollmentStatus,
-    Assignment, AssignmentStatus, DifficultyLevel, TestCase,
-    Submission, SubmissionStatus, TestResult,
-    Rubric, RubricCategory, RubricItem, RubricScore,
-    Group, GroupMembership, Announcement, AuditLog, Language
+    User,
+    UserRole,
+    Course,
+    CourseStatus,
+    Enrollment,
+    EnrollmentStatus,
+    Assignment,
+    AssignmentStatus,
+    TestCase,
+    Submission,
+    SubmissionStatus,
+    TestResult,
+    Rubric,
+    RubricItem,
+    RubricScore,
+    Group,
+    GroupMembership,
+    Announcement,
+    AuditLog,
+    Language,
 )
+from app.schemas.rubric import RubricItem as RubricItemSchema
 from app.core.logging import logger
 from pydantic import BaseModel, Field
 
@@ -69,7 +85,6 @@ class AssignmentAnalytics(BaseModel):
     class Config:
         from_attributes = True
 
-
 @router.get("/rubric-items", response_model=List[RubricItemSchema])
 def list_rubric_items(
     db: Session = Depends(get_db),
@@ -108,7 +123,6 @@ class TestCaseCreate(BaseModel):
     expected_output: str
     points: float = 10.0
     is_hidden: bool = False
-    is_sample: bool = False
     ignore_whitespace: bool = False
     use_regex: bool = False
     time_limit_seconds: Optional[int] = None
@@ -565,7 +579,6 @@ def get_test_cases(
             "expected_output": tc.expected_output,
             "points": tc.points,
             "is_hidden": tc.is_hidden,
-            "is_sample": tc.is_sample,
             "order": tc.order
         } for tc in test_cases
     ]

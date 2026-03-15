@@ -9,6 +9,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useToast } from '@/components/ui/use-toast';
 import { format } from 'date-fns';
 
+import { RubricGrader, TestDataCreator } from './GradingEnhancements';
+import { InteractiveTerminal, type InteractiveTerminalRef } from '@/components/InteractiveTerminal';
+import { useInteractiveTerminal } from '@/hooks/useInteractiveTerminal';
+
 import {
     ArrowLeft,
     Play,
@@ -39,6 +43,7 @@ import {
     Shield,
     ArrowLeftRight,
     Users,
+    Upload as UploadIcon,
 } from 'lucide-react';
 
 /* ====================================================================
@@ -102,6 +107,19 @@ interface SubmissionItem {
     test_results: TestResultOut[];
 }
 
+interface RubricItemFlat {
+    id: number;
+    name: string;
+    description?: string | null;
+    weight: number;
+    points: number;
+}
+
+interface RubricFlat {
+    items: RubricItemFlat[];
+    total_points: number;
+}
+
 interface Assignment {
     id: number;
     title: string;
@@ -110,33 +128,19 @@ interface Assignment {
     due_date?: string;
     max_score: number;
     passing_score: number;
-    difficulty?: string;
-    test_weight: number;
-    rubric_weight: number;
     allow_late?: boolean;
     late_penalty_per_day?: number;
     max_late_days?: number;
     max_attempts?: number;
     max_file_size_mb?: number;
     allowed_file_extensions?: string[];
-    required_files?: string[];
     enable_plagiarism_check?: boolean;
     enable_ai_detection?: boolean;
     starter_code?: string;
     is_published?: boolean;
     language?: { id: number; name: string; display_name: string; file_extension: string };
     course?: { id: number; name: string; code: string };
-    rubric?: {
-        id: number;
-        total_points: number;
-        categories: {
-            id: number;
-            name: string;
-            description?: string;
-            weight: number;
-            items: { id: number; name: string; description?: string; max_points: number }[];
-        }[];
-    };
+    rubric?: RubricFlat;
     test_cases?: {
         id: number;
         name: string;
@@ -145,7 +149,6 @@ interface Assignment {
         expected_output?: string;
         points: number;
         is_hidden: boolean;
-        is_sample: boolean;
         ignore_whitespace?: boolean;
         ignore_case?: boolean;
         time_limit_seconds?: number;
@@ -225,7 +228,7 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
     const [fileContents, setFileContents] = useState<Record<number, FileContent>>({});
     const [selectedFileId, setSelectedFileId] = useState<number | null>(null);
     const [loadingFile, setLoadingFile] = useState(false);
-    const [rightPanel, setRightPanel] = useState<'grading' | 'feedback' | 'tests' | 'description' | 'rubric' | 'plagiarism'>('grading');
+    const [rightPanel, setRightPanel] = useState<'grading' | 'feedback' | 'tests' | 'description' | 'rubric' | 'plagiarism' | 'custom'>('grading');
     const [checkingPlagiarism, setCheckingPlagiarism] = useState(false);
     const [plagiarismMatches, setPlagiarismMatches] = useState<any[]>([]);
     const [panelOpen, setPanelOpen] = useState(true);
@@ -236,15 +239,202 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
     const [gradeSaved, setGradeSaved] = useState(false);
     const [explorerOpen, setExplorerOpen] = useState(true);
     const [selectedTestCases, setSelectedTestCases] = useState<Set<number>>(new Set());
+    const [testInputMode, setTestInputMode] = useState<'stdin' | 'file'>('stdin');
+    const [customInput, setCustomInput] = useState('');
+    const [inputFileName, setInputFileName] = useState('input.txt');
+    const [inputFileContent, setInputFileContent] = useState('');
+    const [datasetInputMode, setDatasetInputMode] = useState<'stdin' | 'file'>('stdin');
+    const [uploadedDatasets, setUploadedDatasets] = useState<{ name: string; content: string }[]>([]);
+    const [datasetRunResults, setDatasetRunResults] = useState<{ name: string; stdout?: string; stderr?: string; compilation_status?: string; success: boolean }[]>([]);
     const [viewingTestResult, setViewingTestResult] = useState<TestResultOut | null>(null);
     const gutterRef = useRef<HTMLDivElement>(null);
     const editorRef = useRef<HTMLTextAreaElement>(null);
+    const testFileInputRef = useRef<HTMLInputElement>(null);
+    const datasetFileInputRef = useRef<HTMLInputElement>(null);
+    const customTestFileInputRef = useRef<HTMLInputElement>(null);
+
+    const terminalRef = useRef<InteractiveTerminalRef>(null);
+    const {
+        output: interactiveOutput,
+        running: interactiveRunning,
+        exitCode: interactiveExitCode,
+        start: startInteractiveTerminal,
+        sendStdin: sendInteractiveStdin,
+        outputEndRef: interactiveOutputEndRef,
+    } = useInteractiveTerminal({ assignmentId });
 
     const [gradeState, setGradeState] = useState<GradeState>({
         testOverrides: {},
         feedback: '',
         finalScore: '',
     });
+
+    // Rubric grading state
+    const [rubricScores, setRubricScores] = useState<Record<number, number>>({});
+    const [rubricTotalScore, setRubricTotalScore] = useState<number>(0);
+
+    const handleRubricScoreChange = (itemId: number, score: number) => {
+        setRubricScores(prev => ({ ...prev, [itemId]: score }));
+    };
+
+    const handleRubricTotalChange = (total: number) => {
+        setRubricTotalScore(total);
+    };
+
+    const handleTestCaseAdded = async (payload: any) => {
+        try {
+            // Submit test case to backend
+            await apiClient.createTestCase(assignmentId, payload);
+
+            // Refresh test cases
+            queryClient.invalidateQueries({ queryKey: ['assignment', assignmentId] });
+            toast({ title: 'Test case added', description: 'New test case has been created.' });
+        } catch (error) {
+            console.error('Error creating test case:', error);
+            toast({
+                title: 'Error',
+                description: 'Failed to create test case. Please try again.',
+                variant: 'destructive'
+            });
+        }
+    };
+
+    // Custom test run state
+    const [customTestMode, setCustomTestMode] = useState<'stdin' | 'file'>('stdin');
+    const [customStdin, setCustomStdin] = useState('');
+    const [customInputFiles, setCustomInputFiles] = useState<{ name: string; content: string }[]>([]);
+    const [isRunningCustomTest, setIsRunningCustomTest] = useState(false);
+
+    const runCustomTest = async () => {
+        if (!selectedSub || !assignment) {
+            toast({
+                title: 'Error',
+                description: 'No submission selected',
+                variant: 'destructive'
+            });
+            return;
+        }
+
+        // Validate input
+        if (customTestMode === 'stdin' && !customStdin.trim()) {
+            toast({
+                title: 'Error',
+                description: 'Please enter input for stdin mode',
+                variant: 'destructive'
+            });
+            return;
+        }
+
+        if (customTestMode === 'file' && customInputFiles.length === 0) {
+            toast({
+                title: 'Error',
+                description: 'Please select an input file',
+                variant: 'destructive'
+            });
+            return;
+        }
+
+        // Collect submission files
+        const fileList: { name: string; content: string }[] = [];
+        try {
+            for (const f of (selectedSub?.files || [])) {
+                try {
+                    if (fileContents[f.id]) {
+                        fileList.push({
+                            name: fileContents[f.id].filename,
+                            content: fileContents[f.id].content
+                        });
+                    } else {
+                        const data = await apiClient.getSubmissionFileContent(selectedSub.id, f.id);
+                        setFileContents(prev => ({ ...prev, [f.id]: data }));
+                        fileList.push({
+                            name: data.filename,
+                            content: data.content
+                        });
+                    }
+                } catch (err) {
+                    console.warn(`Failed to load file ${f.filename}:`, err);
+                    // Continue with other files
+                }
+            }
+
+            if (fileList.length === 0) {
+                toast({
+                    title: 'No files loaded',
+                    description: 'Could not load any submission files to run test with.',
+                    variant: 'destructive'
+                });
+                return;
+            }
+        } catch (err) {
+            toast({
+                title: 'Error loading files',
+                description: 'Failed to load submission files',
+                variant: 'destructive'
+            });
+            return;
+        }
+
+        setIsRunningCustomTest(true);
+        setRunResult(null);
+        setPanelOpen(true);
+        setActivePanel('tests');
+
+        try {
+            // Prepare run options based on mode
+            const runOptions = customTestMode === 'stdin'
+                ? { stdin: customStdin || undefined }
+                : customInputFiles.length > 0
+                    ? { inputFiles: customInputFiles }
+                    : {};
+
+            // Execute the code
+            const result = await apiClient.runCode(assignmentId, fileList, runOptions);
+
+            setRunResult(result);
+
+            // Show appropriate success message
+            if (result.success) {
+                toast({
+                    title: '✅ Test Completed',
+                    description: result.stdout
+                        ? `Output: ${result.stdout.split('\n')[0].substring(0, 60)}...`
+                        : 'Test ran successfully',
+                });
+            } else {
+                toast({
+                    title: '⚠️ Test Failed',
+                    description: result.message || `Compilation: ${result.compilation_status}`,
+                    variant: 'destructive'
+                });
+            }
+        } catch (err: any) {
+            const msg = err?.response?.data?.detail
+                || err?.message
+                || 'Custom test failed - please try again';
+
+            setRunResult({
+                success: false,
+                results: [],
+                compilation_status: 'Error',
+                message: msg,
+                tests_passed: 0,
+                tests_total: 0,
+                total_score: 0,
+                max_score: 0,
+                stderr: msg,
+            });
+
+            toast({
+                title: '❌ Run Failed',
+                description: msg,
+                variant: 'destructive'
+            });
+            console.error('Custom test error:', err);
+        } finally {
+            setIsRunningCustomTest(false);
+        }
+    };
 
     // Compare mode for plagiarism side-by-side
     const [compareMode, setCompareMode] = useState<{
@@ -287,6 +477,9 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
         studentSubs[0]?.student || { id: studentId, full_name: 'Student', email: '' },
         [studentSubs, studentId]
     );
+
+    const hasStdinInput = customInput.trim().length > 0;
+    const hasTestFileInput = inputFileContent.trim().length > 0;
 
     // Auto-select latest submission
     useEffect(() => {
@@ -479,24 +672,80 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
             return;
         }
 
+        setPanelOpen(true);
+        setActivePanel('output');
+        setRunResult(null);
+        setDatasetRunResults([]);
+
+        startInteractiveTerminal(fileList);
+        setTimeout(() => terminalRef.current?.focusInput(), 300);
+    };
+
+    const runAllTests = async () => {
+        if (!selectedSub || !assignment) return;
+
+        const fileList: { name: string; content: string }[] = [];
+        for (const f of (selectedSub?.files || [])) {
+            if (fileContents[f.id]) {
+                fileList.push({ name: fileContents[f.id].filename, content: fileContents[f.id].content });
+            } else {
+                try {
+                    const data = await apiClient.getSubmissionFileContent(selectedSub.id, f.id);
+                    setFileContents(prev => ({ ...prev, [f.id]: data }));
+                    fileList.push({ name: data.filename, content: data.content });
+                } catch {
+                    /* skip */
+                }
+            }
+        }
+
+        if (fileList.length === 0) {
+            toast({ title: 'No files loaded', description: 'Cannot run tests.', variant: 'destructive' });
+            return;
+        }
+
         setIsRunning(true);
         setRunResult(null);
         setPanelOpen(true);
-        setActivePanel('output');
+        setActivePanel('tests');
 
         try {
             let testCaseIds: number[] | undefined;
             if (selectedTestCases.size > 0) {
-                const selectedTrIds = Array.from(selectedTestCases);
-                testCaseIds = selectedTrIds
-                    .map(trId => subTestResults.find(tr => tr.id === trId)?.test_case_id)
-                    .filter((id): id is number => id !== undefined);
-                testCaseIds = [...new Set(testCaseIds)];
+                testCaseIds = Array.from(selectedTestCases);
             }
 
-            const result: RunResult = await apiClient.runCode(assignmentId, fileList, testCaseIds);
-            setRunResult(result);
-            if (result.results.length > 0) setActivePanel('tests');
+            const stdinToSend = testInputMode === 'stdin' ? (customInput.trim() || undefined) : undefined;
+            const hasInputFile = testInputMode === 'file' && inputFileContent.trim() && (inputFileName.trim() || 'input.txt');
+            const inputFileToSend = hasInputFile
+                ? { name: (inputFileName.trim() || 'input.txt'), content: inputFileContent }
+                : undefined;
+            setDatasetRunResults([]);
+
+            const runPromises: Promise<RunResult>[] = [
+                apiClient.runCode(assignmentId, fileList, { testCaseIds, stdin: stdinToSend, inputFile: inputFileToSend }),
+                ...uploadedDatasets.map(ds =>
+                    apiClient.runCode(
+                        assignmentId,
+                        fileList,
+                        datasetInputMode === 'file'
+                            ? { inputFile: { name: ds.name || 'input.txt', content: ds.content } }
+                            : { stdin: ds.content }
+                    )
+                ),
+            ];
+
+            const results = await Promise.all(runPromises);
+            const mainResult = results[0] as RunResult;
+            setRunResult(mainResult);
+            const datasetResults = results.slice(1).map((r, i) => ({
+                name: uploadedDatasets[i]?.name || `dataset_${i + 1}`,
+                stdout: r.stdout ?? undefined,
+                stderr: r.stderr ?? undefined,
+                compilation_status: r.compilation_status,
+                success: r.success && (r.compilation_status === 'Compiled Successfully'),
+            }));
+            setDatasetRunResults(datasetResults);
         } catch (err: any) {
             const msg = err?.response?.data?.detail || 'Run failed';
             setRunResult({
@@ -542,8 +791,8 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
         });
     };
     const selectAllTests = () => {
-        if (!selectedSub) return;
-        setSelectedTestCases(new Set((selectedSub?.test_results || []).map(tr => tr.id)));
+        if (!assignment?.test_cases) return;
+        setSelectedTestCases(new Set(assignment.test_cases.map(tc => tc.id)));
     };
     const deselectAllTests = () => setSelectedTestCases(new Set());
 
@@ -565,6 +814,16 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
     const editorLines = (currentFile?.content || '').split('\n');
     const subFiles = selectedSub?.files || [];
     const subTestResults = selectedSub?.test_results || [];
+    const testCaseResultsById = useMemo(() => {
+        const map = new Map<number, TestResultOut>();
+        for (const tr of subTestResults) map.set(tr.test_case_id, tr);
+        return map;
+    }, [subTestResults]);
+    const assignmentTestCases = useMemo(() => {
+        const list = assignment?.test_cases ? [...assignment.test_cases] : [];
+        list.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.id - b.id);
+        return list;
+    }, [assignment?.test_cases]);
 
     // Plagiarism-highlighted line numbers for the current student's code
     const sourceFlaggedLines = useMemo(() => {
@@ -656,9 +915,9 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
     }
 
     return (
-        <div className="flex flex-col h-screen bg-[#1e1e1e] text-[#cccccc] overflow-hidden">
+        <div className="flex flex-col h-screen bg-gradient-to-b from-[#1b1d1f] via-[#1e1e1e] to-[#1b1d1f] text-[#cccccc] overflow-hidden">
             {/* ===== Title Bar ===== */}
-            <div className="flex items-center justify-between bg-[#323233] px-4 py-1.5 border-b border-[#3c3c3c] select-none shrink-0">
+            <div className="flex items-center justify-between bg-gradient-to-r from-[#2b2c2d] via-[#323233] to-[#2b2c2d] px-4 py-1.5 border-b border-[#3c3c3c] select-none shrink-0">
                 <div className="flex items-center gap-3 min-w-0">
                     <Button variant="ghost" size="sm" onClick={goBack}
                         className="h-6 px-2 text-[#cccccc] hover:text-white hover:bg-[#505050] text-xs shrink-0">
@@ -685,7 +944,7 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
             </div>
 
             {/* ===== Toolbar ===== */}
-            <div className="flex items-center justify-between bg-[#252526] px-3 py-1 border-b border-[#3c3c3c] shrink-0">
+            <div className="flex items-center justify-between bg-[#252526] px-3 py-1 border-b border-[#3c3c3c] shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.03)] shrink-0">
                 <div className="flex items-center gap-2">
                     {/* Submission selector */}
                     <div className="relative">
@@ -730,6 +989,10 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
                         className={`h-6 px-2 text-[10px] rounded flex items-center gap-1 transition-colors ${rightPanel === 'feedback' ? 'bg-[#862733]/30 text-white' : 'text-[#cccccc] hover:bg-[#505050]'}`}>
                         <MessageSquare className="w-3 h-3" /> Feedback
                     </button>
+                    <button onClick={() => setRightPanel('custom')}
+                        className={`h-6 px-2 text-[10px] rounded flex items-center gap-1 transition-colors ${rightPanel === 'custom' ? 'bg-[#862733]/30 text-white' : 'text-[#cccccc] hover:bg-[#505050]'}`}>
+                        <UploadIcon className="w-3 h-3" /> Custom Input
+                    </button>
                     <div className="w-px h-4 bg-[#5a5a5a]" />
                     <button onClick={() => setRightPanel('description')}
                         className={`h-6 px-2 text-[10px] rounded flex items-center gap-1 transition-colors ${rightPanel === 'description' ? 'bg-[#862733]/30 text-white' : 'text-[#cccccc] hover:bg-[#505050]'}`}>
@@ -747,11 +1010,15 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
                         </button>
                     )}
                     <div className="w-px h-4 bg-[#5a5a5a] mx-1" />
-                    <Button onClick={runCode} disabled={isRunning || !selectedSub} size="sm"
+                    <Button onClick={runCode} disabled={interactiveRunning || !selectedSub} size="sm"
+                        className="h-6 px-3 text-[10px] bg-[#0e639c] hover:bg-[#1177bb] text-white border-0">
+                        <Play className="w-3 h-3 mr-1" /> Run Code
+                    </Button>
+                    <Button onClick={runAllTests} disabled={isRunning || !selectedSub} size="sm"
                         className="h-6 px-3 text-[10px] bg-[#0e639c] hover:bg-[#1177bb] text-white border-0">
                         {isRunning
-                            ? (<><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Running...</>)
-                            : (<><Play className="w-3 h-3 mr-1" /> {selectedTestCases.size > 0 ? `Run ${selectedTestCases.size} Test${selectedTestCases.size > 1 ? 's' : ''}` : 'Run All Tests'}</>)
+                            ? (<><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Running Tests...</>)
+                            : (<>{selectedTestCases.size > 0 ? `Run ${selectedTestCases.size} Test${selectedTestCases.size > 1 ? 's' : ''}` : 'Run All Tests'}</>)
                         }
                     </Button>
                     <Button onClick={saveGrade} disabled={isSaving || !selectedSub} size="sm"
@@ -851,8 +1118,8 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
                                 <span className="text-[10px] text-[#858585]">vs</span>
                                 <span className="text-[11px] font-semibold text-purple-300 truncate">{compareMode.matchedStudentName}</span>
                                 <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${compareMode.similarity >= 50 ? 'bg-[#f44747]/20 text-[#f44747]' :
-                                        compareMode.similarity >= 30 ? 'bg-[#dcdcaa]/20 text-[#dcdcaa]' :
-                                            'bg-[#858585]/20 text-[#858585]'
+                                    compareMode.similarity >= 30 ? 'bg-[#dcdcaa]/20 text-[#dcdcaa]' :
+                                        'bg-[#858585]/20 text-[#858585]'
                                     }`}>
                                     {compareMode.similarity.toFixed(1)}% similar
                                 </span>
@@ -969,21 +1236,7 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
                                             <textarea
                                                 ref={editorRef}
                                                 value={currentFile.content}
-                                                onChange={(e) => updateFileContent(selectedFileId!, e.target.value)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Tab') {
-                                                        e.preventDefault();
-                                                        const ta = e.currentTarget;
-                                                        const start = ta.selectionStart;
-                                                        const end = ta.selectionEnd;
-                                                        const val = ta.value;
-                                                        const newVal = val.substring(0, start) + '    ' + val.substring(end);
-                                                        updateFileContent(selectedFileId!, newVal);
-                                                        requestAnimationFrame(() => {
-                                                            ta.selectionStart = ta.selectionEnd = start + 4;
-                                                        });
-                                                    }
-                                                }}
+                                                readOnly
                                                 onScroll={() => {
                                                     if (editorRef.current && gutterRef.current) {
                                                         gutterRef.current.scrollTop = editorRef.current.scrollTop;
@@ -1121,100 +1374,127 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
                                 </div>
                                 <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                                     {activePanel === 'output' ? (
-                                        <div className="flex-1 flex flex-col min-h-0 bg-[#0c0c0c]">
-                                            {/* Complete IDE Terminal */}
-                                            <div className="flex-1 flex flex-col min-h-0 overflow-hidden font-mono text-[13px]">
-                                                {/* Output content */}
-                                                <div className="flex-1 overflow-auto p-4 min-h-0">
-                                                    {isRunning ? (
-                                                        <div className="space-y-1">
-                                                            <div className="text-[#4ec9b0]">{"› "}<span className="text-[#569cd6]">Running tests...</span></div>
-                                                            <div className="flex items-center gap-1 text-[#858585]">
-                                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                                <span className="text-[12px]">Running</span>
-                                                                <span className="inline-block w-2 h-4 ml-0.5 bg-[#4ec9b0] animate-pulse" />
-                                                            </div>
-                                                        </div>
-                                                    ) : runResult ? (
-                                                        <div className="space-y-0">
-                                                            {(runResult.stdout != null || runResult.stderr != null || runResult.message) && runResult.results.length === 0 ? (
-                                                                <>
-                                                                    {/* Program output */}
-                                                                    <div className="space-y-1">
-                                                                        {runResult.stdout != null && runResult.stdout !== '' && (
-                                                                            <pre className="whitespace-pre-wrap break-words text-[#d4d4d4] leading-[1.7] text-[13px]">{runResult.stdout}</pre>
-                                                                        )}
-                                                                        {runResult.stderr != null && runResult.stderr !== '' && (
-                                                                            <pre className="whitespace-pre-wrap break-words text-[#f44747] leading-[1.7] text-[13px] mt-2">{runResult.stderr}</pre>
-                                                                        )}
-                                                                        {(runResult.stdout == null || runResult.stdout === '') && (runResult.stderr == null || runResult.stderr === '') && runResult.message && (
-                                                                            <pre className={`whitespace-pre-wrap break-words leading-[1.7] text-[13px] ${runResult.compilation_status === 'Compiled Successfully' ? 'text-[#d4d4d4]' : 'text-[#f44747]'}`}>{runResult.message}</pre>
-                                                                        )}
-                                                                        {(runResult.stdout == null || runResult.stdout === '') && (runResult.stderr == null || runResult.stderr === '') && !runResult.message && (
-                                                                            <span className="text-[#858585] italic">(No output)</span>
-                                                                        )}
-                                                                    </div>
-                                                                </>
-                                                            ) : null}
-                                                    {/* Status badge for test runs */}
-                                                    {runResult.results.length > 0 && (
-                                                        <div className={`flex items-center gap-2 p-2.5 rounded-b-lg border border-t-0 border-[#3c3c3c] ${runResult.tests_passed === runResult.tests_total ? 'bg-[#0d2818]' : 'bg-[#2d0000]'}`}>
-                                                            {runResult.tests_passed === runResult.tests_total ? <CheckCircle2 className="w-4 h-4 text-[#4ec9b0]" /> : <XCircle className="w-4 h-4 text-[#f44747]" />}
-                                                            <span className={`font-semibold text-[12px] ${runResult.tests_passed === runResult.tests_total ? 'text-[#4ec9b0]' : 'text-[#f44747]'}`}>
-                                                                {runResult.tests_passed}/{runResult.tests_total} tests passed
-                                                            </span>
-                                                            <span className="text-[10px] text-[#858585] ml-1">{runResult.total_score}/{runResult.max_score} pts</span>
-                                                        </div>
-                                                    )}
+                                        <div className="flex-1 flex flex-col min-h-0 bg-[#0c0c0c] overflow-y-auto">
+                                            {/* Enhanced Terminal with input at TOP */}
+                                            <InteractiveTerminal
+                                                ref={terminalRef}
+                                                output={interactiveOutput}
+                                                running={interactiveRunning}
+                                                exitCode={interactiveExitCode}
+                                                onSendStdin={sendInteractiveStdin}
+                                                outputEndRef={interactiveOutputEndRef}
+                                                minHeight="320px"
+                                            />
 
-                                                    {/* Per-test details in output */}
-                                                    {runResult.results.length > 0 && (
-                                                        <div className="pt-2 border-t border-[#3c3c3c] space-y-2">
-                                                            {runResult.results.map(r => (
-                                                                <div key={r.id} className={`rounded-lg border p-2.5 ${r.passed ? 'border-[#2ea04340] bg-[#2ea04308]' : 'border-[#f4474740] bg-[#f4474708]'}`}>
-                                                                    <div className="flex items-center gap-2 mb-1">
-                                                                        {r.passed ? <CheckCircle2 className="w-3.5 h-3.5 text-[#4ec9b0]" /> : <XCircle className="w-3.5 h-3.5 text-[#f44747]" />}
-                                                                        <span className={`font-semibold text-[12px] ${r.passed ? 'text-[#4ec9b0]' : 'text-[#f44747]'}`}>{r.name}</span>
-                                                                        <span className="text-[10px] text-[#858585] ml-auto">{r.score}/{r.max_score} pts</span>
-                                                                        {r.execution_time != null && <span className="text-[10px] text-[#858585]">{r.execution_time.toFixed(0)}ms</span>}
+                                            {/* Test input + Run result: scrollable below terminal */}
+                                            <div className="flex-1 min-h-0 overflow-y-auto shrink-0 border-t border-[#3c3c3c]">
+                                                {/* Run result (compilation + test results from HTTP run) */}
+                                                <div className="flex-1 flex flex-col min-h-0 overflow-hidden font-mono text-[13px]">
+                                                    <div className="flex-1 overflow-auto p-4 min-h-0">
+                                                        {isRunning && !interactiveRunning ? (
+                                                            <div className="flex items-center gap-2 text-[#569cd6] text-[12px]">
+                                                                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                                                                <span>Running tests…</span>
+                                                            </div>
+                                                        ) : runResult ? (
+                                                            <div className="space-y-0">
+                                                                {(runResult.stdout != null || runResult.stderr != null || runResult.message) && runResult.results.length === 0 ? (
+                                                                    <>
+                                                                        <div className="space-y-2">
+                                                                            {runResult.stdout != null && runResult.stdout !== '' && (
+                                                                                <pre className="whitespace-pre-wrap break-words text-[#d4d4d4] leading-[1.6] text-[12px] bg-[#1e1e1e] border border-[#3c3c3c] rounded p-3">{runResult.stdout}</pre>
+                                                                            )}
+                                                                            {runResult.stderr != null && runResult.stderr !== '' && (
+                                                                                <pre className="whitespace-pre-wrap break-words text-[#f44747] leading-[1.6] text-[12px] bg-[#2d0000]/80 border border-[#5c1e1e] rounded p-3">{runResult.stderr}</pre>
+                                                                            )}
+                                                                            {(runResult.stdout == null || runResult.stdout === '') && (runResult.stderr == null || runResult.stderr === '') && runResult.message && (
+                                                                                <pre className={`whitespace-pre-wrap break-words leading-[1.6] text-[12px] rounded p-3 ${runResult.compilation_status === 'Compiled Successfully' ? 'text-[#d4d4d4] bg-[#1e1e1e] border border-[#3c3c3c]' : 'text-[#f44747] bg-[#2d0000]/80 border border-[#5c1e1e]'}`}>{runResult.message}</pre>
+                                                                            )}
+                                                                            {(runResult.stdout == null || runResult.stdout === '') && (runResult.stderr == null || runResult.stderr === '') && !runResult.message && (
+                                                                                <span className="text-[#606060] text-[12px]">No output</span>
+                                                                            )}
+                                                                        </div>
+                                                                    </>
+                                                                ) : null}
+                                                                {/* Status badge for test runs */}
+                                                                {runResult.results.length > 0 && (
+                                                                    <div className={`flex items-center gap-2 p-2.5 rounded-b-lg border border-t-0 border-[#3c3c3c] ${runResult.tests_passed === runResult.tests_total ? 'bg-[#0d2818]' : 'bg-[#2d0000]'}`}>
+                                                                        {runResult.tests_passed === runResult.tests_total ? <CheckCircle2 className="w-4 h-4 text-[#4ec9b0]" /> : <XCircle className="w-4 h-4 text-[#f44747]" />}
+                                                                        <span className={`font-semibold text-[12px] ${runResult.tests_passed === runResult.tests_total ? 'text-[#4ec9b0]' : 'text-[#f44747]'}`}>
+                                                                            {runResult.tests_passed}/{runResult.tests_total} passed
+                                                                        </span>
+                                                                        <span className="text-[10px] text-[#858585]">{runResult.total_score}/{runResult.max_score} pts</span>
                                                                     </div>
-                                                                    {r.error && (
-                                                                        <div className="mt-1">
-                                                                            <p className="text-[9px] text-[#858585] uppercase tracking-wider mb-0.5">Error</p>
-                                                                            <pre className="text-[11px] text-[#f44747] whitespace-pre-wrap bg-[#2d0000] p-2 rounded border border-[#5c1e1e] max-h-40 overflow-y-auto">{r.error}</pre>
-                                                                        </div>
-                                                                    )}
-                                                                    {r.output && (
-                                                                        <div className="mt-1">
-                                                                            <p className="text-[9px] text-[#858585] uppercase tracking-wider mb-0.5">Actual Output</p>
-                                                                            <pre className="text-[11px] text-[#d4d4d4] whitespace-pre-wrap bg-[#1a1a2e] p-2 rounded border border-[#3c3c3c] max-h-40 overflow-y-auto">{r.output}</pre>
-                                                                        </div>
-                                                                    )}
-                                                                    {r.expected_output && !r.passed && (
-                                                                        <div className="mt-1">
-                                                                            <p className="text-[9px] text-[#858585] uppercase tracking-wider mb-0.5">Expected Output</p>
-                                                                            <pre className="text-[11px] text-[#4ec9b0] whitespace-pre-wrap bg-[#0d2818] p-2 rounded border border-[#2ea04340] max-h-40 overflow-y-auto">{r.expected_output}</pre>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <div className="space-y-1">
-                                                    <div className="text-[#4ec9b0]">{"› "}<span className="text-[#858585]">Ready</span></div>
-                                                    <div className="text-[#6e7681] text-[12px]">Click <span className="text-[#58a6ff]">Run All Tests</span> to run test cases (create test cases in the assignment if needed)</div>
-                                                </div>
-                                            )}
+                                                                )}
+
+                                                                {/* Per-test details in output */}
+                                                                {runResult.results.length > 0 && (
+                                                                    <div className="pt-2 border-t border-[#3c3c3c] space-y-2 max-h-[50vh] overflow-y-auto pr-2">
+                                                                        {runResult.results.map(r => (
+                                                                            <div key={r.id} className={`rounded-lg border p-2.5 ${r.passed ? 'border-[#2ea04340] bg-[#2ea04308]' : 'border-[#f4474740] bg-[#f4474708]'}`}>
+                                                                                <div className="flex items-center gap-2 mb-1">
+                                                                                    {r.passed ? <CheckCircle2 className="w-3.5 h-3.5 text-[#4ec9b0]" /> : <XCircle className="w-3.5 h-3.5 text-[#f44747]" />}
+                                                                                    <span className={`font-semibold text-[12px] ${r.passed ? 'text-[#4ec9b0]' : 'text-[#f44747]'}`}>{r.name}</span>
+                                                                                    <span className="text-[10px] text-[#858585] ml-auto">{r.score}/{r.max_score} pts</span>
+                                                                                    {r.execution_time != null && <span className="text-[10px] text-[#858585]">{r.execution_time.toFixed(0)}ms</span>}
+                                                                                </div>
+                                                                                {r.error && (
+                                                                                    <div className="mt-1">
+                                                                                        <p className="text-[9px] text-[#858585] uppercase tracking-wider mb-0.5">Error</p>
+                                                                                        <pre className="text-[11px] text-[#f44747] whitespace-pre-wrap bg-[#2d0000] p-2 rounded border border-[#5c1e1e] max-h-40 overflow-y-auto">{r.error}</pre>
+                                                                                    </div>
+                                                                                )}
+                                                                                {r.output && (
+                                                                                    <div className="mt-1">
+                                                                                        <p className="text-[9px] text-[#858585] uppercase tracking-wider mb-0.5">Actual Output</p>
+                                                                                        <pre className="text-[11px] text-[#d4d4d4] whitespace-pre-wrap bg-[#1a1a2e] p-2 rounded border border-[#3c3c3c] max-h-40 overflow-y-auto">{r.output}</pre>
+                                                                                    </div>
+                                                                                )}
+                                                                                {r.expected_output && !r.passed && (
+                                                                                    <div className="mt-1">
+                                                                                        <p className="text-[9px] text-[#858585] uppercase tracking-wider mb-0.5">Expected Output</p>
+                                                                                        <pre className="text-[11px] text-[#4ec9b0] whitespace-pre-wrap bg-[#0d2818] p-2 rounded border border-[#2ea04340] max-h-40 overflow-y-auto">{r.expected_output}</pre>
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+
+                                                                {datasetRunResults.length > 0 && (
+                                                                    <div className="pt-3 border-t border-[#3c3c3c] space-y-2">
+                                                                        <div className="text-[10px] text-[#858585] uppercase tracking-wider">Dataset runs</div>
+                                                                        {datasetRunResults.map((dr, idx) => (
+                                                                            <div key={idx} className="rounded-lg border border-[#3c3c3c] bg-[#1e1e1e] overflow-hidden">
+                                                                                <div className="px-3 py-2 flex items-center gap-2 border-b border-[#3c3c3c]">
+                                                                                    <span className="text-[11px] font-medium text-[#cccccc]">{dr.name}</span>
+                                                                                    {dr.success ? <CheckCircle2 className="w-3.5 h-3.5 text-[#4ec9b0]" /> : <XCircle className="w-3.5 h-3.5 text-[#f44747]" />}
+                                                                                    {dr.compilation_status && (
+                                                                                        <span className="text-[10px] text-[#858585]">{dr.compilation_status}</span>
+                                                                                    )}
+                                                                                </div>
+                                                                                <div className="p-3 space-y-1">
+                                                                                    {dr.stdout && <pre className="whitespace-pre-wrap text-[#d4d4d4] text-[11px] leading-relaxed">{dr.stdout}</pre>}
+                                                                                    {dr.stderr && <pre className="whitespace-pre-wrap text-[#f44747] text-[11px] leading-relaxed">{dr.stderr}</pre>}
+                                                                                    {dr.success && !dr.stdout && !dr.stderr && <p className="text-[11px] text-[#858585]">(no output)</p>}
+                                                                                </div>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        ) : (
+                                                            <p className="text-[#6e7681] text-[11px]">{"› "}Ready · <span className="text-[#862733]">Run</span> to start terminal and run tests</p>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
                                     ) : (
                                         /* RUN RESULTS tab - detailed cards */
-                                        <div>
+                                        <div className="flex flex-col min-h-0 flex-1">
                                             {runResult && runResult.results.length > 0 ? (
-                                                <div className="space-y-2">
+                                                <div className="space-y-2 overflow-y-auto pr-2 flex-1">
                                                     <div className="flex items-center gap-3 mb-3 pb-2 border-b border-[#3c3c3c]">
                                                         <span className={`text-sm font-bold ${runResult.tests_passed === runResult.tests_total ? 'text-[#4ec9b0]' : 'text-[#f44747]'}`}>
                                                             {runResult.tests_passed === runResult.tests_total ? 'All Tests Passed' : `${runResult.tests_passed}/${runResult.tests_total} Passed`}
@@ -1286,6 +1566,7 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
                             {rightPanel === 'description' && <><BookOpen className="w-4 h-4 text-[#862733]" /> Assignment Info</>}
                             {rightPanel === 'rubric' && <><FileText className="w-4 h-4 text-[#862733]" /> Rubric</>}
                             {rightPanel === 'plagiarism' && <><Shield className="w-4 h-4 text-purple-500" /> Plagiarism</>}
+                            {rightPanel === 'custom' && <><UploadIcon className="w-4 h-4 text-[#862733]" /> Custom Input</>}
                         </div>
                     </div>
 
@@ -1330,69 +1611,7 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
                                     </div>
                                 </div>
 
-                                {/* Test Results - Editable */}
-                                {subTestResults.length > 0 && (
-                                    <div>
-                                        <p className="text-[11px] text-[#858585] uppercase tracking-wider mb-2">
-                                            Auto-Graded Tests ({selectedSub.tests_passed}/{selectedSub.tests_total})
-                                        </p>
-                                        <div className="space-y-1.5">
-                                            {subTestResults.map(tr => {
-                                                const ov = gradeState.testOverrides[tr.id] || { points_awarded: tr.points_awarded, passed: tr.passed };
-                                                const tcSpec = getTestCaseSpec(tr.test_case_id);
-                                                return (
-                                                    <div key={tr.id} className={`group/tc p-2.5 rounded-lg border ${ov.passed ? 'border-[#2ea04340] bg-[#2ea04310]' : 'border-[#f4474740] bg-[#f4474710]'}`}>
-                                                        <div className="flex items-center gap-2">
-                                                            <button
-                                                                onClick={() => updateTestOverride(tr.id, 'passed', !ov.passed)}
-                                                                className={`w-5 h-5 rounded flex items-center justify-center shrink-0 ${ov.passed ? 'bg-[#2ea043] text-white' : 'bg-[#f44747] text-white'}`}
-                                                            >
-                                                                {ov.passed ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
-                                                            </button>
-                                                            <span className={`flex-1 text-[12px] font-medium ${ov.passed ? 'text-[#4ec9b0]' : 'text-[#f44747]'}`}>
-                                                                {tcSpec?.name || `Test #${tr.test_case_id}`}
-                                                            </span>
-                                                            <button
-                                                                onClick={() => setViewingTestResult(tr)}
-                                                                className="w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover/tc:opacity-100 transition-opacity text-[#858585] hover:text-[#cccccc] hover:bg-[#3c3c3c]"
-                                                                title="View test details"
-                                                            >
-                                                                <Eye className="w-3 h-3" />
-                                                            </button>
-                                                            <input
-                                                                type="number"
-                                                                value={ov.points_awarded}
-                                                                onChange={(e) => updateTestOverride(tr.id, 'points_awarded', parseFloat(e.target.value) || 0)}
-                                                                step="0.5"
-                                                                min="0"
-                                                                className="w-14 bg-[#3c3c3c] border border-[#505050] rounded px-1.5 py-0.5 text-[11px] text-white text-center focus:outline-none focus:border-[#862733]"
-                                                            />
-                                                            <span className="text-[10px] text-[#858585]">pts</span>
-                                                        </div>
-                                                        {tr.error_message && (
-                                                            <div className="mt-1.5 pl-7">
-                                                                <p className="text-[9px] text-[#858585] uppercase tracking-wider mb-0.5">Error</p>
-                                                                <pre className="text-[10px] text-[#f44747] whitespace-pre-wrap bg-[#2d0000] p-1.5 rounded border border-[#5c1e1e] max-h-24 overflow-y-auto">{tr.error_message}</pre>
-                                                            </div>
-                                                        )}
-                                                        {tr.actual_output && (
-                                                            <div className="mt-1 pl-7">
-                                                                <p className="text-[9px] text-[#858585] uppercase tracking-wider mb-0.5">Output</p>
-                                                                <pre className="text-[10px] text-[#d4d4d4] whitespace-pre-wrap bg-[#1a1a2e] p-1.5 rounded border border-[#3c3c3c] max-h-20 overflow-y-auto">{tr.actual_output}</pre>
-                                                            </div>
-                                                        )}
-                                                        {!ov.passed && tr.expected_output && (
-                                                            <div className="mt-1 pl-7">
-                                                                <p className="text-[9px] text-[#858585] uppercase tracking-wider mb-0.5">Expected</p>
-                                                                <pre className="text-[10px] text-[#4ec9b0] whitespace-pre-wrap bg-[#0d2818] p-1.5 rounded border border-[#2ea04340] max-h-20 overflow-y-auto">{tr.expected_output}</pre>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                )}
+                                {/* (Auto-graded per-test details removed from grading panel to keep grading focused on final score and rubric) */}
 
                                 {/* Flags */}
                                 {(selectedSub.plagiarism_flagged || selectedSub.ai_flagged) && (
@@ -1404,12 +1623,60 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
                                         {selectedSub.ai_flagged && <p className="text-[10px] text-[#f44747]">AI-generated content detected</p>}
                                     </div>
                                 )}
+
+                                {/* Rubric Grader - if assignment has rubric */}
+                                {assignment.rubric && assignment.rubric.items?.length > 0 && (
+                                    <div className="border-t border-[#3c3c3c] pt-4">
+                                        <div className="mb-3">
+                                            <div className="flex items-center justify-between gap-2 mb-1">
+                                                <p className="text-[11px] text-[#858585] uppercase tracking-wider font-semibold">Rubric-Based Grading</p>
+                                                <span className="text-[11px] text-white font-medium">/{assignment.rubric.total_points} pts</span>
+                                            </div>
+                                            <p className="text-[10px] text-[#858585]">Evaluate based on rubric criteria</p>
+                                        </div>
+                                        <RubricGrader
+                                            rubricItems={assignment.rubric.items.map(item => ({
+                                                itemId: item.id,
+                                                name: item.name,
+                                                description: `${item.weight > 0 ? `${item.weight}%` : item.points ? `${item.points} pts` : 'N/A'} • ${item.description || 'No description'}`,
+                                                weight: item.weight,
+                                                maxPoints: item.points,
+                                                earnedPoints: Math.min(rubricScores[item.id] || 0, item.points),
+                                            }))}
+                                            mode={assignment.rubric.items.some(i => i.weight > 0) ? 'weight' : 'points'}
+                                            maxScore={assignment.max_score}
+                                            onScoreChange={(itemId, score) => {
+                                                const item = assignment.rubric?.items.find(i => i.id === itemId);
+                                                const maxScore = item?.points || 0;
+                                                handleRubricScoreChange(itemId, Math.min(Math.max(0, score), maxScore));
+                                            }}
+                                            onTotalScoreChange={handleRubricTotalChange}
+                                            onCalculate={() => {
+                                                // Calculate and set as the final score
+                                                setGradeState(prev => ({ ...prev, finalScore: rubricTotalScore.toFixed(1) }));
+                                                toast({
+                                                    title: '✅ Score Calculated',
+                                                    description: `Rubric total: ${rubricTotalScore.toFixed(1)}/${assignment.max_score} pts`
+                                                });
+                                            }}
+                                        />
+                                    </div>
+                                )}
                             </div>
                         )}
 
                         {rightPanel === 'tests' && selectedSub && (
                             <div className="space-y-4">
-                                {/* Select/Deselect all */}
+                                {/* Test Data Creator - Add new test cases */}
+                                <div className="bg-[#1e1e1e] rounded-lg border border-[#3c3c3c] p-3">
+                                    <p className="text-[11px] text-[#858585] uppercase tracking-wider mb-2">Add Test Case</p>
+                                    <TestDataCreator
+                                        assignmentId={assignmentId}
+                                        onTestCaseAdded={handleTestCaseAdded}
+                                    />
+                                </div>
+
+                                {/* Select/Deselect all for tests */}
                                 <div className="flex items-center gap-2">
                                     <button onClick={selectAllTests} className="text-[10px] px-2 py-1 rounded bg-[#3c3c3c] text-[#cccccc] hover:bg-[#505050] flex items-center gap-1">
                                         <CheckSquare className="w-3 h-3" /> Select All
@@ -1420,39 +1687,24 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
                                     <span className="text-[10px] text-[#858585] ml-auto">{selectedTestCases.size} selected</span>
                                 </div>
 
-                                {subTestResults.length > 0 ? (
+                                {assignmentTestCases.length > 0 ? (
                                     <div className="space-y-1.5">
-                                        {subTestResults.map(tr => {
-                                            const spec = getTestCaseSpec(tr.test_case_id);
+                                        {assignmentTestCases.map(tc => {
+                                            const isSelected = selectedTestCases.has(tc.id);
                                             return (
-                                                <div key={tr.id}
-                                                    className={`group flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer transition-colors ${selectedTestCases.has(tr.id)
-                                                            ? 'border-[#862733] bg-[#862733]/10'
-                                                            : 'border-[#3c3c3c] bg-[#1e1e1e] hover:bg-[#2a2d2e]'
+                                                <div
+                                                    key={tc.id}
+                                                    className={`group flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer transition-colors ${isSelected
+                                                        ? 'border-[#862733] bg-[#862733]/10'
+                                                        : 'border-[#3c3c3c] bg-[#1e1e1e] hover:bg-[#2a2d2e]'
                                                         }`}
-                                                    onClick={() => toggleTestCase(tr.id)}
+                                                    onClick={() => toggleTestCase(tc.id)}
                                                 >
-                                                    <div className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 ${selectedTestCases.has(tr.id) ? 'bg-[#862733] border-[#862733] text-white' : 'border-[#505050]'
+                                                    <div className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 ${isSelected ? 'bg-[#862733] border-[#862733] text-white' : 'border-[#505050]'
                                                         }`}>
-                                                        {selectedTestCases.has(tr.id) && <CheckCircle2 className="w-3.5 h-3.5" />}
+                                                        {isSelected && <CheckCircle2 className="w-3.5 h-3.5" />}
                                                     </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="text-[12px] font-medium text-[#cccccc]">{spec?.name || `Test #${tr.test_case_id}`}</p>
-                                                        {tr.error_message && (
-                                                            <p className="text-[10px] text-[#f44747] truncate mt-0.5">{tr.error_message}</p>
-                                                        )}
-                                                    </div>
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); setViewingTestResult(tr); }}
-                                                        className="w-6 h-6 rounded flex items-center justify-center shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-[#858585] hover:text-[#cccccc] hover:bg-[#3c3c3c]"
-                                                        title="View details"
-                                                    >
-                                                        <Eye className="w-3.5 h-3.5" />
-                                                    </button>
-                                                    <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${tr.passed ? 'bg-[#2ea043]' : 'bg-[#f44747]'} text-white`}>
-                                                        {tr.passed ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
-                                                    </div>
-                                                    <span className="text-[10px] text-[#858585] shrink-0">{tr.points_awarded} pts</span>
+                                                    <p className="text-[12px] font-medium text-[#cccccc] truncate flex-1 min-w-0">{tc.name || `Test #${tc.id}`}</p>
                                                 </div>
                                             );
                                         })}
@@ -1460,10 +1712,235 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
                                 ) : (
                                     <div className="text-center py-8">
                                         <Target className="w-10 h-10 mx-auto text-[#505050] mb-3" />
-                                        <p className="text-[12px] text-[#858585]">No test results for this submission</p>
-                                        <p className="text-[10px] text-[#606060] mt-1">Run the code to generate test results</p>
+                                        <p className="text-[12px] text-[#858585]">No test cases for this assignment</p>
+                                        <p className="text-[10px] text-[#606060] mt-1">Create tests to run and evaluate submissions</p>
                                     </div>
                                 )}
+                            </div>
+                        )}
+
+                        {rightPanel === 'custom' && selectedSub && (
+                            <div className="space-y-4">
+                                {/* Custom Input Runner */}
+                                <div className="bg-[#1e1e1e] rounded-lg border border-[#862733]/30 p-4 space-y-3">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <p className="text-[11px] text-[#862733] uppercase tracking-wider font-semibold">Custom Input</p>
+                                        <div className="flex items-center gap-1">
+                                            <button
+                                                onClick={() => { setCustomTestMode('stdin'); setCustomInputFiles([]); }}
+                                                className={`px-2 py-1 text-[10px] rounded border transition-colors ${customTestMode === 'stdin'
+                                                    ? 'bg-[#862733]/20 border-[#862733] text-white'
+                                                    : 'border-[#3c3c3c] text-[#858585] hover:bg-[#2a2d2e]'
+                                                    }`}
+                                            >
+                                                Stdin
+                                            </button>
+                                            <button
+                                                onClick={() => { setCustomTestMode('file'); setCustomStdin(''); }}
+                                                className={`px-2 py-1 text-[10px] rounded border transition-colors ${customTestMode === 'file'
+                                                    ? 'bg-[#862733]/20 border-[#862733] text-white'
+                                                    : 'border-[#3c3c3c] text-[#858585] hover:bg-[#2a2d2e]'
+                                                    }`}
+                                            >
+                                                File(s)
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Stdin mode */}
+                                    {customTestMode === 'stdin' ? (
+                                        <div className="space-y-2">
+                                            <textarea
+                                                value={customStdin}
+                                                onChange={(e) => setCustomStdin(e.target.value)}
+                                                placeholder="Paste standard input here..."
+                                                className="w-full h-20 px-3 py-2 bg-[#252526] border border-[#3c3c3c] rounded text-[#d4d4d4] placeholder-[#505050] text-[12px] resize-y min-h-[60px] focus:outline-none focus:ring-1 focus:ring-[#862733] font-mono"
+                                                spellCheck={false}
+                                            />
+                                            <p className="text-[10px] text-[#858585]">{customStdin.length} chars</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            <input
+                                                ref={customTestFileInputRef}
+                                                type="file"
+                                                multiple
+                                                hidden
+                                                onChange={(e) => {
+                                                    const files = e.target.files;
+                                                    if (!files) return;
+                                                    const newFiles: { name: string; content: string }[] = [];
+                                                    let loadedCount = 0;
+
+                                                    Array.from(files).forEach((file, idx) => {
+                                                        const reader = new FileReader();
+                                                        reader.onload = (ev) => {
+                                                            const content = (ev.target?.result ?? '') as string;
+                                                            newFiles.push({ name: file.name || `input_${idx}.txt`, content });
+                                                            loadedCount++;
+                                                            if (loadedCount === files.length) {
+                                                                setCustomInputFiles(prev => [...prev, ...newFiles]);
+                                                            }
+                                                        };
+                                                        reader.readAsText(file);
+                                                    });
+                                                    e.target.value = '';
+                                                }}
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => customTestFileInputRef.current?.click()}
+                                                className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border-2 border-dashed border-[#3c3c3c] text-[#858585] hover:border-[#862733] hover:text-[#d4d4d4] transition-colors text-[11px]"
+                                            >
+                                                <UploadIcon className="w-4 h-4" />
+                                                Add Input File(s)
+                                            </button>
+                                            {customInputFiles.length > 0 && (
+                                                <div className="space-y-1">
+                                                    {customInputFiles.map((f, idx) => (
+                                                        <div key={idx} className="flex items-center justify-between px-2 py-1.5 rounded bg-[#252526] border border-[#3c3c3c]">
+                                                            <span className="text-[10px] text-[#cccccc] font-mono truncate">{f.name}</span>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setCustomInputFiles(prev => prev.filter((_, i) => i !== idx))}
+                                                                className="text-[#858585] hover:text-[#f44747]"
+                                                            >
+                                                                <X className="w-3 h-3" />
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* Run Custom Input Button */}
+                                    <Button
+                                        onClick={runCustomTest}
+                                        disabled={isRunningCustomTest || !selectedSub || (customTestMode === 'stdin' && !customStdin.trim()) || (customTestMode === 'file' && customInputFiles.length === 0)}
+                                        className="w-full h-9 bg-[#0e639c] hover:bg-[#1177bb] text-white text-[12px] font-medium"
+                                    >
+                                        {isRunningCustomTest ? (
+                                            <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> Running...</>
+                                        ) : (
+                                            <><Play className="w-3.5 h-3.5 mr-2" /> Run Custom Input</>
+                                        )}
+                                    </Button>
+
+                                    {/* Custom Test Result Display */}
+                                    {runResult && (runResult.stdout || runResult.stderr || runResult.message) && runResult.results.length === 0 && (
+                                        <div className="space-y-3 mt-3 pt-3 border-t border-[#3c3c3c] max-h-[50vh] overflow-y-auto pr-2">
+                                            {/* Test Execution Header */}
+                                            <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${runResult.success
+                                                ? 'bg-[#0d2818] border-[#2ea043]'
+                                                : 'bg-[#2d0000] border-[#f44747]'
+                                                }`}>
+                                                {runResult.success ? (
+                                                    <CheckCircle2 className="w-4 h-4 text-[#4ec9b0]" />
+                                                ) : (
+                                                    <AlertCircle className="w-4 h-4 text-[#f44747]" />
+                                                )}
+                                                <div className="flex-1">
+                                                    <p className={`text-[11px] font-semibold ${runResult.success ? 'text-[#4ec9b0]' : 'text-[#f44747]'
+                                                        }`}>
+                                                        {runResult.success ? 'Test Passed' : 'Test Failed'}
+                                                    </p>
+                                                    {runResult.compilation_status && (
+                                                        <p className="text-[10px] text-[#858585]">{runResult.compilation_status}</p>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Input Section */}
+                                            <div className="space-y-1.5">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-[10px] font-semibold text-[#858585] uppercase tracking-wider">📥 Input</span>
+                                                    <span className="text-[9px] text-[#505050]">
+                                                        {customTestMode === 'stdin'
+                                                            ? `${customStdin.length} chars`
+                                                            : customInputFiles.length > 0
+                                                                ? `${customInputFiles.length} file(s) (${customInputFiles.reduce((sum, f) => sum + f.content.length, 0)} bytes total)`
+                                                                : 'N/A'
+                                                        }
+                                                    </span>
+                                                </div>
+                                                <div className="bg-[#0c0c0c] border border-[#3c3c3c] rounded px-3 py-2 max-h-24 overflow-y-auto space-y-2">
+                                                    {customTestMode === 'stdin' ? (
+                                                        <pre className="text-[11px] text-[#569cd6] font-mono whitespace-pre-wrap break-words leading-relaxed">
+                                                            {customStdin || '(empty)'}
+                                                        </pre>
+                                                    ) : (
+                                                        customInputFiles.map((f, idx) => (
+                                                            <div key={idx} className="border-b border-[#3c3c3c] pb-2 last:border-b-0 last:pb-0">
+                                                                <p className="text-[9px] text-[#858585] mb-1">📄 {f.name}</p>
+                                                                <pre className="text-[10px] text-[#569cd6] font-mono whitespace-pre-wrap break-words leading-tight max-h-12 overflow-hidden">
+                                                                    {f.content}
+                                                                </pre>
+                                                            </div>
+                                                        ))
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Output Section */}
+                                            {runResult.stdout && (
+                                                <div className="space-y-1.5">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[10px] font-semibold text-[#858585] uppercase tracking-wider">📤 Output</span>
+                                                        <span className="text-[9px] text-[#505050]">{runResult.stdout.length} chars</span>
+                                                    </div>
+                                                    <div className="bg-[#1a1a2e] border border-[#3c3c3c] rounded px-3 py-2 max-h-32 overflow-y-auto">
+                                                        <pre className="text-[11px] text-[#d4d4d4] font-mono whitespace-pre-wrap break-words leading-relaxed">
+                                                            {runResult.stdout}
+                                                        </pre>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Error Section */}
+                                            {runResult.stderr && (
+                                                <div className="space-y-1.5">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[10px] font-semibold text-[#f44747] uppercase tracking-wider">⚠️ Stderr</span>
+                                                        <span className="text-[9px] text-[#505050]">{runResult.stderr.length} chars</span>
+                                                    </div>
+                                                    <div className="bg-[#2d0000] border border-[#5c1e1e] rounded px-3 py-2 max-h-32 overflow-y-auto">
+                                                        <pre className="text-[11px] text-[#f44747] font-mono whitespace-pre-wrap break-words leading-relaxed">
+                                                            {runResult.stderr}
+                                                        </pre>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Message Section */}
+                                            {runResult.message && !runResult.stdout && (
+                                                <div className="space-y-1.5">
+                                                    <span className="text-[10px] font-semibold text-[#858585] uppercase tracking-wider">💬 Message</span>
+                                                    <div className={`px-3 py-2 rounded border ${runResult.compilation_status === 'Compiled Successfully'
+                                                        ? 'bg-[#1a1a2e] border-[#3c3c3c]'
+                                                        : 'bg-[#2d0000] border-[#5c1e1e]'
+                                                        }`}>
+                                                        <pre className={`text-[11px] font-mono whitespace-pre-wrap break-words leading-relaxed ${runResult.compilation_status === 'Compiled Successfully'
+                                                            ? 'text-[#d4d4d4]'
+                                                            : 'text-[#f44747]'
+                                                            }`}>
+                                                            {runResult.message}
+                                                        </pre>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Clear button */}
+                                            <button
+                                                type="button"
+                                                onClick={() => setRunResult(null)}
+                                                className="w-full text-[10px] px-2 py-1.5 rounded border border-[#3c3c3c] text-[#858585] hover:bg-[#252526] hover:border-[#505050] transition-colors"
+                                            >
+                                                Clear Output
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         )}
 
@@ -1547,10 +2024,6 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
                                         <p className="text-[10px] text-[#858585] uppercase">Passing</p>
                                         <p className="text-[12px] text-white font-medium mt-0.5">{assignment.passing_score} pts</p>
                                     </div>
-                                    <div className="bg-[#1e1e1e] p-2.5 rounded-lg border border-[#3c3c3c]">
-                                        <p className="text-[10px] text-[#858585] uppercase">Difficulty</p>
-                                        <p className="text-[12px] text-white font-medium mt-0.5 capitalize">{assignment.difficulty || 'Medium'}</p>
-                                    </div>
                                 </div>
 
                                 {/* Due Date */}
@@ -1599,16 +2072,6 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
                                                 </div>
                                             </div>
                                         )}
-                                        {assignment.required_files && assignment.required_files.length > 0 && (
-                                            <div>
-                                                <p className="text-[#cccccc] mb-1">Required files:</p>
-                                                <div className="flex flex-wrap gap-1">
-                                                    {assignment.required_files.map(f => (
-                                                        <span key={f} className="text-[10px] px-1.5 py-0.5 rounded bg-[#862733]/20 text-[#e0a0a0] border border-[#862733]/30">{f}</span>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
                                     </div>
                                 </div>
 
@@ -1637,63 +2100,53 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
 
                         {rightPanel === 'rubric' && (
                             <div className="space-y-4">
-                                {/* Grading Weight Bar */}
-                                <div className="bg-[#1e1e1e] rounded-lg p-3 border border-[#3c3c3c]">
-                                    <p className="text-[11px] text-[#858585] uppercase tracking-wider mb-2">Grading Weight</p>
-                                    <div className="flex gap-4 mb-2">
-                                        <span className="text-[12px] text-[#4ec9b0]">Tests: {assignment.test_weight}%</span>
-                                        <span className="text-[12px] text-[#c586c0]">Rubric: {assignment.rubric_weight}%</span>
-                                    </div>
-                                    <div className="flex h-2 rounded-full overflow-hidden bg-[#333]">
-                                        <div className="bg-[#4ec9b0]" style={{ width: `${assignment.test_weight}%` }} />
-                                        <div className="bg-[#c586c0]" style={{ width: `${assignment.rubric_weight}%` }} />
-                                    </div>
-                                </div>
-
-                                {assignment.rubric ? (
+                                {assignment.rubric && assignment.rubric.items?.length > 0 ? (
                                     <div className="space-y-3">
                                         <div className="bg-[#1e1e1e] rounded-lg p-3 border border-[#3c3c3c]">
                                             <p className="text-[12px] text-[#cccccc]">
-                                                Total Rubric Points: <span className="text-white font-semibold">{assignment.rubric.total_points}</span>
+                                                Total Rubric Points:{' '}
+                                                <span className="text-white font-semibold">
+                                                    {assignment.rubric.total_points}
+                                                </span>
+                                            </p>
+                                            <p className="text-[10px] text-[#858585] mt-1">
+                                                {assignment.rubric.items.length} grading criteria
                                             </p>
                                         </div>
-
-                                        {assignment.rubric.categories.map(cat => (
-                                            <div key={cat.id} className="bg-[#1e1e1e] rounded-lg border border-[#3c3c3c] overflow-hidden">
-                                                <div className="px-3 py-2 border-b border-[#3c3c3c] bg-[#2a2d2e]">
-                                                    <div className="flex items-center justify-between">
-                                                        <p className="text-[12px] font-semibold text-[#c586c0]">{cat.name}</p>
-                                                        <span className="text-[10px] text-[#858585]">Weight: {cat.weight}%</span>
+                                        <div className="bg-[#1e1e1e] rounded-lg border border-[#3c3c3c] divide-y divide-[#3c3c3c]">
+                                            {assignment.rubric.items.map((item, idx) => (
+                                                <div
+                                                    key={item.id ?? idx}
+                                                    className="px-3 py-2 flex items-start justify-between gap-2"
+                                                >
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-[11px] font-medium text-[#d4d4d4]">
+                                                            {item.name}
+                                                        </p>
+                                                        {item.description && (
+                                                            <p className="text-[10px] text-[#858585] mt-0.5">
+                                                                {item.description}
+                                                            </p>
+                                                        )}
+                                                        <p className="text-[10px] text-[#858585] mt-0.5">
+                                                            Weight: <span className="text-[#4ec9b0] font-semibold">{item.weight}%</span>
+                                                            {typeof item.points === 'number' && (
+                                                                <> · Points: <span className="text-[#4ec9b0] font-semibold">{item.points}</span></>
+                                                            )}
+                                                        </p>
                                                     </div>
-                                                    {cat.description && (
-                                                        <p className="text-[10px] text-[#858585] mt-0.5">{cat.description}</p>
-                                                    )}
                                                 </div>
-                                                <div className="divide-y divide-[#3c3c3c]">
-                                                    {cat.items.map(item => (
-                                                        <div key={item.id} className="px-3 py-2 flex items-start justify-between gap-2">
-                                                            <div className="flex-1 min-w-0">
-                                                                <p className="text-[11px] font-medium text-[#d4d4d4]">{item.name}</p>
-                                                                {item.description && (
-                                                                    <p className="text-[10px] text-[#858585] mt-0.5">{item.description}</p>
-                                                                )}
-                                                            </div>
-                                                            <span className="text-[11px] font-semibold text-[#4ec9b0] shrink-0">{item.max_points} pts</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        ))}
+                                            ))}
+                                        </div>
                                     </div>
                                 ) : (
                                     <div className="text-center py-8">
                                         <FileText className="w-10 h-10 mx-auto text-[#505050] mb-3" />
                                         <p className="text-[12px] text-[#858585]">No rubric for this assignment</p>
-                                        <p className="text-[10px] text-[#606060] mt-1">Grading based on {assignment.test_weight}% tests</p>
                                     </div>
                                 )}
 
-                                {/* Test Cases Summary */}
+                                {/* Test Cases Summary (reference only; grading is rubric-based) */}
                                 {assignment.test_cases && assignment.test_cases.length > 0 && (
                                     <div className="bg-[#1e1e1e] rounded-lg p-3 border border-[#3c3c3c]">
                                         <p className="text-[11px] text-[#858585] uppercase tracking-wider mb-2">Test Cases ({assignment.test_cases.length})</p>
@@ -1703,7 +2156,6 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
                                                     <span className="text-[#cccccc] truncate flex-1">{tc.name}</span>
                                                     <div className="flex items-center gap-2 shrink-0">
                                                         {tc.is_hidden && <span className="text-[9px] px-1 py-0.5 rounded bg-[#505050] text-[#858585]">Hidden</span>}
-                                                        {tc.is_sample && <span className="text-[9px] px-1 py-0.5 rounded bg-[#094771] text-[#79c0ff]">Sample</span>}
                                                         <span className="text-[#4ec9b0] font-medium">{tc.points} pts</span>
                                                     </div>
                                                 </div>
@@ -1728,166 +2180,166 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
                                         )}
                                     </div>
                                 ) : (
-                                <>
-                                {/* Summary */}
-                                <div className={`rounded-lg p-3 border ${selectedSub.plagiarism_flagged ? 'bg-[#5c1e1e]/20 border-[#f44747]/30' : 'bg-[#1e1e1e] border-[#3c3c3c]'}`}>
-                                    <div className="flex items-center justify-between mb-2">
-                                        <p className="text-[11px] text-[#858585] uppercase tracking-wider">Similarity Score</p>
-                                        {selectedSub.plagiarism_flagged && (
-                                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#f44747]/20 text-[#f44747] font-semibold">FLAGGED</span>
-                                        )}
-                                    </div>
-                                    <p className={`text-2xl font-bold ${selectedSub.plagiarism_flagged ? 'text-[#f44747]' : selectedSub.plagiarism_score && selectedSub.plagiarism_score > 20 ? 'text-[#dcdcaa]' : 'text-[#4ec9b0]'}`}>
-                                        {selectedSub.plagiarism_checked && selectedSub.plagiarism_score !== null
-                                            ? `${selectedSub.plagiarism_score.toFixed(1)}%`
-                                            : 'Not checked'}
-                                    </p>
-                                    {!selectedSub.plagiarism_checked && (
-                                        <p className="text-[10px] text-[#858585] mt-1">Run a plagiarism check to compare against other submissions</p>
-                                    )}
-                                </div>
-
-                                {/* Run Check Button */}
-                                <button
-                                    onClick={runPlagiarismCheck}
-                                    disabled={checkingPlagiarism}
-                                    className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-purple-600/20 border border-purple-500/30 text-purple-400 hover:bg-purple-600/30 transition-colors text-[11px] font-medium disabled:opacity-50"
-                                >
-                                    {checkingPlagiarism
-                                        ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Checking...</>
-                                        : <><Shield className="w-3.5 h-3.5" /> {selectedSub.plagiarism_checked ? 'Re-run Check' : 'Run Plagiarism Check'}</>}
-                                </button>
-
-                                {/* Compare mode indicator */}
-                                {compareMode && (
-                                    <div className="rounded-lg p-2.5 bg-purple-900/30 border border-purple-500/30">
-                                        <div className="flex items-center gap-2 mb-1">
-                                            <ArrowLeftRight className="w-3.5 h-3.5 text-purple-400" />
-                                            <span className="text-[11px] font-semibold text-purple-300">Comparing in Editor</span>
+                                    <>
+                                        {/* Summary */}
+                                        <div className={`rounded-lg p-3 border ${selectedSub.plagiarism_flagged ? 'bg-[#5c1e1e]/20 border-[#f44747]/30' : 'bg-[#1e1e1e] border-[#3c3c3c]'}`}>
+                                            <div className="flex items-center justify-between mb-2">
+                                                <p className="text-[11px] text-[#858585] uppercase tracking-wider">Similarity Score</p>
+                                                {selectedSub.plagiarism_flagged && (
+                                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#f44747]/20 text-[#f44747] font-semibold">FLAGGED</span>
+                                                )}
+                                            </div>
+                                            <p className={`text-2xl font-bold ${selectedSub.plagiarism_flagged ? 'text-[#f44747]' : selectedSub.plagiarism_score && selectedSub.plagiarism_score > 20 ? 'text-[#dcdcaa]' : 'text-[#4ec9b0]'}`}>
+                                                {selectedSub.plagiarism_checked && selectedSub.plagiarism_score !== null
+                                                    ? `${selectedSub.plagiarism_score.toFixed(1)}%`
+                                                    : 'Not checked'}
+                                            </p>
+                                            {!selectedSub.plagiarism_checked && (
+                                                <p className="text-[10px] text-[#858585] mt-1">Run a plagiarism check to compare against other submissions</p>
+                                            )}
                                         </div>
-                                        <p className="text-[10px] text-[#858585]">
-                                            vs <span className="text-purple-300">{compareMode.matchedStudentName}</span> - {compareMode.similarity.toFixed(1)}%
-                                        </p>
-                                        <button onClick={exitCompareMode}
-                                            className="mt-2 w-full py-1 rounded bg-[#3c3c3c] hover:bg-[#505050] text-[10px] text-[#cccccc] transition-colors">
-                                            Exit Compare Mode
+
+                                        {/* Run Check Button */}
+                                        <button
+                                            onClick={runPlagiarismCheck}
+                                            disabled={checkingPlagiarism}
+                                            className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-purple-600/20 border border-purple-500/30 text-purple-400 hover:bg-purple-600/30 transition-colors text-[11px] font-medium disabled:opacity-50"
+                                        >
+                                            {checkingPlagiarism
+                                                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Checking...</>
+                                                : <><Shield className="w-3.5 h-3.5" /> {selectedSub.plagiarism_checked ? 'Re-run Check' : 'Run Plagiarism Check'}</>}
                                         </button>
-                                    </div>
-                                )}
 
-                                {/* Unified Matched Students List */}
-                                {unifiedPlagiarismMatches.length > 0 ? (
-                                    <div>
-                                        <p className="text-[11px] text-[#858585] uppercase tracking-wider mb-2">
-                                            Matched Students ({unifiedPlagiarismMatches.length})
-                                        </p>
-                                        <div className="space-y-2">
-                                            {unifiedPlagiarismMatches.map((m: any) => {
-                                                const matchedSub = allSubs.find(s => s.id === m.matched_submission_id);
-                                                const matchedName = matchedSub?.student?.full_name || m.matched_source || m.student_name || `Submission #${m.matched_submission_id}`;
-                                                const isActive = compareMode?.matchedSubId === m.matched_submission_id;
+                                        {/* Compare mode indicator */}
+                                        {compareMode && (
+                                            <div className="rounded-lg p-2.5 bg-purple-900/30 border border-purple-500/30">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <ArrowLeftRight className="w-3.5 h-3.5 text-purple-400" />
+                                                    <span className="text-[11px] font-semibold text-purple-300">Comparing in Editor</span>
+                                                </div>
+                                                <p className="text-[10px] text-[#858585]">
+                                                    vs <span className="text-purple-300">{compareMode.matchedStudentName}</span> - {compareMode.similarity.toFixed(1)}%
+                                                </p>
+                                                <button onClick={exitCompareMode}
+                                                    className="mt-2 w-full py-1 rounded bg-[#3c3c3c] hover:bg-[#505050] text-[10px] text-[#cccccc] transition-colors">
+                                                    Exit Compare Mode
+                                                </button>
+                                            </div>
+                                        )}
 
-                                                return (
-                                                    <div key={m.id}
-                                                        className={`rounded-lg border overflow-hidden transition-all cursor-pointer ${isActive
-                                                                ? 'bg-purple-900/30 border-purple-500/50 ring-1 ring-purple-500/30'
-                                                                : 'bg-[#1e1e1e] border-[#3c3c3c] hover:border-[#505050]'
-                                                            }`}
-                                                        onClick={() => {
-                                                            if (!isActive && m.matched_submission_id) enterCompareMode(m);
-                                                        }}
-                                                    >
-                                                        <div className="p-2.5">
-                                                            {/* Student header */}
-                                                            <div className="flex items-center gap-2 mb-1.5">
-                                                                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${m.similarity_percentage >= 50
-                                                                        ? 'bg-[#f44747]/20 text-[#f44747]'
-                                                                        : m.similarity_percentage >= 30
-                                                                            ? 'bg-[#dcdcaa]/20 text-[#dcdcaa]'
-                                                                            : 'bg-[#4ec9b0]/20 text-[#4ec9b0]'
-                                                                    }`}>
-                                                                    {matchedName.charAt(0).toUpperCase()}
-                                                                </div>
-                                                                <div className="flex-1 min-w-0">
-                                                                    <p className="text-[11px] font-medium text-[#cccccc] truncate">{matchedName}</p>
-                                                                    {matchedSub?.student?.student_id && (
-                                                                        <p className="text-[9px] text-[#858585]">ID: {matchedSub.student.student_id}</p>
-                                                                    )}
-                                                                </div>
-                                                                <div className="flex flex-col items-end gap-0.5 shrink-0">
-                                                                    <span className={`text-[13px] font-bold ${m.similarity_percentage >= 50 ? 'text-[#f44747]'
-                                                                            : m.similarity_percentage >= 30 ? 'text-[#dcdcaa]'
-                                                                                : 'text-[#4ec9b0]'
-                                                                        }`}>
-                                                                        {m.similarity_percentage.toFixed(1)}%
-                                                                    </span>
-                                                                    {m.is_reviewed && (
-                                                                        <span className={`text-[8px] px-1 py-0.5 rounded ${m.is_confirmed ? 'bg-[#f44747]/20 text-[#f44747]' : 'bg-[#2ea043]/20 text-[#7ee787]'
-                                                                            }`}>
-                                                                            {m.is_confirmed ? 'Confirmed' : 'Dismissed'}
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                            </div>
+                                        {/* Unified Matched Students List */}
+                                        {unifiedPlagiarismMatches.length > 0 ? (
+                                            <div>
+                                                <p className="text-[11px] text-[#858585] uppercase tracking-wider mb-2">
+                                                    Matched Students ({unifiedPlagiarismMatches.length})
+                                                </p>
+                                                <div className="space-y-2">
+                                                    {unifiedPlagiarismMatches.map((m: any) => {
+                                                        const matchedSub = allSubs.find(s => s.id === m.matched_submission_id);
+                                                        const matchedName = matchedSub?.student?.full_name || m.matched_source || m.student_name || `Submission #${m.matched_submission_id}`;
+                                                        const isActive = compareMode?.matchedSubId === m.matched_submission_id;
 
-                                                            {/* Similarity bar */}
-                                                            <div className="mb-2">
-                                                                <div className="h-1.5 rounded-full bg-[#333] overflow-hidden">
-                                                                    <div
-                                                                        className={`h-full rounded-full transition-all ${m.similarity_percentage >= 50 ? 'bg-[#f44747]'
-                                                                                : m.similarity_percentage >= 30 ? 'bg-[#dcdcaa]'
-                                                                                    : 'bg-[#4ec9b0]'
-                                                                            }`}
-                                                                        style={{ width: `${Math.min(m.similarity_percentage, 100)}%` }}
-                                                                    />
-                                                                </div>
-                                                            </div>
-
-                                                            {/* Action row */}
-                                                            <button
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    if (isActive) exitCompareMode();
-                                                                    else if (m.matched_submission_id) enterCompareMode(m);
-                                                                }}
-                                                                className={`w-full flex items-center justify-center gap-1.5 py-1.5 rounded text-[10px] font-medium transition-colors ${isActive
-                                                                        ? 'bg-purple-600/30 border border-purple-500/40 text-purple-300 hover:bg-purple-600/40'
-                                                                        : 'bg-[#2a2d2e] border border-[#3c3c3c] text-[#cccccc] hover:bg-[#3c3c3c] hover:text-white'
+                                                        return (
+                                                            <div key={m.id}
+                                                                className={`rounded-lg border overflow-hidden transition-all cursor-pointer ${isActive
+                                                                    ? 'bg-purple-900/30 border-purple-500/50 ring-1 ring-purple-500/30'
+                                                                    : 'bg-[#1e1e1e] border-[#3c3c3c] hover:border-[#505050]'
                                                                     }`}
+                                                                onClick={() => {
+                                                                    if (!isActive && m.matched_submission_id) enterCompareMode(m);
+                                                                }}
                                                             >
-                                                                <ArrowLeftRight className="w-3 h-3" />
-                                                                {isActive ? 'Exit Compare' : 'Compare Code Side-by-Side'}
-                                                            </button>
-                                                        </div>
+                                                                <div className="p-2.5">
+                                                                    {/* Student header */}
+                                                                    <div className="flex items-center gap-2 mb-1.5">
+                                                                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${m.similarity_percentage >= 50
+                                                                            ? 'bg-[#f44747]/20 text-[#f44747]'
+                                                                            : m.similarity_percentage >= 30
+                                                                                ? 'bg-[#dcdcaa]/20 text-[#dcdcaa]'
+                                                                                : 'bg-[#4ec9b0]/20 text-[#4ec9b0]'
+                                                                            }`}>
+                                                                            {matchedName.charAt(0).toUpperCase()}
+                                                                        </div>
+                                                                        <div className="flex-1 min-w-0">
+                                                                            <p className="text-[11px] font-medium text-[#cccccc] truncate">{matchedName}</p>
+                                                                            {matchedSub?.student?.student_id && (
+                                                                                <p className="text-[9px] text-[#858585]">ID: {matchedSub.student.student_id}</p>
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="flex flex-col items-end gap-0.5 shrink-0">
+                                                                            <span className={`text-[13px] font-bold ${m.similarity_percentage >= 50 ? 'text-[#f44747]'
+                                                                                : m.similarity_percentage >= 30 ? 'text-[#dcdcaa]'
+                                                                                    : 'text-[#4ec9b0]'
+                                                                                }`}>
+                                                                                {m.similarity_percentage.toFixed(1)}%
+                                                                            </span>
+                                                                            {m.is_reviewed && (
+                                                                                <span className={`text-[8px] px-1 py-0.5 rounded ${m.is_confirmed ? 'bg-[#f44747]/20 text-[#f44747]' : 'bg-[#2ea043]/20 text-[#7ee787]'
+                                                                                    }`}>
+                                                                                    {m.is_confirmed ? 'Confirmed' : 'Dismissed'}
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
 
-                                                        {/* Code snippet preview (only for DB matches with snippets, not in compare mode) */}
-                                                        {m.source_code_snippet && !isActive && (
-                                                            <div className="border-t border-[#3c3c3c]" onClick={(e) => e.stopPropagation()}>
-                                                                <div className="grid grid-cols-2 divide-x divide-[#3c3c3c]">
-                                                                    <div className="p-2">
-                                                                        <p className="text-[9px] text-[#858585] mb-1">This student (L{m.source_line_start}–{m.source_line_end})</p>
-                                                                        <pre className="text-[10px] text-[#d4d4d4] font-mono whitespace-pre-wrap max-h-16 overflow-y-auto">{m.source_code_snippet}</pre>
+                                                                    {/* Similarity bar */}
+                                                                    <div className="mb-2">
+                                                                        <div className="h-1.5 rounded-full bg-[#333] overflow-hidden">
+                                                                            <div
+                                                                                className={`h-full rounded-full transition-all ${m.similarity_percentage >= 50 ? 'bg-[#f44747]'
+                                                                                    : m.similarity_percentage >= 30 ? 'bg-[#dcdcaa]'
+                                                                                        : 'bg-[#4ec9b0]'
+                                                                                    }`}
+                                                                                style={{ width: `${Math.min(m.similarity_percentage, 100)}%` }}
+                                                                            />
+                                                                        </div>
                                                                     </div>
-                                                                    <div className="p-2">
-                                                                        <p className="text-[9px] text-[#858585] mb-1">Match (L{m.matched_line_start}–{m.matched_line_end})</p>
-                                                                        <pre className="text-[10px] text-[#ffa198] font-mono whitespace-pre-wrap max-h-16 overflow-y-auto">{m.matched_code_snippet}</pre>
-                                                                    </div>
+
+                                                                    {/* Action row */}
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            if (isActive) exitCompareMode();
+                                                                            else if (m.matched_submission_id) enterCompareMode(m);
+                                                                        }}
+                                                                        className={`w-full flex items-center justify-center gap-1.5 py-1.5 rounded text-[10px] font-medium transition-colors ${isActive
+                                                                            ? 'bg-purple-600/30 border border-purple-500/40 text-purple-300 hover:bg-purple-600/40'
+                                                                            : 'bg-[#2a2d2e] border border-[#3c3c3c] text-[#cccccc] hover:bg-[#3c3c3c] hover:text-white'
+                                                                            }`}
+                                                                    >
+                                                                        <ArrowLeftRight className="w-3 h-3" />
+                                                                        {isActive ? 'Exit Compare' : 'Compare Code Side-by-Side'}
+                                                                    </button>
                                                                 </div>
+
+                                                                {/* Code snippet preview (only for DB matches with snippets, not in compare mode) */}
+                                                                {m.source_code_snippet && !isActive && (
+                                                                    <div className="border-t border-[#3c3c3c]" onClick={(e) => e.stopPropagation()}>
+                                                                        <div className="grid grid-cols-2 divide-x divide-[#3c3c3c]">
+                                                                            <div className="p-2">
+                                                                                <p className="text-[9px] text-[#858585] mb-1">This student (L{m.source_line_start}–{m.source_line_end})</p>
+                                                                                <pre className="text-[10px] text-[#d4d4d4] font-mono whitespace-pre-wrap max-h-16 overflow-y-auto">{m.source_code_snippet}</pre>
+                                                                            </div>
+                                                                            <div className="p-2">
+                                                                                <p className="text-[9px] text-[#858585] mb-1">Match (L{m.matched_line_start}–{m.matched_line_end})</p>
+                                                                                <pre className="text-[10px] text-[#ffa198] font-mono whitespace-pre-wrap max-h-16 overflow-y-auto">{m.matched_code_snippet}</pre>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
                                                             </div>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                ) : selectedSub.plagiarism_checked ? (
-                                    <div className="text-center py-6">
-                                        <CheckCircle2 className="w-8 h-8 mx-auto text-[#2ea043] mb-2" />
-                                        <p className="text-[12px] text-[#cccccc]">No significant matches found</p>
-                                        <p className="text-[10px] text-[#858585] mt-1">This submission appears to be original</p>
-                                    </div>
-                                ) : null}
-                                </>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        ) : selectedSub.plagiarism_checked ? (
+                                            <div className="text-center py-6">
+                                                <CheckCircle2 className="w-8 h-8 mx-auto text-[#2ea043] mb-2" />
+                                                <p className="text-[12px] text-[#cccccc]">No significant matches found</p>
+                                                <p className="text-[10px] text-[#858585] mt-1">This submission appears to be original</p>
+                                            </div>
+                                        ) : null}
+                                    </>
                                 )}
                             </div>
                         )}
@@ -1935,7 +2387,7 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
                                         </div>
                                         <div className="bg-[#1e1e1e] rounded-lg p-2.5 border border-[#3c3c3c]">
                                             <p className="text-[10px] text-[#858585] mb-0.5">Visibility</p>
-                                            <p className="text-[13px] font-semibold text-[#d4d4d4]">{spec?.is_hidden ? 'Hidden' : spec?.is_sample ? 'Sample' : 'Visible'}</p>
+                                            <p className="text-[13px] font-semibold text-[#d4d4d4]">{spec?.is_hidden ? 'Hidden' : 'Visible'}</p>
                                         </div>
                                         {spec?.time_limit_seconds && (
                                             <div className="bg-[#1e1e1e] rounded-lg p-2.5 border border-[#3c3c3c]">
