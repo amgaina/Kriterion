@@ -73,14 +73,11 @@ def run_code_task(
                 "tests_total": 0,
             }
         
-        # Get test cases (only public/sample for practice runs)
+        # Get visible (non-hidden) test cases for practice runs
         test_cases = self.db.query(TestCase).filter(
             and_(
                 TestCase.assignment_id == assignment_id,
-                or_(
-                    TestCase.is_sample == True,
-                    TestCase.is_hidden == False
-                )
+                TestCase.is_hidden == False
             )
         ).order_by(TestCase.order).all()
         

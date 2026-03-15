@@ -49,6 +49,8 @@ export interface RoleDashboardLayoutProps {
     };
     /** Build href for an event. Required. */
     getEventHref: (event: CalendarEvent) => string;
+    /** When true, hide the calendar/upcoming sidebar (e.g. on grading page). */
+    hideCalendarSidebar?: boolean;
 }
 
 export default function RoleDashboardLayout({
@@ -56,6 +58,7 @@ export default function RoleDashboardLayout({
     allowedRoles,
     eventsQuery,
     getEventHref,
+    hideCalendarSidebar = false,
 }: RoleDashboardLayoutProps) {
     const [selectedDate, setSelectedDate] = useState<Date | null>(null);
     const [calendarOpen, setCalendarOpen] = useState(true);
@@ -97,7 +100,7 @@ export default function RoleDashboardLayout({
 
     return (
         <ProtectedRoute allowedRoles={allowedRoles}>
-            <DashboardLayout>
+            <DashboardLayout hideTopNav={hideCalendarSidebar}>
                 <div className="flex gap-5 h-full min-h-0">
                     {/* Main content */}
                     <div className="flex-1 min-w-0 overflow-y-auto">
@@ -105,7 +108,7 @@ export default function RoleDashboardLayout({
                     </div>
 
                     {/* Desktop: reopen button when calendar is collapsed */}
-                    {!calendarOpen && (
+                    {!hideCalendarSidebar && !calendarOpen && (
                         <button
                             onClick={() => setCalendarOpen(true)}
                             className="hidden lg:flex flex-shrink-0 items-center justify-center w-8 h-8 rounded-lg border border-gray-200 bg-white text-gray-400 hover:text-primary hover:border-primary/30 transition-colors self-start mt-1"
@@ -116,6 +119,7 @@ export default function RoleDashboardLayout({
                     )}
 
                     {/* Desktop: calendar sidebar */}
+                    {!hideCalendarSidebar && (
                     <aside
                         className={`
                             ${calendarOpen ? 'w-72 xl:w-80' : 'w-0 overflow-hidden'}
@@ -149,8 +153,10 @@ export default function RoleDashboardLayout({
                             />
                         </div>
                     </aside>
+                    )}
 
                     {/* Mobile: floating calendar button */}
+                    {!hideCalendarSidebar && (
                     <button
                         onClick={() => setMobileDrawerOpen(true)}
                         className="fixed bottom-6 right-6 z-40 lg:hidden p-3 rounded-full bg-primary text-white shadow-lg hover:bg-primary-700 transition-colors"
@@ -158,9 +164,10 @@ export default function RoleDashboardLayout({
                     >
                         <CalendarDays className="w-5 h-5" />
                     </button>
+                    )}
 
                     {/* Mobile: calendar drawer */}
-                    {mobileDrawerOpen && (
+                    {!hideCalendarSidebar && mobileDrawerOpen && (
                         <div className="lg:hidden fixed inset-0 z-50">
                             <div
                                 className="absolute inset-0 bg-black/20 backdrop-blur-sm"

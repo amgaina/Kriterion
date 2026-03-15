@@ -1,9 +1,13 @@
 'use client';
 
+import { usePathname } from 'next/navigation';
 import RoleDashboardLayout, { CalendarEvent } from '@/components/layouts/RoleDashboardLayout';
 import apiClient from '@/lib/api-client';
 
 export default function FacultyLayout({ children }: { children: React.ReactNode }) {
+    const pathname = usePathname();
+    const isGradingPage = pathname?.includes('/grade/') === true;
+
     return (
         <RoleDashboardLayout
             allowedRoles={['FACULTY']}
@@ -21,6 +25,7 @@ export default function FacultyLayout({ children }: { children: React.ReactNode 
                 }
                 return '/faculty/courses';
             }}
+            hideCalendarSidebar={isGradingPage}
         >
             {children}
         </RoleDashboardLayout>

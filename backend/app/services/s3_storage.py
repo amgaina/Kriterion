@@ -125,6 +125,57 @@ class S3StorageService:
             logger.error(f"S3 upload failed [{code}]: {msg}")
             raise Exception(f"S3 upload failed ({code}): {msg}") from e
     
+    def upload_test_file(
+        self,
+        assignment_id: int,
+        test_case_id: int,
+        file_content: bytes,
+        filename: str,
+        role: str = "input",
+    ) -> str:
+        """
+        Upload a test case input or expected-output file to S3.
+        role: 'input' or 'expected'
+        Returns S3 key.
+        """
+        try:
+            s3_key = f"test-cases/{assignment_id}/{test_case_id}/{role}/{filename}"
+            self.s3_client.put_object(
+                Bucket=self.bucket_name,
+                Key=s3_key,
+                Body=file_content,
+                ContentType=self._get_content_type(Path(filename).suffix),
+                Metadata={
+                    "assignment_id": str(assignment_id),
+                    "test_case_id": str(test_case_id),
+                    "role": role,
+                },
+            )
+            logger.info(f"Test file uploaded to S3: {s3_key}")
+            return s3_key
+        except NoCredentialsError as e:
+            logger.error(f"S3 credentials missing: {e}")
+            raise Exception(
+                "AWS credentials not found. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in .env"
+            ) from e
+        except ClientError as e:
+            code = e.response.get("Error", {}).get("Code", "Unknown")
+            msg = e.response.get("Error", {}).get("Message", str(e))
+            logger.error(f"S3 upload failed [{code}]: {msg}")
+            raise Exception(f"S3 upload failed ({code}): {msg}") from e
+
+    def get_object_content(self, s3_key: str, encoding: str = "utf-8") -> str:
+        """
+        Get object body as string. Uses utf-8 by default; replace on decode errors.
+        """
+        try:
+            response = self.s3_client.get_object(Bucket=self.bucket_name, Key=s3_key)
+            body = response["Body"].read()
+            return body.decode(encoding, errors="replace")
+        except ClientError as e:
+            logger.error(f"S3 get_object failed: {str(e)}")
+            raise Exception(f"Failed to read file from S3: {str(e)}") from e
+
     def download_submission_file(self, s3_key: str, local_path: str) -> str:
         """
         Download a file from S3 to local path

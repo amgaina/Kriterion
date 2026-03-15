@@ -77,6 +77,14 @@ class ApiClient {
         return localStorage.getItem('access_token');
     }
 
+    /** WebSocket URL for interactive run (process blocks on input; send stdin line-by-line). */
+    getInteractiveRunWebSocketUrl(assignmentId: number): string {
+        const base = API_BASE_URL.replace(/^http/, 'ws');
+        const token = this.getAccessToken();
+        const q = token ? `?token=${encodeURIComponent(token)}` : '';
+        return `${base}/assignments/${assignmentId}/run/interactive${q}`;
+    }
+
     private getRefreshToken(): string | null {
         if (typeof window === 'undefined') return null;
         return localStorage.getItem('refresh_token');
@@ -390,10 +398,25 @@ class ApiClient {
         return response.data;
     }
 
-    async runCode(assignmentId: number, files: { name: string; content: string }[], testCaseIds?: number[]) {
-        const payload: any = { files };
-        if (testCaseIds && testCaseIds.length > 0) {
-            payload.test_case_ids = testCaseIds;
+    async runCode(
+        assignmentId: number,
+        files: { name: string; content: string }[],
+        options?: { stdin?: string; testCaseIds?: number[]; inputFile?: { name: string; content: string } }
+    ) {
+        const payload: {
+            files: { name: string; content: string }[];
+            test_case_ids?: number[];
+            stdin?: string;
+            input_file?: { name: string; content: string };
+        } = { files };
+        if (options?.testCaseIds && options.testCaseIds.length > 0) {
+            payload.test_case_ids = options.testCaseIds;
+        }
+        if (options?.stdin != null && options.stdin !== '') {
+            payload.stdin = options.stdin;
+        }
+        if (options?.inputFile?.name?.trim() && options.inputFile.content !== undefined) {
+            payload.input_file = { name: options.inputFile.name.trim(), content: options.inputFile.content };
         }
         const response = await this.client.post(`/assignments/${assignmentId}/run`, payload);
         return response.data;
@@ -433,6 +456,11 @@ class ApiClient {
 
     async getFacultyLanguages() {
         const response = await this.client.get('/faculty/languages');
+        return response.data;
+    }
+
+    async getRubricItems() {
+        const response = await this.client.get('/faculty/rubric-items');
         return response.data;
     }
 

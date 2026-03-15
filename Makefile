@@ -1,4 +1,4 @@
-.PHONY: help install build up down restart logs clean test migrate migrate-local seed
+.PHONY: help install build up down restart logs clean test migrate migrate-local seed seed-local reset-db
 
 install: ## Install dependencies
 	@echo "Installing backend dependencies..."
@@ -93,6 +93,15 @@ seed-local: ## Seed database locally (connects to Supabase, no Docker)
 		cd backend && python3 scripts/seed_data.py; \
 	fi
 	@echo "Seeding complete!"
+
+reset-db: ## Drop DB (public schema), run migrations, and seed (uses backend/.env or .env for DATABASE_URL)
+	@echo "Step 1: Dropping public schema..."
+	@if [ -d backend/.venv ]; then backend/.venv/bin/python backend/scripts/reset_schema.py; else python3 backend/scripts/reset_schema.py; fi
+	@echo "Step 2: Running migrations..."
+	@$(MAKE) migrate-local
+	@echo "Step 3: Seeding..."
+	@$(MAKE) seed-local
+	@echo "Done. Database reset, migrated, and seeded."
 
 shell-backend: ## Open backend shell
 	docker-compose exec backend bash

@@ -17,9 +17,9 @@ from app.models.course import (
 
 # Assignment Models
 from app.models.assignment import (
-    Assignment, AssignmentStatus, DifficultyLevel,
+    Assignment, AssignmentStatus,
     TestCase,
-    Rubric, RubricCategory, RubricItem
+    Rubric, RubricItem
 )
 
 # Submission Models
@@ -75,9 +75,9 @@ __all__ = [
     "Announcement",
     
     # Assignment
-    "Assignment", "AssignmentStatus", "DifficultyLevel",
+    "Assignment", "AssignmentStatus",
     "TestCase",
-    "Rubric", "RubricCategory", "RubricItem",
+    "Rubric", "RubricItem",
     
     # Submission
     "Submission", "SubmissionStatus",

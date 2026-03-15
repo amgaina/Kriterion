@@ -11,6 +11,11 @@ export default function CourseLayout({ children }: { children: React.ReactNode }
     const courseId = params?.courseId as string;
     const pathname = usePathname();
 
+    const isGradingPage = pathname?.includes('/grade/') === true;
+    if (isGradingPage) {
+        return <>{children}</>;
+    }
+
     const navItems = [
         { label: 'Overview', href: `/faculty/courses/${courseId}`, icon: LayoutDashboard },
         { label: 'Assignments', href: `/faculty/courses/${courseId}/assignments`, icon: FileText },
