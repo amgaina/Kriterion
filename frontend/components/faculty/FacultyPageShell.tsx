@@ -136,10 +136,13 @@ export function FacultyPageShell({ children, hideCalendar = false }: FacultyPage
                                     {filteredEvents.map((event) => {
                                         const isDeadline = event.event_type === 'deadline';
                                         const isPast = new Date(event.date) < new Date();
+                                        const eventHref = event.course_id
+                                            ? `/faculty/courses/${event.course_id}/assignments/${event.id}`
+                                            : '/faculty/courses';
                                         return (
                                             <Link
                                                 key={`${event.id}-${event.event_type}`}
-                                                href={`/faculty/assignments/${event.id}`}
+                                                href={eventHref}
                                                 className="block group"
                                             >
                                                 <div className="flex items-start gap-2.5 p-2 rounded-lg hover:bg-gray-50 transition-colors">
@@ -213,17 +216,23 @@ export function FacultyPageShell({ children, hideCalendar = false }: FacultyPage
                                     No events
                                 </p>
                             ) : (
-                                filteredEvents.map((event) => (
-                                    <Link
-                                        key={`mob-${event.id}-${event.event_type}`}
-                                        href={`/faculty/assignments/${event.id}`}
-                                        onClick={() => setMobileCalendarOpen(false)}
-                                        className="block p-2.5 rounded-lg hover:bg-gray-50 transition-colors"
-                                    >
-                                        <p className="text-xs font-medium text-gray-900 truncate">{event.title}</p>
-                                        <p className="text-[11px] text-gray-400">{event.course_code} · {format(parseISO(event.date), 'MMM d')}</p>
-                                    </Link>
-                                ))
+                                filteredEvents.map((event) => {
+                                    const eventHref = event.course_id
+                                        ? `/faculty/courses/${event.course_id}/assignments/${event.id}`
+                                        : '/faculty/courses';
+
+                                    return (
+                                        <Link
+                                            key={`mob-${event.id}-${event.event_type}`}
+                                            href={eventHref}
+                                            onClick={() => setMobileCalendarOpen(false)}
+                                            className="block p-2.5 rounded-lg hover:bg-gray-50 transition-colors"
+                                        >
+                                            <p className="text-xs font-medium text-gray-900 truncate">{event.title}</p>
+                                            <p className="text-[11px] text-gray-400">{event.course_code} · {format(parseISO(event.date), 'MMM d')}</p>
+                                        </Link>
+                                    );
+                                })
                             )}
                         </div>
                     </div>

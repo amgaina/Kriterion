@@ -141,6 +141,7 @@ export default function NewAssignmentPage() {
             instructions: '',
             start_date: '',
             due_date: '',
+            grading_due_at: '',
             max_score: 100,
             passing_score: 60,
             difficulty: 'medium',
@@ -356,6 +357,7 @@ export default function NewAssignmentPage() {
         try {
             const startDateISO = values.start_date ? new Date(values.start_date).toISOString() : undefined;
             const dueDateISO = new Date(values.due_date).toISOString();
+            const gradingDueAtISO = values.grading_due_at ? new Date(values.grading_due_at).toISOString() : undefined;
 
             const selectedLanguage = languages.find(lang => String(lang.id) === String(values.language_id));
             if (!selectedLanguage) {
@@ -414,6 +416,7 @@ export default function NewAssignmentPage() {
                 language_id: parseInt(String(values.language_id), 10),
                 start_date: startDateISO,
                 due_date: dueDateISO,
+                grading_due_at: gradingDueAtISO,
                 max_score: values.max_score,
                 passing_score: values.passing_score,
                 difficulty: values.difficulty,
@@ -785,7 +788,7 @@ export default function NewAssignmentPage() {
                             </CardHeader>
                             {expandedSections.has('timing') && (
                                 <CardContent className="pt-2 pb-6 space-y-5">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
                                         <Controller
                                             name="start_date"
                                             control={control}
@@ -815,6 +818,20 @@ export default function NewAssignmentPage() {
                                                 />
                                             )}
                                         />
+                                        <Controller
+                                            name="grading_due_at"
+                                            control={control}
+                                            render={({ field }) => (
+                                                <Calendar
+                                                    label="Assistant Grading Deadline"
+                                                    selectedDate={parseDateTimeInput(field.value)}
+                                                    onDateChange={(date) => field.onChange(date ? toDateTimeInput(date) : '')}
+                                                    minDate={parseDateTimeInput(watchDueDate) || undefined}
+                                                    includeTime
+                                                    error={errors.grading_due_at?.message}
+                                                />
+                                            )}
+                                        />
                                         <Input
                                             label="Maximum Score"
                                             type="number"
@@ -834,6 +851,9 @@ export default function NewAssignmentPage() {
                                             placeholder="60"
                                         />
                                     </div>
+                                    <p className="text-xs text-gray-500 -mt-2">
+                                        Optional deadline for assistants to complete grading. This appears in assistant notifications and calendar.
+                                    </p>
 
                                     {/* Late Policy */}
                                     <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
@@ -61,6 +61,7 @@ export default function EditAssignmentPage() {
     const [success, setSuccess] = useState<string | null>(null);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [testCases, setTestCases] = useState<EditableTestCase[]>([]);
+    const topAnchorRef = useRef<HTMLDivElement>(null);
     const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
         basic: true, timing: true, tests: true, submission: false, late: false, code: false, integrity: false, publish: true,
     });
@@ -83,7 +84,7 @@ export default function EditAssignmentPage() {
             language_id: undefined as unknown as number,
             starter_code: '', solution_code: '',
             max_score: 100, passing_score: 60, difficulty: 'medium',
-            start_date: '', due_date: '', allow_late: true, late_penalty_per_day: 10,
+            start_date: '', due_date: '', grading_due_at: '', allow_late: true, late_penalty_per_day: 10,
             max_late_days: 7, max_attempts: 0, max_file_size_mb: 10,
             allowedExtensionsStr: '', requiredFilesStr: '',
             allow_groups: false, max_group_size: 4,
@@ -116,6 +117,7 @@ export default function EditAssignmentPage() {
         setValue('difficulty', a.difficulty ?? 'medium');
         if (a.start_date) setValue('start_date', toDateTimeInput(new Date(a.start_date)));
         if (a.due_date) setValue('due_date', toDateTimeInput(new Date(a.due_date)));
+        if (a.grading_due_at) setValue('grading_due_at', toDateTimeInput(new Date(a.grading_due_at)));
         setValue('allow_late', a.allow_late ?? true);
         setValue('late_penalty_per_day', a.late_penalty_per_day ?? 10);
         setValue('max_late_days', a.max_late_days ?? 7);
@@ -198,6 +200,7 @@ export default function EditAssignmentPage() {
                 difficulty: values.difficulty,
                 start_date: values.start_date ? new Date(values.start_date).toISOString() : null,
                 due_date: new Date(values.due_date).toISOString(),
+                grading_due_at: values.grading_due_at ? new Date(values.grading_due_at).toISOString() : null,
                 allow_late: values.allow_late,
                 late_penalty_per_day: values.late_penalty_per_day,
                 max_late_days: values.max_late_days,
@@ -239,6 +242,9 @@ export default function EditAssignmentPage() {
             setSuccess('Assignment updated successfully!');
             queryClient.invalidateQueries({ queryKey: ['assignment', assignmentId] });
             queryClient.invalidateQueries({ queryKey: ['assignments'] });
+            requestAnimationFrame(() => {
+                topAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
             setTimeout(() => setSuccess(null), 4000);
         },
         onError: (err: any) => {
@@ -315,6 +321,7 @@ export default function EditAssignmentPage() {
 
     return (
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+            <div ref={topAnchorRef} />
             {/* Header */}
             <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
@@ -381,7 +388,7 @@ export default function EditAssignmentPage() {
                     <SectionHeader id="timing" icon={Clock} title="Timing & Scoring" />
                     {expandedSections.timing && (
                         <div className="px-6 pb-6 space-y-4">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
                                 <Controller
                                     name="start_date"
                                     control={control}
@@ -411,9 +418,26 @@ export default function EditAssignmentPage() {
                                         />
                                     )}
                                 />
+                                <Controller
+                                    name="grading_due_at"
+                                    control={control}
+                                    render={({ field }) => (
+                                        <Calendar
+                                            label="Assistant Grading Deadline"
+                                            selectedDate={parseDateTimeInput(field.value)}
+                                            onDateChange={(date) => field.onChange(date ? toDateTimeInput(date) : '')}
+                                            minDate={parseDateTimeInput(watchDueDate) || undefined}
+                                            includeTime
+                                            error={errors.grading_due_at?.message}
+                                        />
+                                    )}
+                                />
                                 <Input label="Max Score" type="number" min={0} {...register('max_score', { valueAsNumber: true })} error={errors.max_score?.message} />
                                 <Input label="Passing Score" type="number" min={0} {...register('passing_score', { valueAsNumber: true })} error={errors.passing_score?.message} />
                             </div>
+                            <p className="text-xs text-gray-500 -mt-2">
+                                Optional deadline for assistants to complete grading. This appears in assistant notifications and calendar.
+                            </p>
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                                 <Select label="Difficulty" {...register('difficulty')} options={[
                                     { value: 'easy', label: 'Easy' }, { value: 'medium', label: 'Medium' }, { value: 'hard', label: 'Hard' },

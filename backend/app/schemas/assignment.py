@@ -95,6 +95,7 @@ class AssignmentBase(BaseModel):
     instructions: Optional[str] = None
     start_date: Optional[datetime] = None
     due_date: datetime
+    grading_due_at: Optional[datetime] = None
     
     # Scoring
     max_score: float = 100.0
@@ -132,6 +133,8 @@ class AssignmentBase(BaseModel):
     def validate_date_range(self):
         if self.start_date and self.due_date and self.start_date > self.due_date:
             raise ValueError('Start date must be on or before due date')
+        if self.grading_due_at and self.grading_due_at < self.due_date:
+            raise ValueError('Assistant grading deadline must be on or after due date')
         return self
 
 class AssignmentCreate(AssignmentBase):
@@ -147,6 +150,7 @@ class AssignmentUpdate(BaseModel):
     instructions: Optional[str] = None
     start_date: Optional[datetime] = None
     due_date: Optional[datetime] = None
+    grading_due_at: Optional[datetime] = None
     language_id: Optional[int] = None
     
     max_score: Optional[float] = None
@@ -182,6 +186,8 @@ class AssignmentUpdate(BaseModel):
     def validate_date_range(self):
         if self.start_date and self.due_date and self.start_date > self.due_date:
             raise ValueError('Start date must be on or before due date')
+        if self.grading_due_at and self.due_date and self.grading_due_at < self.due_date:
+            raise ValueError('Assistant grading deadline must be on or after due date')
         return self
 
 class CourseForAssignment(BaseModel):

@@ -16,13 +16,13 @@ export function AssignmentAttentionBadges({
     className = '',
 }: AssignmentAttentionBadgesProps) {
     const rowClass = compact ? 'gap-1.5 text-[11px]' : 'gap-2';
-    const missingLabel = compact ? 'missing' : 'missing submissions';
+    const missingLabel = compact ? 'Missing' : 'Missing Submissions';
 
     return (
         <div className={`flex flex-wrap items-center ${rowClass} ${className}`.trim()}>
-            <Badge variant="warning">{ungradedCount} needs grading</Badge>
+            <Badge variant="warning">{ungradedCount} Needs Grading</Badge>
             <Badge variant="destructive">{missingCount} {missingLabel}</Badge>
-            {notSubmittedCount > 0 ? <Badge variant="outline">{notSubmittedCount} not submitted</Badge> : null}
+            {notSubmittedCount > 0 ? <Badge variant="outline">{notSubmittedCount} Not Submitted</Badge> : null}
         </div>
     );
 }

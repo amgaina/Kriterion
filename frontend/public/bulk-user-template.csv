@@ -1,0 +1,5 @@
+email,full_name,role,password,student_id,is_active,send_welcome_email
+student.one@example.edu,Student One,STUDENT,TempPass1!,STU1001,true,true
+faculty.one@example.edu,Faculty One,FACULTY,TempPass1!,,true,true
+assistant.one@example.edu,Assistant One,ASSISTANT,TempPass1!,,true,true
+admin.one@example.edu,Admin One,ADMIN,TempPass1!,,true,false

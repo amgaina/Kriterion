@@ -220,6 +220,92 @@ def get_grading_stats(
     return {"total_pending": total_pending, "total_graded": total_graded, "assignments": assignments_out}
 
 
+@router.get("/assistant-upcoming-events")
+def get_assistant_upcoming_events(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ASSISTANT]))
+):
+    """Assistant calendar events for grading deadlines set by faculty."""
+    assigned_course_ids = [
+        course_id for (course_id,) in (
+            db.query(CourseAssistant.course_id)
+            .filter(CourseAssistant.assistant_id == current_user.id)
+            .all()
+        )
+    ]
+
+    if not assigned_course_ids:
+        return []
+
+    courses = db.query(Course).filter(Course.id.in_(assigned_course_ids)).all()
+    course_map = {course.id: course for course in courses}
+
+    assignments = (
+        db.query(Assignment)
+        .filter(
+            Assignment.course_id.in_(assigned_course_ids),
+            Assignment.grading_due_at.isnot(None),
+        )
+        .order_by(Assignment.grading_due_at)
+        .all()
+    )
+
+    if not assignments:
+        return []
+
+    assignment_ids = [assignment.id for assignment in assignments]
+    submissions = db.query(Submission).filter(Submission.assignment_id.in_(assignment_ids)).all()
+
+    latest_by_student: Dict[Tuple[int, int], Tuple[Tuple[datetime, int, int], Submission]] = {}
+    for submission in submissions:
+        key = (submission.assignment_id, submission.student_id)
+        rank = (
+            submission.submitted_at or datetime.min,
+            int(submission.attempt_number or 0),
+            int(submission.id or 0),
+        )
+        existing = latest_by_student.get(key)
+        if existing is None or rank > existing[0]:
+            latest_by_student[key] = (rank, submission)
+
+    pending_by_assignment: Dict[int, int] = defaultdict(int)
+    for (assignment_id, _), (_, submission) in latest_by_student.items():
+        if not _is_submission_graded(submission):
+            pending_by_assignment[assignment_id] += 1
+
+    events = []
+    now = datetime.utcnow()
+    for assignment in assignments:
+        deadline = assignment.grading_due_at
+        if deadline is None:
+            continue
+
+        pending_count = pending_by_assignment.get(assignment.id, 0)
+        days_remaining = (deadline - now).days
+        priority = "low"
+        if deadline < now and pending_count > 0:
+            priority = "high"
+        elif days_remaining <= 1:
+            priority = "high"
+        elif days_remaining <= 3:
+            priority = "medium"
+
+        course = course_map.get(assignment.course_id)
+        events.append({
+            "id": assignment.id,
+            "title": f"{assignment.title} · Grading deadline",
+            "date": deadline.strftime("%Y-%m-%d"),
+            "event_type": "grading",
+            "course_code": course.code if course else "",
+            "course_name": course.name if course else "",
+            "course_id": assignment.course_id,
+            "detail": f"{pending_count} pending grading",
+            "priority": priority,
+        })
+
+    return events
+
+
 @router.get("/{submission_id}", response_model=SubmissionDetailWithStudent)
 def get_submission(
     submission_id: int,

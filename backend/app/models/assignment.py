@@ -48,6 +48,7 @@ class Assignment(Base):
     # Due date & late policy
     start_date = Column(DateTime, nullable=True)
     due_date = Column(DateTime, nullable=False)
+    grading_due_at = Column(DateTime, nullable=True)
     allow_late = Column(Boolean, default=True)
     late_penalty_per_day = Column(Float, default=10.0)  # Percentage
     max_late_days = Column(Integer, default=7)

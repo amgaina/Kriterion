@@ -293,6 +293,21 @@ class ApiClient {
         return response.data;
     }
 
+    async getAssistantUpcomingEvents(): Promise<{
+        id: number;
+        title: string;
+        date: string;
+        event_type: string;
+        course_code?: string;
+        course_name?: string;
+        course_id?: number;
+        detail?: string;
+        priority?: 'low' | 'medium' | 'high';
+    }[]> {
+        const response = await this.client.get('/submissions/assistant-upcoming-events');
+        return response.data;
+    }
+
     async createSubmission(assignmentId: number, files: File[], groupId?: number) {
         const formData = new FormData();
         formData.append('assignment_id', assignmentId.toString());

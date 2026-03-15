@@ -97,6 +97,13 @@ export const assignmentCreateSchema = z.object({
         .refine((v: any) => !v || !Number.isNaN(Date.parse(v)), {
             message: 'Invalid start date/time',
         }),
+    grading_due_at: z
+        .string()
+        .optional()
+        .or(z.literal(''))
+        .refine((v: any) => !v || !Number.isNaN(Date.parse(v)), {
+            message: 'Invalid grading deadline',
+        }),
     due_date: z
         .string()
         .min(1, 'Due date is required')
@@ -151,6 +158,13 @@ export const assignmentCreateSchema = z.object({
 }, {
     message: 'Start date must be on or before due date',
     path: ['start_date'],
+})
+.refine((data: any) => {
+    if (!data.grading_due_at || !data.due_date) return true;
+    return new Date(data.grading_due_at) >= new Date(data.due_date);
+}, {
+    message: 'Assistant grading deadline must be on or after due date',
+    path: ['grading_due_at'],
 })
 .refine((data: any) => Math.abs((data.test_weight ?? 0) + (data.rubric_weight ?? 0) - 100) < 0.01, {
     message: 'Test weight and manual weight must sum to 100%',
