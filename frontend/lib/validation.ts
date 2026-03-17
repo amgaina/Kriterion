@@ -147,6 +147,13 @@ export const assignmentCreateSchema = z.object({
     
     // Publishing
     is_published: z.coerce.boolean().default(false),
+    publish_at: z
+        .string()
+        .optional()
+        .or(z.literal(''))
+        .refine((v: any) => !v || !Number.isNaN(Date.parse(v)), {
+            message: 'Invalid publish date/time',
+        }),
 })
 .refine((data: any) => data.passing_score <= data.max_score, {
     message: 'Passing score cannot exceed max score',

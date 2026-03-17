@@ -275,11 +275,16 @@ export default function AssignmentDetailPageContent() {
 
     const deleteMutation = useMutation({
         mutationFn: () => apiClient.deleteAssignment(assignmentId),
-        onSuccess: () => router.push(`/${basePath}/courses/${courseId}/assignments`),
+        onSuccess: () => {
+            setShowDeleteConfirm(false);
+            router.replace(`/${basePath}/courses/${courseId}/assignments`);
+            router.refresh();
+        },
     });
 
     const [plagiarismRunning, setPlagiarismRunning] = useState(false);
     const [plagiarismResult, setPlagiarismResult] = useState<any>(null);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
     const runPlagiarismCheckAll = async () => {
         setPlagiarismRunning(true);
@@ -703,9 +708,7 @@ export default function AssignmentDetailPageContent() {
                                         </Button>
                                     </Link>
                                     <Button
-                                        onClick={() => {
-                                            if (confirm(`Delete "${assignment.title}"? This cannot be undone.`)) deleteMutation.mutate();
-                                        }}
+                                        onClick={() => setShowDeleteConfirm(true)}
                                         className="bg-white/20 hover:bg-red-500/50 text-white border-0 gap-2"
                                     >
                                         <Trash2 className="w-4 h-4" />
@@ -714,6 +717,33 @@ export default function AssignmentDetailPageContent() {
                             </div>
                         </div>
                     </div>
+
+                    <Modal
+                        isOpen={showDeleteConfirm}
+                        onClose={() => {
+                            if (!deleteMutation.isPending) setShowDeleteConfirm(false);
+                        }}
+                        title="Delete assignment"
+                        description={`Delete "${assignment.title}"? This action cannot be undone.`}
+                        size="md"
+                    >
+                        <ModalFooter>
+                            <Button
+                                variant="outline"
+                                onClick={() => setShowDeleteConfirm(false)}
+                                disabled={deleteMutation.isPending}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                onClick={() => deleteMutation.mutate()}
+                                disabled={deleteMutation.isPending}
+                                className="bg-red-600 hover:bg-red-700 text-white"
+                            >
+                                {deleteMutation.isPending ? 'Deleting...' : 'Delete Assignment'}
+                            </Button>
+                        </ModalFooter>
+                    </Modal>
 
                     {/* ─── Tabs ─── */}
                     <div className="flex gap-1 bg-gray-100 rounded-xl p-1">

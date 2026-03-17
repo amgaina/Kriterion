@@ -381,16 +381,14 @@ export default function CourseStudentsPage() {
                 isOpen={!!inactiveTarget}
                 onClose={() => setInactiveTarget(null)}
                 onConfirm={() => inactiveTarget && makeInactiveMutation.mutate(inactiveTarget.id)}
-                confirmationPhrase="Make inactive"
                 itemName={inactiveTarget?.full_name}
                 title="Make student inactive?"
                 description={
                     inactiveTarget
-                        ? `Are you sure you want to make "${inactiveTarget.full_name}" inactive for this course? They will no longer see assignments or be able to submit. Type "Make inactive" to confirm.`
+                        ? `Are you sure you want to make "${inactiveTarget.full_name}" inactive for this course? They will no longer see assignments or be able to submit.`
                         : undefined
                 }
                 confirmLabel="Make Inactive"
-                confirmHint='Type "Make inactive" below to confirm.'
                 loadingLabel="Making inactive..."
                 isLoading={makeInactiveMutation.isPending}
                 variant="warning"

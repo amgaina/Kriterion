@@ -60,6 +60,7 @@ export default function EditAssignmentPage() {
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [useStartDateForPublish, setUseStartDateForPublish] = useState(false);
     const [testCases, setTestCases] = useState<EditableTestCase[]>([]);
     const topAnchorRef = useRef<HTMLDivElement>(null);
     const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -90,7 +91,7 @@ export default function EditAssignmentPage() {
             allow_groups: false, max_group_size: 4,
             enable_plagiarism_check: true, plagiarism_threshold: 30,
             enable_ai_detection: true, ai_detection_threshold: 50,
-            test_weight: 70, rubric_weight: 30, is_published: false,
+            test_weight: 70, rubric_weight: 30, is_published: false, publish_at: '',
         },
     });
 
@@ -106,34 +107,45 @@ export default function EditAssignmentPage() {
     useEffect(() => {
         if (!assignment) return;
         const a = assignment as any;
-        setValue('title', a.title ?? '');
-        setValue('description', a.description ?? '');
-        setValue('instructions', a.instructions ?? '');
-        setValue('language_id', a.language_id ?? a.language?.id);
-        setValue('starter_code', a.starter_code ?? '');
-        setValue('solution_code', a.solution_code ?? '');
-        setValue('max_score', a.max_score ?? 100);
-        setValue('passing_score', a.passing_score ?? 60);
-        setValue('difficulty', a.difficulty ?? 'medium');
-        if (a.start_date) setValue('start_date', toDateTimeInput(new Date(a.start_date)));
-        if (a.due_date) setValue('due_date', toDateTimeInput(new Date(a.due_date)));
-        if (a.grading_due_at) setValue('grading_due_at', toDateTimeInput(new Date(a.grading_due_at)));
-        setValue('allow_late', a.allow_late ?? true);
-        setValue('late_penalty_per_day', a.late_penalty_per_day ?? 10);
-        setValue('max_late_days', a.max_late_days ?? 7);
-        setValue('max_attempts', a.max_attempts ?? 0);
-        setValue('max_file_size_mb', a.max_file_size_mb ?? 10);
-        setValue('allowedExtensionsStr', (a.allowed_file_extensions ?? []).join(', '));
-        setValue('requiredFilesStr', (a.required_files ?? []).join(', '));
-        setValue('allow_groups', a.allow_groups ?? false);
-        setValue('max_group_size', a.max_group_size ?? 4);
-        setValue('enable_plagiarism_check', a.enable_plagiarism_check ?? true);
-        setValue('plagiarism_threshold', a.plagiarism_threshold ?? 30);
-        setValue('enable_ai_detection', a.enable_ai_detection ?? true);
-        setValue('ai_detection_threshold', a.ai_detection_threshold ?? 50);
-        setValue('test_weight', a.test_weight ?? 70);
-        setValue('rubric_weight', a.rubric_weight ?? 30);
-        setValue('is_published', a.is_published ?? false);
+        const persistedMaxScore = Number(a.max_score ?? 100) || 100;
+        const persistedRubricPoints = Number(a?.rubric?.total_points ?? 0) || 0;
+        const derivedRubricWeight = persistedMaxScore > 0
+            ? Math.max(0, Math.min(100, (persistedRubricPoints / persistedMaxScore) * 100))
+            : 0;
+        const derivedTestWeight = Math.max(0, 100 - derivedRubricWeight);
+
+        reset({
+            course_id: courseId,
+            title: a.title ?? '',
+            description: a.description ?? '',
+            instructions: a.instructions ?? '',
+            language_id: a.language_id ?? a.language?.id,
+            starter_code: a.starter_code ?? '',
+            solution_code: a.solution_code ?? '',
+            max_score: persistedMaxScore,
+            passing_score: a.passing_score ?? 60,
+            difficulty: a.difficulty ?? 'medium',
+            start_date: a.start_date ? toDateTimeInput(new Date(a.start_date)) : '',
+            due_date: a.due_date ? toDateTimeInput(new Date(a.due_date)) : '',
+            grading_due_at: a.grading_due_at ? toDateTimeInput(new Date(a.grading_due_at)) : '',
+            allow_late: a.allow_late ?? true,
+            late_penalty_per_day: a.late_penalty_per_day ?? 10,
+            max_late_days: a.max_late_days ?? 7,
+            max_attempts: a.max_attempts ?? 0,
+            max_file_size_mb: a.max_file_size_mb ?? 10,
+            allowedExtensionsStr: (a.allowed_file_extensions ?? []).join(', '),
+            requiredFilesStr: (a.required_files ?? []).join(', '),
+            allow_groups: a.allow_groups ?? false,
+            max_group_size: a.max_group_size ?? 4,
+            enable_plagiarism_check: a.enable_plagiarism_check ?? true,
+            plagiarism_threshold: a.plagiarism_threshold ?? 30,
+            enable_ai_detection: a.enable_ai_detection ?? true,
+            ai_detection_threshold: a.ai_detection_threshold ?? 50,
+            test_weight: a.test_weight ?? Number(derivedTestWeight.toFixed(2)),
+            rubric_weight: a.rubric_weight ?? Number(derivedRubricWeight.toFixed(2)),
+            is_published: a.is_published ?? false,
+            publish_at: a.publish_at ? toDateTimeInput(new Date(a.publish_at)) : '',
+        });
 
         const existingTestCases = Array.isArray(a.test_cases) ? a.test_cases : [];
         setTestCases(existingTestCases.map((tc: any, index: number) => ({
@@ -150,7 +162,7 @@ export default function EditAssignmentPage() {
             memory_limit_mb: tc.memory_limit_mb ?? null,
             order: tc.order ?? index,
         })));
-    }, [assignment, setValue]);
+    }, [assignment, courseId, reset]);
 
     const addTestCase = () => {
         setTestCases((prev) => ([
@@ -215,6 +227,7 @@ export default function EditAssignmentPage() {
                 test_weight: values.test_weight,
                 rubric_weight: values.rubric_weight,
                 is_published: values.is_published,
+                publish_at: values.is_published && values.publish_at ? new Date(values.publish_at).toISOString() : null,
                 test_cases: testCases.map((tc, idx) => ({
                     name: tc.name,
                     description: tc.description || null,
@@ -261,7 +274,8 @@ export default function EditAssignmentPage() {
         mutationFn: () => apiClient.deleteAssignment(assignmentId),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['assignments'] });
-            router.push(`/faculty/courses/${courseId}/assignments`);
+            router.replace(`/faculty/courses/${courseId}/assignments`);
+            router.refresh();
         },
         onError: (err: any) => {
             setError(err?.response?.data?.detail || 'Failed to delete assignment');
@@ -278,6 +292,12 @@ export default function EditAssignmentPage() {
     };
     const watchStartDate = watch('start_date');
     const watchDueDate = watch('due_date');
+
+    useEffect(() => {
+        if (useStartDateForPublish) {
+            setValue('publish_at', watchStartDate || '');
+        }
+    }, [useStartDateForPublish, watchStartDate, setValue]);
 
     if (loadingAssignment) {
         return (
@@ -704,13 +724,34 @@ export default function EditAssignmentPage() {
                                 <input type="checkbox" {...register('is_published')} className="w-5 h-5 rounded border-gray-300 text-[#862733] focus:ring-[#862733]" />
                                 <div>
                                     <p className="text-sm font-medium text-gray-900">
-                                        {watch('is_published') ? 'Published - Visible to students' : 'Draft - Hidden from students'}
+                                        {watch('is_published') ? 'Publish assignment' : 'Draft - Hidden from students'}
                                     </p>
                                     <p className="text-xs text-gray-500 mt-0.5">
-                                        {watch('is_published') ? 'Students can view and submit to this assignment' : 'Only you can see this assignment'}
+                                        {watch('is_published') ? 'Students can view this assignment now or on a scheduled date' : 'Only you can see this assignment'}
                                     </p>
                                 </div>
                             </label>
+                            {watch('is_published') && (
+                                <div className="mt-3">
+                                    <label className="inline-flex items-center gap-2 text-xs text-gray-700 mb-2">
+                                        <input
+                                            type="checkbox"
+                                            checked={useStartDateForPublish}
+                                            onChange={(e) => setUseStartDateForPublish(e.target.checked)}
+                                            disabled={!watchStartDate}
+                                            className="h-3.5 w-3.5 rounded border-gray-300 text-[#862733] focus:ring-[#862733]"
+                                        />
+                                        Use assignment start date/time
+                                    </label>
+                                    <Input
+                                        label="Schedule Publish Date (optional)"
+                                        type="datetime-local"
+                                        {...register('publish_at')}
+                                        disabled={useStartDateForPublish}
+                                        helpText="Leave empty to publish immediately. Set a future date to keep it draft until then."
+                                    />
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

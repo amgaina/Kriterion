@@ -100,8 +100,8 @@ def create_user(
             db,
             user_ids=admin_ids,
             notification_type=NotificationType.NEW_USER_REGISTERED,
-            title="New user created",
-            message=f"{user.email} was created as {user.role.value} by {current_user.full_name or current_user.email}.",
+            title=f"Admin created user: {user.email}",
+            message=f"{current_user.full_name or current_user.email} created {user.email} ({user.role.value}).",
         )
 
     db.commit()

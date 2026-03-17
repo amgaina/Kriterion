@@ -122,6 +122,7 @@ class AssignmentBase(BaseModel):
     solution_code: Optional[str] = None
     
     is_published: bool = False
+    publish_at: Optional[datetime] = None
 
     @model_validator(mode='after')
     def validate_date_range(self):
@@ -169,6 +170,7 @@ class AssignmentUpdate(BaseModel):
     solution_code: Optional[str] = None
     
     is_published: Optional[bool] = None
+    publish_at: Optional[datetime] = None
     test_cases: Optional[List[TestCaseCreate]] = None
     rubric: Optional[RubricUpdate] = None
 

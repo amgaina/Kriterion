@@ -114,8 +114,8 @@ def register(
             db,
             user_ids=admin_ids,
             notification_type=NotificationType.NEW_USER_REGISTERED,
-            title="New user registered",
-            message=f"{user.email} was registered as {user.role.value}.",
+            title=f"New user registered: {user.email}",
+            message=f"New {user.role.value} account: {user.email}.",
         )
 
     db.commit()

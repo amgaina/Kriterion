@@ -2,9 +2,11 @@ from typing import Optional, List
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
+from sqlalchemy import and_
+from datetime import datetime
 from app.core.database import get_db
 from app.core.security import decode_token
-from app.models import User, UserRole
+from app.models import User, UserRole, Assignment
 from app.core.logging import set_request_id
 
 security = HTTPBearer()
@@ -15,6 +17,17 @@ async def get_current_user(
     db: Session = Depends(get_db)
 ) -> User:
     """Get current authenticated user"""
+    now = datetime.utcnow()
+    updated_rows = db.query(Assignment).filter(
+        and_(
+            Assignment.is_published == False,
+            Assignment.publish_at.isnot(None),
+            Assignment.publish_at <= now,
+        )
+    ).update({"is_published": True}, synchronize_session=False)
+    if updated_rows:
+        db.commit()
+
     token = credentials.credentials
     payload = decode_token(token)
     

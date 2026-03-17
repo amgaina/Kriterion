@@ -327,16 +327,14 @@ export default function CourseAssistantsPage() {
                 isOpen={!!removeTarget}
                 onClose={() => setRemoveTarget(null)}
                 onConfirm={() => removeTarget && removeAssistantMutation.mutate(removeTarget.id)}
-                confirmationPhrase="Remove"
                 itemName={removeTarget?.full_name || removeTarget?.email}
                 title="Remove Assistant?"
                 description={
                     removeTarget
-                        ? `Are you sure you want to remove "${removeTarget.full_name || removeTarget.email}" from this course? Type "Remove" to confirm.`
+                        ? `Are you sure you want to remove "${removeTarget.full_name || removeTarget.email}" from this course?`
                         : undefined
                 }
                 confirmLabel="Remove Assistant"
-                confirmHint='Type "Remove" below to confirm.'
                 loadingLabel="Removing..."
                 isLoading={removeAssistantMutation.isPending}
                 variant="warning"

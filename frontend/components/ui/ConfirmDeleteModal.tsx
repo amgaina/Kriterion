@@ -1,16 +1,15 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Modal, ModalFooter } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { AlertTriangle, Trash2 } from 'lucide-react';
 
 export interface ConfirmDeleteModalProps {
     isOpen: boolean;
     onClose: () => void;
     onConfirm: () => void;
-    confirmationPhrase: string;
+    confirmationPhrase?: string;
     itemName?: string;
     title?: string;
     description?: string;
@@ -39,14 +38,7 @@ export function ConfirmDeleteModal({
     isLoading = false,
     variant = 'danger',
 }: ConfirmDeleteModalProps) {
-    const [inputValue, setInputValue] = useState('');
-
-    useEffect(() => {
-        if (isOpen) setInputValue('');
-    }, [isOpen]);
-
-    const matches = inputValue.trim() === confirmationPhrase;
-    const canConfirm = matches && !isLoading;
+    const canConfirm = !isLoading;
 
     const handleConfirm = () => {
         if (!canConfirm) return;
@@ -54,10 +46,10 @@ export function ConfirmDeleteModal({
     };
 
     const defaultDescription = itemName
-        ? `Are you sure you want to delete "${itemName}"? This action cannot be undone. Type "${confirmationPhrase}" to confirm.`
-        : `This action cannot be undone. Type "${confirmationPhrase}" to confirm.`;
+        ? `Are you sure you want to delete "${itemName}"? This action cannot be undone.`
+        : `This action cannot be undone.`;
 
-    const defaultHint = `Type ${confirmationPhrase} below to confirm.`;
+    const defaultHint = 'This action cannot be undone.';
     const hint = confirmHint ?? defaultHint;
 
     const isWarning = variant === 'warning';
@@ -84,24 +76,11 @@ export function ConfirmDeleteModal({
                         <AlertTriangle className={`w-5 h-5 ${iconClass}`} />
                     </div>
                     <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-medium ${textClass}`}>Type to confirm</p>
+                        <p className={`text-sm font-medium ${textClass}`}>Please confirm this action</p>
                         <p className={`mt-0.5 text-xs ${textMutedClass}`}>
                             {hint}
                         </p>
                     </div>
-                </div>
-
-                <div>
-                    <Input
-                        value={inputValue}
-                        onChange={(e) => setInputValue(e.target.value)}
-                        placeholder={confirmationPhrase}
-                        className="font-mono"
-                        autoComplete="off"
-                        autoFocus
-                        disabled={isLoading}
-                        aria-label={`Type ${confirmationPhrase} to confirm`}
-                    />
                 </div>
 
                 <ModalFooter>

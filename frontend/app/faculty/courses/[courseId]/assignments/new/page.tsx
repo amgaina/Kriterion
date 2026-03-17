@@ -112,6 +112,7 @@ export default function NewAssignmentPage() {
     const [errorModalOpen, setErrorModalOpen] = useState(false);
     const [successModalOpen, setSuccessModalOpen] = useState(false);
     const [createdAssignmentId, setCreatedAssignmentId] = useState<number | null>(null);
+    const [useStartDateForPublish, setUseStartDateForPublish] = useState(false);
     const [expandedSections, setExpandedSections] = useState<Set<string>>(
         new Set(['basic', 'timing'])
     );
@@ -161,11 +162,13 @@ export default function NewAssignmentPage() {
             test_weight: 70,
             rubric_weight: 30,
             is_published: false,
+            publish_at: '',
         }
     });
 
     const watchTestWeight = watch('test_weight');
     const watchRubricWeight = watch('rubric_weight');
+    const watchStartDate = watch('start_date');
 
     useEffect(() => {
         const loadLanguages = async () => {
@@ -182,6 +185,12 @@ export default function NewAssignmentPage() {
     useEffect(() => {
         if (courseId > 0) setValue('course_id', courseId);
     }, [courseId, setValue]);
+
+    useEffect(() => {
+        if (useStartDateForPublish) {
+            setValue('publish_at', watchStartDate || '');
+        }
+    }, [useStartDateForPublish, watchStartDate, setValue]);
 
     const watchLangId = watch('language_id');
     useEffect(() => {
@@ -358,6 +367,7 @@ export default function NewAssignmentPage() {
             const startDateISO = values.start_date ? new Date(values.start_date).toISOString() : undefined;
             const dueDateISO = new Date(values.due_date).toISOString();
             const gradingDueAtISO = values.grading_due_at ? new Date(values.grading_due_at).toISOString() : undefined;
+            const publishAtISO = values.publish_at ? new Date(values.publish_at).toISOString() : undefined;
 
             const selectedLanguage = languages.find(lang => String(lang.id) === String(values.language_id));
             if (!selectedLanguage) {
@@ -438,6 +448,7 @@ export default function NewAssignmentPage() {
                 starter_code,
                 solution_code,
                 is_published: values.is_published,
+                publish_at: values.is_published ? publishAtISO : undefined,
                 test_cases: testCases.map((tc, idx) => ({
                     name: tc.name,
                     description: tc.description || null,
@@ -454,20 +465,17 @@ export default function NewAssignmentPage() {
             };
 
             if (rubricEnabled && rubricCategories.length > 0) {
+                const flattenedRubricItems = rubricCategories.flatMap((cat) =>
+                    cat.items.map((item) => ({
+                        name: item.name,
+                        description: item.description || cat.description || null,
+                        points: item.max_points,
+                        weight: totalRubricPts > 0 ? (item.max_points / totalRubricPts) * 100 : 0,
+                    }))
+                );
+
                 payload.rubric = {
-                    total_points: totalRubricPts,
-                    categories: rubricCategories.map((cat, ci) => ({
-                        name: cat.name,
-                        description: cat.description || null,
-                        weight: cat.weight,
-                        order: ci,
-                        items: cat.items.map((item, ii) => ({
-                            name: item.name,
-                            description: item.description || null,
-                            max_points: item.max_points,
-                            order: ii,
-                        })),
-                    })),
+                    items: flattenedRubricItems,
                 };
             }
 
@@ -540,7 +548,6 @@ export default function NewAssignmentPage() {
     // ─── Completion indicator ───
     const watchTitle = watch('title');
     const watchDesc = watch('description');
-    const watchStartDate = watch('start_date');
     const watchDueDate = watch('due_date');
 
     const completionSteps = [
@@ -1724,12 +1731,40 @@ export default function NewAssignmentPage() {
                                                         className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
                                                     />
                                                     <label htmlFor="isPublished" className="ml-2 text-sm font-medium text-gray-900">
-                                                        Publish immediately
+                                                        Publish assignment
                                                     </label>
                                                 </div>
-                                                <p className="text-xs text-amber-700">
-                                                    If unchecked, the assignment will be saved as a draft and won&apos;t be visible to students until you publish it.
-                                                </p>
+                                                {watch('is_published') ? (
+                                                    <div className="space-y-2">
+                                                        <label htmlFor="publishAt" className="text-xs font-medium text-amber-900 block">
+                                                            Schedule publish date (optional)
+                                                        </label>
+                                                        <label className="inline-flex items-center gap-2 text-xs text-amber-900">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={useStartDateForPublish}
+                                                                onChange={(e) => setUseStartDateForPublish(e.target.checked)}
+                                                                disabled={!watchStartDate}
+                                                                className="h-3.5 w-3.5 rounded border-amber-300 text-primary focus:ring-primary"
+                                                            />
+                                                            Use assignment start date/time
+                                                        </label>
+                                                        <input
+                                                            id="publishAt"
+                                                            type="datetime-local"
+                                                            {...register('publish_at')}
+                                                            disabled={useStartDateForPublish}
+                                                            className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                                        />
+                                                        <p className="text-xs text-amber-700">
+                                                            Leave empty to publish immediately. Set a future date to keep it as draft until that date.
+                                                        </p>
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-xs text-amber-700">
+                                                        If unchecked, the assignment will stay as draft and remain hidden from students.
+                                                    </p>
+                                                )}
                                             </div>
                                         </div>
                                     </div>

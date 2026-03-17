@@ -63,6 +63,7 @@ class Assignment(Base):
     
     # Status and publishing
     is_published = Column(Boolean, default=False)
+    publish_at = Column(DateTime, nullable=True)
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)

@@ -450,12 +450,11 @@ export default function AssignmentsPage() {
                     isOpen={!!deleteTarget}
                     onClose={() => setDeleteTarget(null)}
                     onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
-                    confirmationPhrase="Delete this Assignment"
                     itemName={deleteTarget?.title}
                     title="Delete Assignment"
                     description={
                         deleteTarget
-                            ? `Are you sure you want to delete "${deleteTarget.title}"? This action cannot be undone. Type "Delete this Assignment" to confirm.`
+                            ? `Are you sure you want to delete "${deleteTarget.title}"? This action cannot be undone.`
                             : undefined
                     }
                     isLoading={deleteMutation.isPending}

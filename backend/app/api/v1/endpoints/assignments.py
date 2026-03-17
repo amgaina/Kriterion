@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session, joinedload, subqueryload
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, inspect, text
 from pydantic import BaseModel, Field
 import tempfile
 import os
@@ -54,6 +54,26 @@ router = APIRouter()
 
 def _format_deadline_utc(deadline: datetime) -> str:
     return deadline.strftime("%b %d, %Y at %I:%M %p UTC")
+
+
+def _is_future_datetime(dt: Optional[datetime]) -> bool:
+    if not dt:
+        return False
+    now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.utcnow()
+    return dt > now
+
+
+def _is_past_or_now_datetime(dt: Optional[datetime]) -> bool:
+    if not dt:
+        return False
+    now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.utcnow()
+    return dt <= now
+
+
+def _is_assignment_visible_to_students(assignment: Assignment) -> bool:
+    if assignment.is_published:
+        return True
+    return _is_past_or_now_datetime(assignment.publish_at)
 
 
 def _notify_assistants_grading_deadline_change(
@@ -248,7 +268,7 @@ def get_assignment(
                 Enrollment.status == EnrollmentStatus.ACTIVE
             )
         ).first()
-        if not enrollment or not assignment.is_published:
+        if not enrollment or not _is_assignment_visible_to_students(assignment):
             raise HTTPException(status_code=403, detail="Access denied")
     
     return assignment
@@ -272,7 +292,7 @@ def get_supplementary_files(
                 Enrollment.status == EnrollmentStatus.ACTIVE
             )
         ).first()
-        if not enrollment or not assignment.is_published:
+        if not enrollment or not _is_assignment_visible_to_students(assignment):
             raise HTTPException(status_code=403, detail="Access denied")
 
     import json
@@ -395,6 +415,13 @@ async def create_assignment(
         assignment_data_in = assignment_in.model_dump(exclude={"rubric", "test_cases", "test_suites"})
         assignment_data = {key: value for key, value in assignment_data_in.items() if key in available_columns}
 
+        publish_at = assignment_data.get("publish_at")
+        if assignment_data.get("is_published"):
+            if _is_future_datetime(publish_at):
+                assignment_data["is_published"] = False
+        else:
+            assignment_data["publish_at"] = None
+
         assignment = Assignment(**assignment_data)
         db.add(assignment)
         db.flush()
@@ -467,20 +494,123 @@ async def create_assignment(
             rubric_data = assignment_in.rubric
             if not rubric_data.items:
                 raise HTTPException(status_code=422, detail="Rubric must have at least one item")
+            rubric_item_columns = {
+                column["name"] for column in inspect(db.bind).get_columns("rubric_items")
+            }
+            uses_legacy_rubric_schema = "category_id" in rubric_item_columns
+            rubric_unique_constraints = inspect(db.bind).get_unique_constraints("rubrics")
+            legacy_single_rubric_row_mode = any(
+                set((constraint.get("column_names") or [])) == {"assignment_id"}
+                for constraint in rubric_unique_constraints
+            )
+
+            legacy_category_id = None
+            first_rubric_row_id = None
+            if uses_legacy_rubric_schema:
+                total_points = sum((getattr(item, "points", 0) or 0.0) for item in rubric_data.items)
+                first_rubric_row_id = db.execute(
+                    text(
+                        """
+                        INSERT INTO rubrics (assignment_id, total_points, weight, points, created_at, updated_at)
+                        VALUES (:assignment_id, :total_points, 0, 0, NOW(), NOW())
+                        RETURNING id
+                        """
+                    ),
+                    {
+                        "assignment_id": assignment.id,
+                        "total_points": total_points,
+                    },
+                ).scalar_one()
+
+                legacy_category_id = db.execute(
+                    text(
+                        """
+                        INSERT INTO rubric_categories (rubric_id, name, description, weight, "order")
+                        VALUES (:rubric_id, :name, :description, 100, 0)
+                        RETURNING id
+                        """
+                    ),
+                    {
+                        "rubric_id": first_rubric_row_id,
+                        "name": "General",
+                        "description": "Auto-generated category for flattened rubric items",
+                    },
+                ).scalar_one()
+
             for idx, item_data in enumerate(rubric_data.items):
-                ri = RubricItem(
-                    name=(item_data.name or "").strip() or "Criterion",
-                    description=(getattr(item_data, "description", None) or "").strip() or None,
-                )
-                db.add(ri)
-                db.flush()
-                row = Rubric(
-                    assignment_id=assignment.id,
-                    rubric_item_id=ri.id,
-                    weight=item_data.weight or 0.0,
-                    points=getattr(item_data, "points", 0) or 0.0,
-                )
-                db.add(row)
+                item_name = (item_data.name or "").strip() or "Criterion"
+                item_description = (getattr(item_data, "description", None) or "").strip() or None
+                item_weight = item_data.weight or 0.0
+                item_points = getattr(item_data, "points", 0) or 0.0
+
+                if uses_legacy_rubric_schema:
+                    rubric_item_id = db.execute(
+                        text(
+                            """
+                            INSERT INTO rubric_items (category_id, name, description, max_points, "order")
+                            VALUES (:category_id, :name, :description, :max_points, :item_order)
+                            RETURNING id
+                            """
+                        ),
+                        {
+                            "category_id": legacy_category_id,
+                            "name": item_name,
+                            "description": item_description,
+                            "max_points": item_points,
+                            "item_order": idx,
+                        },
+                    ).scalar_one()
+
+                    if idx == 0 and first_rubric_row_id is not None:
+                        db.execute(
+                            text(
+                                """
+                                UPDATE rubrics
+                                SET rubric_item_id = :rubric_item_id,
+                                    weight = :weight,
+                                    points = :points,
+                                    updated_at = NOW()
+                                WHERE id = :row_id
+                                """
+                            ),
+                            {
+                                "rubric_item_id": rubric_item_id,
+                                "weight": item_weight,
+                                "points": item_points,
+                                "row_id": first_rubric_row_id,
+                            },
+                        )
+                    else:
+                        if legacy_single_rubric_row_mode:
+                            logger.warning(
+                                "Legacy rubric schema detected with unique rubrics.assignment_id; "
+                                "skipping additional rubrics rows for assignment_id=%s to avoid duplicate key errors.",
+                                assignment.id,
+                            )
+                        else:
+                            db.add(
+                                Rubric(
+                                    assignment_id=assignment.id,
+                                    rubric_item_id=rubric_item_id,
+                                    weight=item_weight,
+                                    points=item_points,
+                                )
+                            )
+                else:
+                    ri = RubricItem(
+                        name=item_name,
+                        description=item_description,
+                    )
+                    db.add(ri)
+                    db.flush()
+                    db.add(
+                        Rubric(
+                            assignment_id=assignment.id,
+                            rubric_item_id=ri.id,
+                            weight=item_weight,
+                            points=item_points,
+                        )
+                    )
 
         # Audit log
         audit = AuditLog(
@@ -575,6 +705,15 @@ def update_assignment(
     update_data = {
         key: value for key, value in update_data_in.items() if key in available_columns
     }
+
+    if "is_published" in update_data or "publish_at" in update_data:
+        effective_is_published = update_data.get("is_published", assignment.is_published)
+        effective_publish_at = update_data.get("publish_at", assignment.publish_at)
+        if effective_is_published:
+            if _is_future_datetime(effective_publish_at):
+                update_data["is_published"] = False
+        else:
+            update_data["publish_at"] = None
     
     effective_start_date = update_data.get("start_date", assignment.start_date)
     effective_due_date = update_data.get("due_date", assignment.due_date)
@@ -666,6 +805,55 @@ def delete_assignment(
     # Delete related notifications first to avoid foreign key constraint violation
     from app.models.notification import Notification
     db.query(Notification).filter(Notification.assignment_id == assignment_id).delete()
+
+    rubric_item_columns = {
+        column["name"] for column in inspect(db.bind).get_columns("rubric_items")
+    }
+    uses_legacy_rubric_schema = "category_id" in rubric_item_columns
+
+    if uses_legacy_rubric_schema:
+        rubric_ids = [
+            rid for (rid,) in db.execute(
+                text("SELECT id FROM rubrics WHERE assignment_id = :assignment_id"),
+                {"assignment_id": assignment_id},
+            ).fetchall()
+        ]
+
+        if rubric_ids:
+            category_ids = [
+                cid for (cid,) in db.execute(
+                    text("SELECT id FROM rubric_categories WHERE rubric_id = ANY(:rubric_ids)"),
+                    {"rubric_ids": rubric_ids},
+                ).fetchall()
+            ]
+
+            if category_ids:
+                rubric_item_ids = [
+                    iid for (iid,) in db.execute(
+                        text("SELECT id FROM rubric_items WHERE category_id = ANY(:category_ids)"),
+                        {"category_ids": category_ids},
+                    ).fetchall()
+                ]
+
+                if rubric_item_ids:
+                    db.execute(
+                        text("DELETE FROM rubric_scores WHERE rubric_item_id = ANY(:rubric_item_ids)"),
+                        {"rubric_item_ids": rubric_item_ids},
+                    )
+                    db.execute(
+                        text("DELETE FROM rubric_items WHERE id = ANY(:rubric_item_ids)"),
+                        {"rubric_item_ids": rubric_item_ids},
+                    )
+
+                db.execute(
+                    text("DELETE FROM rubric_categories WHERE id = ANY(:category_ids)"),
+                    {"category_ids": category_ids},
+                )
+
+            db.execute(
+                text("DELETE FROM rubrics WHERE id = ANY(:rubric_ids)"),
+                {"rubric_ids": rubric_ids},
+            )
     
     # Audit log before deletion
     audit = AuditLog(
@@ -698,6 +886,7 @@ def publish_assignment(
     
     was_published = bool(assignment.is_published)
     assignment.is_published = True
+    assignment.publish_at = None
     
     # Audit log
     audit = AuditLog(
@@ -768,7 +957,7 @@ async def websocket_interactive_run(websocket: WebSocket, assignment_id: int):
             await websocket.send_json({"type": "error", "message": "Assignment not found"})
             await websocket.close()
             return
-        if user.role == UserRole.STUDENT and not assignment.is_published:
+        if user.role == UserRole.STUDENT and not _is_assignment_visible_to_students(assignment):
             await websocket.send_json({"type": "error", "message": "Assignment not published"})
             await websocket.close()
             return
@@ -970,7 +1159,7 @@ async def run_assignment_code(
         )
     
     # Check if assignment is published (students only)
-    if current_user.role == UserRole.STUDENT and not assignment.is_published:
+    if current_user.role == UserRole.STUDENT and not _is_assignment_visible_to_students(assignment):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Assignment is not published yet"
@@ -1406,6 +1595,7 @@ def unpublish_assignment(
         raise HTTPException(status_code=403, detail="Not authorized")
     
     assignment.is_published = False
+    assignment.publish_at = None
     
     # Audit log
     audit = AuditLog(

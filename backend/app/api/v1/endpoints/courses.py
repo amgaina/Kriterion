@@ -398,8 +398,8 @@ def enroll_student(
                 db,
                 user_id=student.id,
                 notification_type=NotificationType.ASSIGNMENT_NEW,
-                title=f"Enrolled in {course.code}",
-                message=f"You were enrolled in {course.code} - {course.name}.",
+                title=f"You were enrolled in {course.code}",
+                message=f"You were added to {course.code} - {course.name}.",
                 course_id=course.id,
             )
             db.commit()
@@ -426,8 +426,8 @@ def enroll_student(
         db,
         user_id=student.id,
         notification_type=NotificationType.ASSIGNMENT_NEW,
-        title=f"Enrolled in {course.code}",
-        message=f"You were enrolled in {course.code} - {course.name}.",
+        title=f"You were enrolled in {course.code}",
+        message=f"You were added to {course.code} - {course.name}.",
         course_id=course.id,
     )
     db.commit()
@@ -525,7 +525,7 @@ def add_course_assistant(
         db,
         user_id=assistant.id,
         notification_type=NotificationType.ASSIGNMENT_NEW,
-        title=f"Assigned as assistant: {course.code}",
+        title=f"Assistant role assigned in {course.code}",
         message=f"You were assigned as a grading assistant for {course.code} - {course.name}.",
         course_id=course.id,
     )
@@ -582,7 +582,7 @@ def remove_course_assistant(
             user_id=assistant.id,
             notification_type=NotificationType.ASSIGNMENT_DUE,
             title=f"Assistant role removed: {course.code}",
-            message=f"You were removed as a grading assistant from {course.code}.",
+            message=f"You were removed as a grading assistant from {course.code} - {course.name}.",
             course_id=course.id,
         )
     db.commit()
@@ -641,10 +641,7 @@ def enroll_student_by_email(
                 user_ids=admin_ids,
                 notification_type=NotificationType.SYSTEM_ALERT,
                 title="Student add request",
-                message=(
-                    f"{current_user.full_name or current_user.email} requested adding {email_lower} "
-                    f"to {course.code} - {course.name}."
-                ),
+                message=f"{current_user.full_name or current_user.email} requested student account + enrollment for {email_lower} in {course.code}.",
                 course_id=course.id,
             )
 
@@ -682,8 +679,8 @@ def enroll_student_by_email(
                 db,
                 user_id=student.id,
                 notification_type=NotificationType.ASSIGNMENT_NEW,
-                title=f"Enrolled in {course.code}",
-                message=f"You were enrolled in {course.code} - {course.name}.",
+                title=f"You were enrolled in {course.code}",
+                message=f"You were added to {course.code} - {course.name}.",
                 course_id=course.id,
             )
             db.commit()
@@ -709,8 +706,8 @@ def enroll_student_by_email(
         db,
         user_id=student.id,
         notification_type=NotificationType.ASSIGNMENT_NEW,
-        title=f"Enrolled in {course.code}",
-        message=f"You were enrolled in {course.code} - {course.name}.",
+        title=f"You were enrolled in {course.code}",
+        message=f"You were added to {course.code} - {course.name}.",
         course_id=course.id,
     )
     db.commit()
@@ -819,10 +816,7 @@ def bulk_enroll_students(
                 user_ids=admin_ids,
                 notification_type=NotificationType.SYSTEM_ALERT,
                 title="Bulk student add request",
-                message=(
-                    f"{current_user.full_name or current_user.email} requested {len(not_found)} new student account(s) "
-                    f"for {course.code}. Example: {sample_email}."
-                ),
+                message=f"{current_user.full_name or current_user.email} requested {len(not_found)} student account(s) for {course.code}. Example: {sample_email}.",
                 course_id=course.id,
             )
 
@@ -838,7 +832,7 @@ def bulk_enroll_students(
             db,
             user_ids=notified_student_ids,
             notification_type=NotificationType.ASSIGNMENT_NEW,
-            title=f"Enrolled in {course.code}",
+            title=f"You were enrolled in {course.code}",
             message=f"You were added to {course.code} - {course.name}.",
             course_id=course.id,
         )
