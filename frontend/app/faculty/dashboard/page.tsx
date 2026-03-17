@@ -23,7 +23,7 @@ interface DashboardStats {
     total_courses: number;
     total_students: number;
     total_assignments: number;
-    pending_grading: number; // assignments not past due date
+    pending_grading: number; // latest ungraded submissions (unique student per assignment)
 }
 
 interface FacultyCourse {
@@ -61,6 +61,7 @@ export default function FacultyDashboard() {
     const { data: stats, isLoading } = useQuery<DashboardStats>({
         queryKey: ['faculty-dashboard'],
         queryFn: () => apiClient.getFacultyDashboard(),
+        refetchInterval: 15_000,
     });
 
     const { data: courses = [] } = useQuery<FacultyCourse[]>({
@@ -97,8 +98,8 @@ export default function FacultyDashboard() {
                             {isLoading
                                 ? 'Loading...'
                                 : stats?.pending_grading
-                                    ? `${stats.pending_grading} active assignment${stats.pending_grading > 1 ? 's' : ''} with upcoming deadlines`
-                                    : 'No assignments with upcoming deadlines'}
+                                    ? `${stats.pending_grading} submission${stats.pending_grading > 1 ? 's' : ''} pending to grade`
+                                    : 'All caught up — no pending submissions'}
                         </p>
                     </div>
                     {stats && !isLoading && stats.pending_grading > 0 && (

@@ -470,7 +470,12 @@ def export_course_report(
         completed_assignments = 0
         for assignment in assignments:
             submission = latest_by_student_assignment.get((student.id, assignment.id))
-            score_value = float(submission.final_score) if submission and submission.final_score is not None else None
+            score_value = None
+            if submission:
+                if submission.final_score is not None:
+                    score_value = float(submission.final_score)
+                elif submission.raw_score is not None:
+                    score_value = float(submission.raw_score)
 
             if score_value is not None:
                 scores.append(score_value)

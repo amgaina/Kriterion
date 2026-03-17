@@ -32,6 +32,7 @@ import {
     PartyPopper,
     Paperclip,
     Download,
+    Pencil,
 } from 'lucide-react'
 
 import { ProtectedRoute } from '@/components/ProtectedRoute'
@@ -327,6 +328,18 @@ export default function StudentAssignmentPage() {
         setRenameDraft('')
     }, [allowedExtensions, files, selectedFile, toast])
 
+    const renameSelectedFile = useCallback(() => {
+        if (!selectedFile) {
+            toast({ title: 'No file selected', description: 'Select a file first.', variant: 'destructive' })
+            return
+        }
+
+        const nextName = window.prompt('Rename file', selectedFile.name)
+        if (nextName === null) return
+
+        renameFile(selectedFile.name, nextName)
+    }, [selectedFile, renameFile, toast])
+
     const updateFileContent = useCallback((value: string) => {
         if (!selectedFile) return
         const updated = { ...selectedFile, content: value, size: new Blob([value]).size }
@@ -555,6 +568,11 @@ export default function StudentAssignmentPage() {
     // Keyboard shortcuts
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
+            if (e.key === 'F2' && selectedFile && editingFileName !== selectedFile.name) {
+                e.preventDefault()
+                startRenameFile(selectedFile.name)
+                return
+            }
             if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === 'Enter') {
                 e.preventDefault(); if (!isRunning && files.length > 0) runTestCases()
             }
@@ -564,7 +582,7 @@ export default function StudentAssignmentPage() {
         }
         window.addEventListener('keydown', handler)
         return () => window.removeEventListener('keydown', handler)
-    }, [isRunning, isSubmitting, files.length])
+    }, [isRunning, isSubmitting, files.length, selectedFile, editingFileName, startRenameFile])
 
     /* ===== RENDER ===== */
 
@@ -721,6 +739,13 @@ export default function StudentAssignmentPage() {
                                 <span>Explorer</span>
                                 <div className="flex gap-0.5">
                                     <button onClick={handleNewFile} className="p-0.5 rounded hover:bg-[#505050]" title="New File"><Plus className="w-3.5 h-3.5" /></button>
+                                    <button
+                                        onClick={renameSelectedFile}
+                                        className="p-0.5 rounded hover:bg-[#505050]"
+                                        title={selectedFile ? `Rename ${selectedFile.name}` : 'Select a file to rename'}
+                                    >
+                                        <Pencil className="w-3.5 h-3.5" />
+                                    </button>
                                     <button onClick={() => fileInputRef.current?.click()} className="p-0.5 rounded hover:bg-[#505050]" title="Upload"><UploadIcon className="w-3.5 h-3.5" /></button>
                                 </div>
                             </div>
@@ -792,6 +817,16 @@ export default function StudentAssignmentPage() {
                                                     </span>
                                                 )}
                                                 <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        startRenameFile(file.name)
+                                                    }}
+                                                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-[#505050] text-[#858585] hover:text-[#d4d4d4] shrink-0"
+                                                    title="Rename"
+                                                >
+                                                    <Pencil className="w-3 h-3" />
+                                                </button>
+                                                <button
                                                     onClick={(e) => { e.stopPropagation(); removeFile(file.name) }}
                                                     className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-500/30 text-[#858585] hover:text-red-400 shrink-0"
                                                 >
@@ -822,6 +857,7 @@ export default function StudentAssignmentPage() {
                             <div className="px-3 py-2 border-t border-[#3c3c3c] text-[10px] text-[#858585]">
                                 <p>{files.length} file{files.length !== 1 ? 's' : ''}</p>
                                 <p className="mt-0.5 text-[#606060]">Allowed: {allowedExtensions.join(', ')} · Max {maxFileSizeMB}MB</p>
+                                <p className="mt-0.5 text-[#606060]">Rename: click <Pencil className="inline w-2.5 h-2.5 align-[-1px]" /> or press F2</p>
                             </div>
                         </div>
                     )}
@@ -858,6 +894,16 @@ export default function StudentAssignmentPage() {
                                             {file.name}
                                         </span>
                                     )}
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            startRenameFile(file.name)
+                                        }}
+                                        className="ml-1 p-0.5 rounded hover:bg-[#505050] shrink-0"
+                                        title="Rename"
+                                    >
+                                        <Pencil className="w-3 h-3" />
+                                    </button>
                                     <button onClick={(e) => { e.stopPropagation(); removeFile(file.name) }} className="ml-1 p-0.5 rounded hover:bg-[#505050] shrink-0">
                                         <X className="w-3 h-3" />
                                     </button>

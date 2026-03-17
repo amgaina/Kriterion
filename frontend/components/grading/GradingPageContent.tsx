@@ -202,6 +202,20 @@ const getScoreColor = (score: number | null, max: number) => {
     return 'text-[#f44747]';
 };
 
+const needsHumanReview = (status?: string | null) => {
+    const normalized = String(status || '').toLowerCase();
+    return normalized === 'autograded' || normalized === 'manual_review';
+};
+
+const getReviewStatusLabel = (status?: string | null) => {
+    const normalized = String(status || '').toLowerCase();
+    if (normalized === 'autograded') return 'Auto-graded · Review needed';
+    if (normalized === 'manual_review') return 'Manual review needed';
+    if (normalized === 'completed' || normalized === 'graded') return 'Reviewed';
+    if (!normalized) return 'Unknown';
+    return normalized.replace(/_/g, ' ');
+};
+
 /* ====================================================================
    COMPONENT - Shared between Faculty and Assistant (grading only)
    ==================================================================== */
@@ -221,7 +235,17 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
     const queryClient = useQueryClient();
     const { toast } = useToast();
 
-    const goBack = () => router.push(assignmentListHref);
+    const goBack = useCallback(() => {
+        if (typeof window !== 'undefined') {
+            const referrer = document.referrer;
+            const hasSameOriginReferrer = !!referrer && referrer.startsWith(window.location.origin);
+            if (window.history.length > 1 && hasSameOriginReferrer) {
+                router.back();
+                return;
+            }
+        }
+        router.push(assignmentListHref);
+    }, [router, assignmentListHref]);
 
     // State
     const [selectedSubId, setSelectedSubId] = useState<number | null>(null);
@@ -816,6 +840,8 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
     const editorLines = (currentFile?.content || '').split('\n');
     const subFiles = selectedSub?.files || [];
     const subTestResults = selectedSub?.test_results || [];
+    const reviewPending = needsHumanReview(selectedSub?.status);
+    const reviewStatusLabel = getReviewStatusLabel(selectedSub?.status);
     const testCaseResultsById = useMemo(() => {
         const map = new Map<number, TestResultOut>();
         for (const tr of subTestResults) map.set(tr.test_case_id, tr);
@@ -969,6 +995,11 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
                             <Clock className="w-3 h-3 inline mr-0.5" /> Late ({selectedSub.late_penalty_applied}%)
                         </span>
                     )}
+                    {reviewPending && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#862733]/30 text-[#f5c2c7] border border-[#862733]/50">
+                            <AlertCircle className="w-3 h-3 inline mr-0.5" /> Review Needed
+                        </span>
+                    )}
                     {selectedSub && (selectedSub.plagiarism_flagged || selectedSub.ai_flagged) && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#5c1e1e]/30 text-[#f44747]">
                             <AlertTriangle className="w-3 h-3 inline mr-0.5" /> Flagged
@@ -1027,7 +1058,7 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
                         className="h-6 px-3 text-[10px] bg-[#862733] hover:bg-[#a03040] text-white border-0">
                         {isSaving
                             ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Saving...</>
-                            : <><Save className="w-3 h-3 mr-1" /> Save Grade</>
+                            : <><Save className="w-3 h-3 mr-1" /> Save Review</>
                         }
                     </Button>
                 </div>
@@ -1598,7 +1629,7 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
                                         </div>
                                         <div className="bg-[#333] rounded p-2">
                                             <span className="text-[#858585]">Status</span>
-                                            <p className="text-white font-semibold capitalize">{selectedSub.status}</p>
+                                            <p className={`font-semibold ${reviewPending ? 'text-[#f5c2c7]' : 'text-white'}`}>{reviewStatusLabel}</p>
                                         </div>
                                         <div className="bg-[#333] rounded p-2">
                                             <span className="text-[#858585]">Late Penalty</span>
@@ -2352,7 +2383,7 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
                         <Button onClick={saveGrade} disabled={isSaving} className="w-full bg-[#862733] hover:bg-[#a03040] text-white h-9 text-[12px]">
                             {isSaving
                                 ? <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> Saving...</>
-                                : <><Save className="w-3.5 h-3.5 mr-2" /> Save Grade</>
+                                : <><Save className="w-3.5 h-3.5 mr-2" /> Save Review & Feedback</>
                             }
                         </Button>
                     </div>
@@ -2484,9 +2515,9 @@ export function GradingPageContent({ courseId, assignmentId, studentId, assignme
                         <div className="w-16 h-16 rounded-full bg-[#2ea043]/20 flex items-center justify-center mx-auto mb-5">
                             <CheckCircle2 className="w-9 h-9 text-[#2ea043]" />
                         </div>
-                        <h2 className="text-xl font-bold text-white mb-2">Grade Saved!</h2>
+                        <h2 className="text-xl font-bold text-white mb-2">Review Saved!</h2>
                         <p className="text-sm text-[#858585] mb-6">
-                            The grade has been saved successfully.
+                            Feedback and review details have been saved successfully.
                             {gradeState.finalScore && <> Final score: <span className="text-white font-semibold">{gradeState.finalScore}/{assignment.max_score}</span></>}
                         </p>
                         <div className="flex gap-3">

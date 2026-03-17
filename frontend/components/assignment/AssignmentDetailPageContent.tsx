@@ -218,6 +218,19 @@ export default function AssignmentDetailPageContent() {
     const assignmentIdStr = Array.isArray(assignmentParam) ? (assignmentParam[0] ?? '') : (assignmentParam ?? '');
     const courseId = useMemo(() => parseInt(courseIdStr, 10), [courseIdStr]);
     const assignmentId = useMemo(() => parseInt(assignmentIdStr, 10), [assignmentIdStr]);
+    const assignmentListPath = `/${basePath}/courses/${courseId}/assignments`;
+
+    const goBackToAssignments = useCallback(() => {
+        if (typeof window !== 'undefined') {
+            const referrer = document.referrer;
+            const hasSameOriginReferrer = !!referrer && referrer.startsWith(window.location.origin);
+            if (window.history.length > 1 && hasSameOriginReferrer) {
+                router.back();
+                return;
+            }
+        }
+        router.push(assignmentListPath);
+    }, [router, assignmentListPath]);
 
     const [activeTab, setActiveTab] = useState<'overview' | 'submissions' | 'plagiarism'>('overview');
     const [searchQuery, setSearchQuery] = useState('');
@@ -611,7 +624,7 @@ export default function AssignmentDetailPageContent() {
                 </h2>
                 <p className="text-gray-500 mb-6">{(error as any)?.message || 'The assignment may have been deleted.'}</p>
                 <Button
-                    onClick={() => router.push(`/${basePath}/courses/${courseId}/assignments`)}
+                    onClick={goBackToAssignments}
                     className="gap-2"
                 >
                     <ArrowLeft className="w-4 h-4" /> Back to Assignments
@@ -636,7 +649,7 @@ export default function AssignmentDetailPageContent() {
                         </div>
                         <div className="relative z-10">
                             <button
-                                onClick={() => router.push(`/${basePath}/courses/${courseId}/assignments`)}
+                                onClick={goBackToAssignments}
                                 className="flex items-center gap-1.5 text-white/80 hover:text-white text-sm mb-4 transition-colors"
                             >
                                 <ArrowLeft className="w-4 h-4" /> Back to Assignments

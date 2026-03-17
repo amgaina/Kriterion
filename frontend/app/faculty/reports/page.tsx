@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useMemo, useState, useEffect } from 'react';
 import { InnerHeaderDesign } from '@/components/InnerHeaderDesign';
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
@@ -19,7 +19,6 @@ import {
     CheckCircle,
     Clock,
     AlertCircle,
-    Filter,
     Search,
     Mail,
     ChevronUp,
@@ -75,10 +74,11 @@ export default function FacultyReportsPage() {
     const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
     const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
     const [selectedAssignmentIds, setSelectedAssignmentIds] = useState<number[]>([]);
-    const [selectedReportColWidths, setSelectedReportColWidths] = useState<Record<string, number>>({
-        student: 320,
-        average: 180,
-    });
+    const [studentSearch, setStudentSearch] = useState('');
+    const [assignmentSearch, setAssignmentSearch] = useState('');
+    const [showAllStudents, setShowAllStudents] = useState(false);
+    const [showAllAssignments, setShowAllAssignments] = useState(false);
+    const [showProgressFilters, setShowProgressFilters] = useState(false);
 
     const { data: courses = [], isLoading: loadingCourses } = useQuery<FacultyCourse[]>({
         queryKey: ['faculty-courses'],
@@ -110,21 +110,40 @@ export default function FacultyReportsPage() {
     const assignmentOptions = courseReport?.assignments ?? [];
     const studentOptions = courseReport?.student_reports ?? [];
 
-    const selectedAssignments = useMemo(
-        () => assignmentOptions.filter((assignment) => selectedAssignmentIds.includes(assignment.id)),
-        [assignmentOptions, selectedAssignmentIds],
-    );
-
     const selectedStudents = useMemo(
         () => studentOptions.filter((student) => selectedStudentIds.includes(student.id)),
         [studentOptions, selectedStudentIds],
     );
 
+    const filteredStudentOptions = useMemo(() => {
+        const q = studentSearch.trim().toLowerCase();
+        if (!q) return studentOptions;
+        return studentOptions.filter((student) =>
+            student.name.toLowerCase().includes(q)
+            || student.email.toLowerCase().includes(q)
+            || (student.student_id ?? '').toLowerCase().includes(q),
+        );
+    }, [studentOptions, studentSearch]);
+
+    const filteredAssignmentOptions = useMemo(() => {
+        const q = assignmentSearch.trim().toLowerCase();
+        if (!q) return assignmentOptions;
+        return assignmentOptions.filter((assignment) => assignment.title.toLowerCase().includes(q));
+    }, [assignmentOptions, assignmentSearch]);
+
+    const visibleStudentOptions = showAllStudents
+        ? filteredStudentOptions
+        : filteredStudentOptions.slice(0, 8);
+
+    const visibleAssignmentOptions = showAllAssignments
+        ? filteredAssignmentOptions
+        : filteredAssignmentOptions.slice(0, 8);
+
     const areAllStudentsSelected =
         studentOptions.length > 0 && selectedStudentIds.length === studentOptions.length;
     const areAllAssignmentsSelected =
         assignmentOptions.length > 0 && selectedAssignmentIds.length === assignmentOptions.length;
-    const shouldShowSelectedReport = selectedStudentIds.length > 0 && selectedAssignmentIds.length > 0;
+    const activeFilterCount = selectedStudentIds.length + selectedAssignmentIds.length;
     const assignmentSummaries = useMemo(
         () => getAssignmentStatusSummaries(courseReport),
         [courseReport],
@@ -137,11 +156,6 @@ export default function FacultyReportsPage() {
         () => assignmentSummaries.reduce((sum, assignment) => sum + assignment.missingCount, 0),
         [assignmentSummaries],
     );
-
-    const getGradeForAssignment = (
-        student: NonNullable<CourseReport['student_reports']>[number],
-        assignmentId: number,
-    ) => student.assignment_grades?.find((grade) => grade.assignment_id === assignmentId) ?? null;
 
     const totalStudents = courseReport?.total_students ?? 0;
     const overallAverage = courseReport?.course_average_score ?? null;
@@ -227,35 +241,20 @@ export default function FacultyReportsPage() {
         setSelectedAssignmentIds([]);
     };
 
-    const getSelectedReportColWidth = (columnKey: string) => {
-        if (selectedReportColWidths[columnKey] != null) return selectedReportColWidths[columnKey];
-        if (columnKey === 'student') return 320;
-        if (columnKey === 'average') return 180;
-        return 230;
+    const toggleStudentSelection = (studentId: number, checked: boolean) => {
+        if (checked) {
+            setSelectedStudentIds((prev) => (prev.includes(studentId) ? prev : [...prev, studentId]));
+        } else {
+            setSelectedStudentIds((prev) => prev.filter((id) => id !== studentId));
+        }
     };
 
-    const startSelectedReportResize = (columnKey: string, event: React.MouseEvent<HTMLSpanElement>) => {
-        event.preventDefault();
-        const startX = event.clientX;
-        const startWidth = getSelectedReportColWidth(columnKey);
-
-        const handleMouseMove = (moveEvent: MouseEvent) => {
-            const delta = moveEvent.clientX - startX;
-            const nextWidth = Math.max(140, Math.min(520, startWidth + delta));
-            setSelectedReportColWidths((prev) => ({ ...prev, [columnKey]: nextWidth }));
-        };
-
-        const handleMouseUp = () => {
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-            document.body.style.cursor = '';
-            document.body.style.userSelect = '';
-        };
-
-        document.body.style.cursor = 'col-resize';
-        document.body.style.userSelect = 'none';
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
+    const toggleAssignmentSelection = (assignmentId: number, checked: boolean) => {
+        if (checked) {
+            setSelectedAssignmentIds((prev) => (prev.includes(assignmentId) ? prev : [...prev, assignmentId]));
+        } else {
+            setSelectedAssignmentIds((prev) => prev.filter((id) => id !== assignmentId));
+        }
     };
 
     return (
@@ -320,269 +319,6 @@ export default function FacultyReportsPage() {
                     </div>
                 </CardContent>
             </Card>
-
-            {/* Selection filters */}
-            <Card>
-                <CardHeader>
-                    <CardTitle>Grade report filters</CardTitle>
-                    <CardDescription>
-                        Select specific students and assignments, or use a quick filter to jump to work that needs attention.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <div className="border rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-2">
-                                <p className="text-sm font-medium text-gray-800">Students</p>
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                                    {selectedStudentIds.length} selected
-                                </span>
-                            </div>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                    if (areAllStudentsSelected) {
-                                        setSelectedStudentIds([]);
-                                    } else {
-                                        setSelectedStudentIds(studentOptions.map((student) => student.id));
-                                    }
-                                }}
-                            >
-                                {areAllStudentsSelected ? 'Deselect all' : 'Select all'}
-                            </Button>
-                        </div>
-                        <div className="max-h-44 overflow-auto space-y-2 pr-1">
-                            {studentOptions.map((student) => (
-                                <label
-                                    key={student.id}
-                                    className="flex items-center gap-2.5 text-sm text-gray-700 rounded-md px-2 py-1.5 hover:bg-gray-50 transition-colors"
-                                >
-                                    <input
-                                        type="checkbox"
-                                        checked={selectedStudentIds.includes(student.id)}
-                                        onChange={(e) => {
-                                            if (e.target.checked) {
-                                                setSelectedStudentIds((prev) => [...prev, student.id]);
-                                            } else {
-                                                setSelectedStudentIds((prev) => prev.filter((id) => id !== student.id));
-                                            }
-                                        }}
-                                        className="w-4 h-4 rounded border-gray-300 text-[#862733] focus:ring-[#862733]"
-                                    />
-                                    <span className="truncate">{student.name}</span>
-                                </label>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="border rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-2">
-                                <p className="text-sm font-medium text-gray-800">Assignments</p>
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                                    {selectedAssignmentIds.length} selected
-                                </span>
-                            </div>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                    if (areAllAssignmentsSelected) {
-                                        setSelectedAssignmentIds([]);
-                                    } else {
-                                        setSelectedAssignmentIds(assignmentOptions.map((assignment) => assignment.id));
-                                    }
-                                }}
-                            >
-                                {areAllAssignmentsSelected ? 'Deselect all' : 'Select all'}
-                            </Button>
-                        </div>
-                        <div className="max-h-44 overflow-auto space-y-2 pr-1">
-                            {assignmentOptions.map((assignment) => {
-                                return (
-                                    <label
-                                        key={assignment.id}
-                                        className="flex items-center gap-2.5 text-sm text-gray-700 rounded-md px-2 py-1.5 hover:bg-gray-50 transition-colors"
-                                    >
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedAssignmentIds.includes(assignment.id)}
-                                            onChange={(e) => {
-                                                if (e.target.checked) {
-                                                    setSelectedAssignmentIds((prev) => [...prev, assignment.id]);
-                                                } else {
-                                                    setSelectedAssignmentIds((prev) => prev.filter((id) => id !== assignment.id));
-                                                }
-                                            }}
-                                            className="w-4 h-4 rounded border-gray-300 text-[#862733] focus:ring-[#862733]"
-                                        />
-                                        <span className="truncate">{assignment.title}</span>
-                                    </label>
-                                );
-                            })}
-                        </div>
-                    </div>
-                </CardContent>
-                <CardContent className="pt-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <span className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
-                            <Filter className="w-4 h-4 text-gray-500" /> Selections
-                        </span>
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={clearSelections}
-                            disabled={selectedStudentIds.length === 0 && selectedAssignmentIds.length === 0}
-                        >
-                            Clear selections
-                        </Button>
-                    </div>
-                </CardContent>
-            </Card>
-
-            {/* Selected students x assignments matrix */}
-            {shouldShowSelectedReport ? (
-            <Card>
-                <CardHeader className="pb-3">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                        <div>
-                            <CardTitle>Selected Grade Report</CardTitle>
-                            <CardDescription>
-                                Displays selected students&apos; grades across selected assignments.
-                            </CardDescription>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <Badge variant="outline">{selectedStudents.length} Students</Badge>
-                            <Badge variant="outline">{selectedAssignments.length} Assignments</Badge>
-                        </div>
-                    </div>
-                </CardHeader>
-                <CardContent className="p-0">
-                    <div className="overflow-x-auto rounded-b-xl border-t border-gray-100">
-                        <table className="w-full text-sm min-w-[820px] table-fixed">
-                            <thead>
-                                <tr className="border-b bg-gray-50/90">
-                                    <th
-                                        className="text-left py-3 px-4 font-semibold text-gray-600 sticky left-0 bg-gray-50/90 z-10 border-r border-gray-200 relative"
-                                        style={{ width: getSelectedReportColWidth('student') }}
-                                    >
-                                        Student
-                                        <span
-                                            className="absolute top-0 right-0 h-full w-2 cursor-col-resize hover:bg-primary/10"
-                                            onMouseDown={(event) => startSelectedReportResize('student', event)}
-                                        />
-                                    </th>
-                                    {selectedAssignments.map((assignment) => (
-                                        <th
-                                            key={assignment.id}
-                                            className="text-center py-3 px-4 font-semibold text-gray-600 whitespace-nowrap max-w-[200px] border-r border-gray-200 relative"
-                                            title={assignment.title}
-                                            style={{ width: getSelectedReportColWidth(`assignment-${assignment.id}`) }}
-                                        >
-                                            <span className="inline-block truncate max-w-[180px] align-bottom">
-                                                {assignment.title}
-                                            </span>
-                                            <span
-                                                className="absolute top-0 right-0 h-full w-2 cursor-col-resize hover:bg-primary/10"
-                                                onMouseDown={(event) =>
-                                                    startSelectedReportResize(`assignment-${assignment.id}`, event)
-                                                }
-                                            />
-                                        </th>
-                                    ))}
-                                    <th
-                                        className="text-center py-3 px-4 font-semibold text-gray-600 relative"
-                                        style={{ width: getSelectedReportColWidth('average') }}
-                                    >
-                                        Average
-                                        <span
-                                            className="absolute top-0 right-0 h-full w-2 cursor-col-resize hover:bg-primary/10"
-                                            onMouseDown={(event) => startSelectedReportResize('average', event)}
-                                        />
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {selectedStudents.map((student) => {
-                                    const scores = selectedAssignments
-                                        .map((assignment) => getGradeForAssignment(student, assignment.id)?.score)
-                                        .filter((value): value is number => typeof value === 'number');
-                                    const average = scores.length > 0 ? scores.reduce((sum, value) => sum + value, 0) / scores.length : null;
-                                    const gradedCount = scores.length;
-
-                                    return (
-                                        <tr key={student.id} className="border-b last:border-0 odd:bg-white even:bg-gray-50/30 hover:bg-gray-50/70 transition-colors">
-                                            <td
-                                                className="py-3 px-4 sticky left-0 bg-inherit z-10 border-r border-gray-200"
-                                                style={{ width: getSelectedReportColWidth('student') }}
-                                            >
-                                                <p className="font-medium text-gray-900">{student.name}</p>
-                                                <div className="text-xs text-gray-500 flex items-center gap-2">
-                                                    {student.student_id ? <span>ID: {student.student_id}</span> : null}
-                                                    <span className="text-gray-300">•</span>
-                                                    <span>{gradedCount}/{selectedAssignments.length} graded</span>
-                                                </div>
-                                            </td>
-                                            {selectedAssignments.map((assignment) => {
-                                                const grade = getGradeForAssignment(student, assignment.id);
-                                                return (
-                                                    <td
-                                                        key={`${student.id}-${assignment.id}`}
-                                                        className="py-3 px-4 text-center border-r border-gray-200"
-                                                        style={{ width: getSelectedReportColWidth(`assignment-${assignment.id}`) }}
-                                                    >
-                                                        {grade?.score != null ? (
-                                                            <ScoreBadge percent={grade.score} successThreshold={75} warningThreshold={0}>
-                                                                {grade.score.toFixed(1)}%
-                                                            </ScoreBadge>
-                                                        ) : grade?.status === 'ungraded' ? (
-                                                            <Badge variant="warning">Needs Grading</Badge>
-                                                        ) : grade?.status === 'missing' ? (
-                                                            <Badge variant="destructive">Missing</Badge>
-                                                        ) : grade?.status === 'not_submitted' ? (
-                                                            <Badge variant="outline">Not Submitted</Badge>
-                                                        ) : (
-                                                            <span className="text-xs text-gray-400">—</span>
-                                                        )}
-                                                    </td>
-                                                );
-                                            })}
-                                            <td
-                                                className="py-3 px-4 text-center"
-                                                style={{ width: getSelectedReportColWidth('average') }}
-                                            >
-                                                {average != null ? (
-                                                    <ScoreBadge percent={average} successThreshold={75} warningThreshold={0}>
-                                                        {average.toFixed(1)}%
-                                                    </ScoreBadge>
-                                                ) : (
-                                                    <span className="text-xs text-gray-400 italic">No graded work</span>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                                {!isLoading && selectedStudents.length === 0 && (
-                                    <tr>
-                                        <td colSpan={Math.max(2, selectedAssignments.length + 2)} className="py-6 text-center text-sm text-gray-500">
-                                            No students selected.
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </CardContent>
-            </Card>
-            ) : (
-            <Card>
-                <CardContent className="py-6 text-sm text-gray-500">
-                    Select at least one student and one assignment to view the selected grade report.
-                </CardContent>
-            </Card>
-            )}
 
             {/* Key metrics */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -693,29 +429,217 @@ export default function FacultyReportsPage() {
 
             {/* Student-level performance */}
             <StudentAveragesTable
-                students={courseReport?.student_reports ?? []}
+                students={selectedStudentIds.length > 0 ? selectedStudents : (courseReport?.student_reports ?? [])}
                 isLoading={isLoading}
+                filterToggleButton={(
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={() => setShowProgressFilters((prev) => !prev)}
+                    >
+                        {showProgressFilters ? 'Hide Filters' : 'Filters'}
+                        {activeFilterCount > 0 ? (
+                            <Badge variant="outline" className="h-5 px-1.5 text-[10px] leading-none">
+                                {activeFilterCount}
+                            </Badge>
+                        ) : null}
+                    </Button>
+                )}
+                filterPanel={showProgressFilters ? (
+                    <div className="border-t border-gray-100 p-4 sm:p-5 bg-gray-50/40 space-y-4">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <div className="border rounded-xl p-4 bg-white">
+                                <div className="flex items-center justify-between mb-3">
+                                    <div className="flex items-center gap-2">
+                                        <p className="text-sm font-medium text-gray-800">Students</p>
+                                        <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                                            {selectedStudentIds.length > 0 ? `${selectedStudentIds.length} selected` : 'All students'}
+                                        </span>
+                                    </div>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                            if (areAllStudentsSelected) {
+                                                setSelectedStudentIds([]);
+                                            } else {
+                                                setSelectedStudentIds(studentOptions.map((student) => student.id));
+                                            }
+                                        }}
+                                    >
+                                        {areAllStudentsSelected ? 'Use all students' : 'Select all'}
+                                    </Button>
+                                </div>
+                                <div className="relative mb-3">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                    <input
+                                        type="text"
+                                        value={studentSearch}
+                                        onChange={(e) => {
+                                            setStudentSearch(e.target.value);
+                                            setShowAllStudents(false);
+                                        }}
+                                        placeholder="Search students"
+                                        className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-gray-200 focus:ring-2 focus:ring-primary/25 focus:border-primary outline-none"
+                                    />
+                                </div>
+                                <div className="max-h-56 overflow-auto space-y-1.5 pr-1">
+                                    {visibleStudentOptions.map((student) => (
+                                        <label
+                                            key={student.id}
+                                            className="flex items-center justify-between gap-3 text-sm text-gray-700 rounded-md px-2 py-2 hover:bg-gray-50 transition-colors border border-transparent hover:border-gray-100"
+                                        >
+                                            <div className="flex items-center gap-2.5 min-w-0">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedStudentIds.includes(student.id)}
+                                                    onChange={(e) => toggleStudentSelection(student.id, e.target.checked)}
+                                                    className="w-4 h-4 rounded border-gray-300 text-[#862733] focus:ring-[#862733]"
+                                                />
+                                                <div className="min-w-0">
+                                                    <p className="truncate font-medium text-gray-800">{student.name}</p>
+                                                    <p className="truncate text-xs text-gray-500">
+                                                        {student.student_id ? `ID: ${student.student_id}` : student.email}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </label>
+                                    ))}
+                                    {visibleStudentOptions.length === 0 && (
+                                        <p className="text-sm text-gray-500 py-2">No students match this search.</p>
+                                    )}
+                                </div>
+                                {filteredStudentOptions.length > 8 && (
+                                    <div className="pt-3">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="w-full"
+                                            onClick={() => setShowAllStudents((prev) => !prev)}
+                                        >
+                                            {showAllStudents ? 'Show fewer students' : `Show all students (${filteredStudentOptions.length})`}
+                                        </Button>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="border rounded-xl p-4 bg-white">
+                                <div className="flex items-center justify-between mb-3">
+                                    <div className="flex items-center gap-2">
+                                        <p className="text-sm font-medium text-gray-800">Assignments</p>
+                                        <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                                            {selectedAssignmentIds.length} selected
+                                        </span>
+                                    </div>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                            if (areAllAssignmentsSelected) {
+                                                setSelectedAssignmentIds([]);
+                                            } else {
+                                                setSelectedAssignmentIds(assignmentOptions.map((assignment) => assignment.id));
+                                            }
+                                        }}
+                                    >
+                                        {areAllAssignmentsSelected ? 'Deselect all' : 'Select all'}
+                                    </Button>
+                                </div>
+                                <div className="relative mb-3">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                    <input
+                                        type="text"
+                                        value={assignmentSearch}
+                                        onChange={(e) => {
+                                            setAssignmentSearch(e.target.value);
+                                            setShowAllAssignments(false);
+                                        }}
+                                        placeholder="Search assignments"
+                                        className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-gray-200 focus:ring-2 focus:ring-primary/25 focus:border-primary outline-none"
+                                    />
+                                </div>
+                                <div className="max-h-56 overflow-auto space-y-1.5 pr-1">
+                                    {visibleAssignmentOptions.map((assignment) => {
+                                        return (
+                                            <label
+                                                key={assignment.id}
+                                                className="flex items-center gap-2.5 text-sm text-gray-700 rounded-md px-2 py-2 hover:bg-gray-50 transition-colors border border-transparent hover:border-gray-100"
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedAssignmentIds.includes(assignment.id)}
+                                                    onChange={(e) => toggleAssignmentSelection(assignment.id, e.target.checked)}
+                                                    className="w-4 h-4 rounded border-gray-300 text-[#862733] focus:ring-[#862733]"
+                                                />
+                                                <span className="truncate font-medium text-gray-800">{assignment.title}</span>
+                                            </label>
+                                        );
+                                    })}
+                                    {visibleAssignmentOptions.length === 0 && (
+                                        <p className="text-sm text-gray-500 py-2">No assignments match this search.</p>
+                                    )}
+                                </div>
+                                {filteredAssignmentOptions.length > 8 && (
+                                    <div className="pt-3">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="w-full"
+                                            onClick={() => setShowAllAssignments((prev) => !prev)}
+                                        >
+                                            {showAllAssignments ? 'Show fewer assignments' : `Show all assignments (${filteredAssignmentOptions.length})`}
+                                        </Button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                                <Badge variant="outline">{selectedStudentIds.length > 0 ? selectedStudentIds.length : studentOptions.length} Students</Badge>
+                                <Badge variant="outline">{selectedAssignmentIds.length} Assignments</Badge>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={clearSelections}
+                                    disabled={selectedStudentIds.length === 0 && selectedAssignmentIds.length === 0}
+                                >
+                                    Clear selections
+                                </Button>
+                            </div>
+                            <p className="text-sm text-gray-600">
+                                {selectedStudentIds.length > 0
+                                    ? `Showing progress for ${selectedStudentIds.length} selected student${selectedStudentIds.length === 1 ? '' : 's'}.`
+                                    : 'Showing progress for all students.'}
+                            </p>
+                        </div>
+                    </div>
+                ) : null}
+                selectedAssignmentIds={selectedAssignmentIds}
             />
 
-            {/* Grade distribution & guidance */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Grade distribution</CardTitle>
-                        <CardDescription>Based on students&apos; current course averages.</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
+            {/* Grade distribution */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>Grade distribution</CardTitle>
+                    <CardDescription>Based on students&apos; current course averages.</CardDescription>
+                </CardHeader>
+                <CardContent className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                    <div className="xl:col-span-2 space-y-3">
                         {gradeDistribution.map((item) => (
-                            <div key={item.grade}>
-                                <div className="flex items-center justify-between text-sm mb-1">
-                                    <span className="font-medium">{item.grade}</span>
+                            <div key={item.grade} className="rounded-lg border border-gray-100 bg-gray-50/40 px-3 py-2.5">
+                                <div className="flex items-center justify-between text-sm mb-1.5">
+                                    <span className="font-medium text-gray-800">{item.grade}</span>
                                     <span className="text-gray-500">
                                         {item.count} students ({item.percentage}%)
                                     </span>
                                 </div>
-                                <div className="w-full bg-gray-200 rounded-full h-4">
+                                <div className="w-full bg-gray-200 rounded-full h-2.5">
                                     <div
-                                        className={`h-4 rounded-full ${item.grade.startsWith('A')
+                                        className={`h-2.5 rounded-full ${item.grade.startsWith('A')
                                                 ? 'bg-green-500'
                                                 : item.grade.startsWith('B')
                                                     ? 'bg-blue-500'
@@ -730,39 +654,33 @@ export default function FacultyReportsPage() {
                                 </div>
                             </div>
                         ))}
-                    </CardContent>
-                </Card>
+                    </div>
 
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Teaching insights</CardTitle>
-                        <CardDescription>Use these patterns to adjust instruction.</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-3 text-sm text-gray-600">
-                        <div className="flex items-start gap-2">
-                            <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
-                            <p>
-                                A strong &quot;A/B&quot; cluster suggests the class is ready for more challenging
-                                material or optional enrichment problems.
+                    <div className="space-y-3">
+                        <div className="rounded-lg border border-gray-100 bg-white p-4">
+                            <p className="text-xs uppercase tracking-wide text-gray-500">Students with graded average</p>
+                            <p className="mt-1 text-2xl font-semibold text-gray-900">
+                                {gradeDistribution.reduce((sum, bucket) => sum + bucket.count, 0)}
                             </p>
                         </div>
-                        <div className="flex items-start gap-2">
-                            <AlertCircle className="w-4 h-4 text-amber-500 mt-0.5" />
-                            <p>
-                                Noticeable &quot;D/F&quot; tails often highlight topics that could benefit from a
-                                short recap, extra examples, or targeted office hours.
+                        <div className="rounded-lg border border-gray-100 bg-white p-4">
+                            <p className="text-xs uppercase tracking-wide text-gray-500">Course average</p>
+                            <p className="mt-1 text-2xl font-semibold text-gray-900">
+                                {overallAverage != null ? `${overallAverage.toFixed(1)}%` : '—'}
                             </p>
                         </div>
-                        <div className="flex items-start gap-2">
-                            <BarChart3 className="w-4 h-4 text-blue-600 mt-0.5" />
-                            <p>
-                                Combine this distribution with the student table above to quickly identify who to
-                                proactively reach out to before major deadlines.
+                        <div className="rounded-lg border border-gray-100 bg-white p-4">
+                            <p className="text-xs uppercase tracking-wide text-gray-500">Most common band</p>
+                            <p className="mt-1 text-lg font-semibold text-gray-900">
+                                {(gradeDistribution.reduce((top, bucket) => (bucket.count > top.count ? bucket : top), gradeDistribution[0])?.grade) || '—'}
+                            </p>
+                            <p className="text-sm text-gray-500 mt-1">
+                                {(gradeDistribution.reduce((top, bucket) => (bucket.count > top.count ? bucket : top), gradeDistribution[0])?.count) || 0} students
                             </p>
                         </div>
-                    </CardContent>
-                </Card>
-            </div>
+                    </div>
+                </CardContent>
+            </Card>
         </div>
     );
 }
@@ -815,9 +733,15 @@ function getAvatarColor(name: string): string {
 function StudentAveragesTable({
     students,
     isLoading,
+    filterToggleButton,
+    filterPanel,
+    selectedAssignmentIds,
 }: {
     students: StudentReport[];
     isLoading: boolean;
+    filterToggleButton?: React.ReactNode;
+    filterPanel?: React.ReactNode;
+    selectedAssignmentIds?: number[];
 }) {
     const [search, setSearch] = useState('');
     const [sortKey, setSortKey] = useState<SortKey>('name');
@@ -864,6 +788,18 @@ function StudentAveragesTable({
             });
     }, [students, search, sortKey, sortDir]);
 
+    // Auto-expand students when assignment filters are applied
+    useEffect(() => {
+        if (selectedAssignmentIds && selectedAssignmentIds.length > 0) {
+            // Expand all visible students
+            const visibleStudentIds = filtered.map((s) => s.id);
+            setExpandedStudentIds(visibleStudentIds);
+        } else {
+            // Collapse all when filters are cleared
+            setExpandedStudentIds([]);
+        }
+    }, [selectedAssignmentIds, filtered]);
+
     const SortIcon = ({ k }: { k: SortKey }) => {
         if (sortKey !== k) return <ChevronsUpDown className="w-3.5 h-3.5 text-gray-300 ml-1" />;
         return sortDir === 'asc'
@@ -876,13 +812,14 @@ function StudentAveragesTable({
             <CardHeader className="pb-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
-                        <CardTitle>Student course averages</CardTitle>
+                        <CardTitle>Student Progress Overview</CardTitle>
                         <CardDescription className="mt-0.5">
-                            Current grade and assignment completion for each enrolled student.
+                            Current grades and completion status for each enrolled student.
                         </CardDescription>
                     </div>
                     {students.length > 0 && (
                         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto sm:items-center">
+                            {filterToggleButton}
                             <Button
                                 type="button"
                                 variant="outline"
@@ -896,7 +833,7 @@ function StudentAveragesTable({
                                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                                 <input
                                     type="text"
-                                    placeholder="Search students…"
+                                    placeholder="Search by name, email, or ID"
                                     value={search}
                                     onChange={(e) => setSearch(e.target.value)}
                                     className="w-full pl-8 pr-3 py-1.5 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary placeholder:text-gray-400"
@@ -906,6 +843,7 @@ function StudentAveragesTable({
                     )}
                 </div>
             </CardHeader>
+            {filterPanel}
             <CardContent className="p-0">
                 {isLoading ? (
                     <div className="flex justify-center items-center py-16">
@@ -918,7 +856,7 @@ function StudentAveragesTable({
                         <p className="text-xs mt-1">Students will appear here once they enrol in this course.</p>
                     </div>
                 ) : (
-                    <div className="overflow-x-auto">
+                    <div className="overflow-auto max-h-[36rem]">
                         <table className="w-full text-sm">
                             <thead>
                                 <tr className="border-b bg-gray-50/80">
@@ -958,7 +896,7 @@ function StudentAveragesTable({
                                 {filtered.length === 0 ? (
                                     <tr>
                                         <td colSpan={5} className="py-10 text-center text-sm text-gray-400">
-                                            No students match &ldquo;{search}&rdquo;
+                                            No students found for &ldquo;{search}&rdquo;.
                                         </td>
                                     </tr>
                                 ) : (
@@ -971,7 +909,11 @@ function StudentAveragesTable({
                                         const barColor = hasScore ? getBarColor(s.average_score!) : 'bg-gray-300';
                                         const initials = getInitials(s.name);
                                         const avatarColor = getAvatarColor(s.name);
-                                        const assignmentGrades = s.assignment_grades ?? [];
+                                        const assignmentGrades = (
+                                            selectedAssignmentIds && selectedAssignmentIds.length > 0
+                                                ? (s.assignment_grades ?? []).filter((ag) => selectedAssignmentIds.includes(ag.assignment_id))
+                                                : (s.assignment_grades ?? [])
+                                        );
                                         const statusCounts = assignmentGrades.reduce(
                                             (acc, assignmentGrade) => {
                                                 acc[assignmentGrade.status] += 1;

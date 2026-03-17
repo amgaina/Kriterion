@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
@@ -29,7 +29,8 @@ import {
     AlertTriangle,
     CheckCircle,
     ArrowUp,
-    ArrowDown
+    ArrowDown,
+    Search,
 } from 'lucide-react';
 
 interface ReportMetric {
@@ -45,6 +46,7 @@ export default function ReportsPage() {
     const [dateRange, setDateRange] = useState('month');
     const [selectedCourse, setSelectedCourse] = useState('');
     const [activeTab, setActiveTab] = useState('overview');
+    const [courseTableSearch, setCourseTableSearch] = useState('');
 
     const { data: courses = [] } = useQuery({
         queryKey: ['courses'],
@@ -88,6 +90,19 @@ export default function ReportsPage() {
         { id: 'students', label: 'Students', icon: <Users className="w-4 h-4" /> },
         { id: 'submissions', label: 'Submissions', icon: <FileCode className="w-4 h-4" /> },
     ];
+
+    const filteredTopCourses = useMemo(() => {
+        const selectedCourseName = selectedCourse
+            ? courses.find((course: any) => String(course.id) === selectedCourse)?.name?.toLowerCase()
+            : '';
+        const q = courseTableSearch.trim().toLowerCase();
+
+        return topCourses.filter((course) => {
+            const matchesSelected = !selectedCourse || (selectedCourseName && course.name.toLowerCase() === selectedCourseName);
+            const matchesSearch = !q || course.name.toLowerCase().includes(q);
+            return Boolean(matchesSelected && matchesSearch);
+        });
+    }, [topCourses, courses, selectedCourse, courseTableSearch]);
 
     return (
         <ProtectedRoute allowedRoles={['ADMIN']}>
@@ -303,42 +318,64 @@ export default function ReportsPage() {
                     {activeTab === 'courses' && (
                         <Card>
                             <CardHeader>
-                                <div className="flex items-center justify-between">
+                                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                                     <div>
                                         <CardTitle>Course Performance Report</CardTitle>
-                                        <CardDescription>Detailed metrics for all courses</CardDescription>
+                                        <CardDescription>Detailed course metrics with completion and grading trends.</CardDescription>
                                     </div>
-                                    <Select
-                                        value={selectedCourse}
-                                        onChange={(e) => setSelectedCourse(e.target.value)}
-                                        options={[
-                                            { value: '', label: 'All Courses' },
-                                            ...courses.map((c: any) => ({ value: c.id.toString(), label: c.name }))
-                                        ]}
-                                        className="w-48"
-                                    />
+                                    <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
+                                        <div className="relative w-full sm:w-64">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                            <input
+                                                type="text"
+                                                value={courseTableSearch}
+                                                onChange={(e) => setCourseTableSearch(e.target.value)}
+                                                placeholder="Search courses"
+                                                className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-gray-200 focus:ring-2 focus:ring-primary/25 focus:border-primary outline-none"
+                                            />
+                                        </div>
+                                        <Select
+                                            value={selectedCourse}
+                                            onChange={(e) => setSelectedCourse(e.target.value)}
+                                            options={[
+                                                { value: '', label: 'All Courses' },
+                                                ...courses.map((c: any) => ({ value: c.id.toString(), label: c.name }))
+                                            ]}
+                                            className="w-full sm:w-52"
+                                        />
+                                    </div>
                                 </div>
                             </CardHeader>
                             <CardContent>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full">
+                                <div className="flex flex-wrap items-center gap-2 mb-3">
+                                    <Badge variant="outline">{filteredTopCourses.length} Courses</Badge>
+                                    <Badge variant="outline">{dateRange === 'week' ? 'This Week' : dateRange === 'month' ? 'This Month' : dateRange === 'quarter' ? 'This Quarter' : 'This Year'}</Badge>
+                                </div>
+                                <div className="overflow-auto max-h-[34rem] rounded-lg border border-gray-100">
+                                    <table className="w-full text-sm min-w-[760px]">
                                         <thead>
-                                            <tr className="border-b">
-                                                <th className="text-left py-3 px-4 font-medium text-gray-600">Course</th>
-                                                <th className="text-left py-3 px-4 font-medium text-gray-600">Students</th>
-                                                <th className="text-left py-3 px-4 font-medium text-gray-600">Assignments</th>
-                                                <th className="text-left py-3 px-4 font-medium text-gray-600">Submissions</th>
-                                                <th className="text-left py-3 px-4 font-medium text-gray-600">Avg Score</th>
-                                                <th className="text-left py-3 px-4 font-medium text-gray-600">Completion</th>
+                                            <tr className="border-b bg-gray-50/90">
+                                                <th className="text-left py-3 px-4 font-semibold text-xs uppercase tracking-wide text-gray-600">Course</th>
+                                                <th className="text-left py-3 px-4 font-semibold text-xs uppercase tracking-wide text-gray-600">Students</th>
+                                                <th className="text-left py-3 px-4 font-semibold text-xs uppercase tracking-wide text-gray-600">Assignments</th>
+                                                <th className="text-left py-3 px-4 font-semibold text-xs uppercase tracking-wide text-gray-600">Submissions</th>
+                                                <th className="text-left py-3 px-4 font-semibold text-xs uppercase tracking-wide text-gray-600">Average</th>
+                                                <th className="text-left py-3 px-4 font-semibold text-xs uppercase tracking-wide text-gray-600">Completion</th>
                                             </tr>
                                         </thead>
-                                        <tbody>
-                                            {topCourses.map((course, index) => (
-                                                <tr key={index} className="border-b hover:bg-gray-50">
-                                                    <td className="py-3 px-4 font-medium">{course.name}</td>
-                                                    <td className="py-3 px-4">{course.students}</td>
-                                                    <td className="py-3 px-4">8</td>
-                                                    <td className="py-3 px-4">{course.submissions}</td>
+                                        <tbody className="divide-y divide-gray-100">
+                                            {filteredTopCourses.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={6} className="py-10 px-4 text-center text-sm text-gray-500">
+                                                        No courses match this filter.
+                                                    </td>
+                                                </tr>
+                                            ) : filteredTopCourses.map((course, index) => (
+                                                <tr key={index} className="hover:bg-gray-50/70 transition-colors">
+                                                    <td className="py-3 px-4 font-medium text-gray-900">{course.name}</td>
+                                                    <td className="py-3 px-4 text-gray-700">{course.students}</td>
+                                                    <td className="py-3 px-4 text-gray-700">8</td>
+                                                    <td className="py-3 px-4 text-gray-700">{course.submissions}</td>
                                                     <td className="py-3 px-4">
                                                         <ScoreBadge percent={course.avgScore}>
                                                             {course.avgScore}%
@@ -346,7 +383,7 @@ export default function ReportsPage() {
                                                     </td>
                                                     <td className="py-3 px-4">
                                                         <div className="flex items-center gap-2">
-                                                            <Progress value={Math.round((course.submissions / (course.students * 8)) * 100)} size="sm" className="w-20" />
+                                                            <Progress value={Math.round((course.submissions / (course.students * 8)) * 100)} size="sm" className="w-24" />
                                                             <span className="text-sm text-gray-500">
                                                                 {Math.round((course.submissions / (course.students * 8)) * 100)}%
                                                             </span>

@@ -58,6 +58,7 @@ export default function AssistantCourseDetailPage() {
         queryKey: ['assistant-grading-stats', courseId],
         queryFn: () => apiClient.getGradingStats(courseId),
         enabled: !!courseId,
+        refetchInterval: 15_000,
     });
 
     const statsByAssignment = useMemo(() => {

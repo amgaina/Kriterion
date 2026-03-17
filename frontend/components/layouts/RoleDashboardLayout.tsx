@@ -98,6 +98,16 @@ export default function RoleDashboardLayout({
         return events.filter((e) => e.date >= todayStr).slice(0, 8);
     }, [events, selectedDate]);
 
+    if (hideCalendarSidebar) {
+        return (
+            <ProtectedRoute allowedRoles={allowedRoles}>
+                <DashboardLayout hideTopNav>
+                    {children}
+                </DashboardLayout>
+            </ProtectedRoute>
+        );
+    }
+
     return (
         <ProtectedRoute allowedRoles={allowedRoles}>
             <DashboardLayout hideTopNav={hideCalendarSidebar}>

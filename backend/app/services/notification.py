@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional
 from sqlalchemy.orm import Session
 from app.models.notification import Notification, NotificationType
-from app.models import Enrollment, EnrollmentStatus
+from app.models import Enrollment, EnrollmentStatus, CourseAssistant
 from app.core.logging import logger
 
 
@@ -75,6 +75,44 @@ def notify_course_students_assignment_posted(
 
     except Exception as e:
         logger.error(f"Failed to create assignment notifications: {str(e)}")
+        raise
+
+
+def notify_course_assistants_assignment_posted(
+    db: Session,
+    course_id: int,
+    assignment_id: int,
+    assignment_title: str,
+    course_code: str,
+) -> int:
+    """Create assignment posted notifications for all assistants assigned to course"""
+    try:
+        course_assistants = (
+            db.query(CourseAssistant)
+            .filter(CourseAssistant.course_id == course_id)
+            .all()
+        )
+
+        count = 0
+        for ca in course_assistants:
+            create_notification(
+                db=db,
+                user_id=ca.assistant_id,
+                notification_type=NotificationType.ASSIGNMENT_NEW,
+                title="New Assignment to Grade",
+                message=f"A new assignment '{assignment_title}' has been created in {course_code}.",
+                link=f"/assistant/courses/{course_id}/assignments",
+                course_id=course_id,
+                assignment_id=assignment_id,
+            )
+            count += 1
+
+        db.flush()  # Flush to prepare for commit
+        logger.info(f"Created {count} assignment posted notifications for assistants in course {course_id}")
+        return count
+
+    except Exception as e:
+        logger.error(f"Failed to create assignment notifications for assistants: {str(e)}")
         raise
 
 

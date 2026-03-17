@@ -45,7 +45,7 @@ from app.core.database import SessionLocal
 from app.services.autograding import autograding_service
 from app.services.notifications import notify_users, get_active_student_ids_for_course, get_assistant_ids_for_course
 from app.services.sandbox import sandbox_executor
-from app.services.notification import notify_course_students_assignment_posted
+from app.services.notification import notify_course_students_assignment_posted, notify_course_assistants_assignment_posted
 from app.tasks.code_execution import run_code_task, compile_check_task
 from app.services.s3_storage import s3_service
 
@@ -502,6 +502,18 @@ async def create_assignment(
                 )
             except Exception as notif_err:
                 logger.warning(f"Failed to send grading deadline notifications: {str(notif_err)}")
+
+        # Notify assistants about new assignment
+        try:
+            notify_course_assistants_assignment_posted(
+                db,
+                course_id=assignment.course_id,
+                assignment_id=assignment.id,
+                assignment_title=assignment.title,
+                course_code=course.code,
+            )
+        except Exception as notif_err:
+            logger.warning(f"Failed to send new assignment notifications to assistants: {str(notif_err)}")
 
         db.commit()
         

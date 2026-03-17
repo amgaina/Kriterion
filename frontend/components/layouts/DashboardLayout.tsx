@@ -565,7 +565,13 @@ export function DashboardLayout({ children, hideTopNav = false }: DashboardLayou
                 )}
 
                 {/* Page Content */}
-                <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 py-3 sm:px-5 sm:py-4 lg:px-6 lg:py-5">
+                <main
+                    className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden ${
+                        hideTopNav
+                            ? 'px-0 py-0'
+                            : 'px-3 py-3 sm:px-5 sm:py-4 lg:px-6 lg:py-5'
+                    }`}
+                >
                     <div className={`h-full motion-reduce:transition-none transition-all duration-500 ease-[cubic-bezier(.2,.9,.2,1)] transform will-change-transform will-change-opacity ${contentVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 -translate-y-2 scale-98'}`}>
                         {children}
                     </div>

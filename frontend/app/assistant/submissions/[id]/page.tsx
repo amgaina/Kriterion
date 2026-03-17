@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -26,6 +26,12 @@ export default function AssistantSubmissionDetailPage() {
         queryFn: () => apiClient.getSubmission(id),
     });
 
+    useEffect(() => {
+        if (submission?.feedback) {
+            setFeedback(submission.feedback);
+        }
+    }, [submission?.id, submission?.feedback]);
+
     const gradeMutation = useMutation({
         mutationFn: async () => {
             await apiClient.saveManualGrade(id, {
@@ -36,7 +42,7 @@ export default function AssistantSubmissionDetailPage() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['submission', id] });
             queryClient.invalidateQueries({ queryKey: ['assistant-grading-submissions'] });
-            setSuccessMessage('Grade saved successfully!');
+            setSuccessMessage('Review saved successfully!');
         },
     });
 
@@ -68,6 +74,16 @@ export default function AssistantSubmissionDetailPage() {
     const passedTests = testResults.filter((t: any) => t.passed).length;
     const totalTests = testResults.length;
     const currentScore = submission.final_score ?? submission.raw_score ?? (totalTests > 0 ? Math.round((passedTests / totalTests) * (submission.max_score || 100)) : null);
+    const status = String(submission.status || '').toLowerCase();
+    const reviewPending = status === 'autograded' || status === 'manual_review';
+    const statusLabel =
+        status === 'autograded'
+            ? 'Auto-graded · Review needed'
+            : status === 'manual_review'
+                ? 'Manual review needed'
+                : status === 'completed' || status === 'graded'
+                    ? 'Reviewed'
+                    : submission.status;
 
     return (
         <div className="space-y-6">
@@ -109,7 +125,7 @@ export default function AssistantSubmissionDetailPage() {
                 <Card>
                     <CardContent className="p-4 text-center">
                         <p className="text-sm text-gray-500">Status</p>
-                        <p className="font-medium mt-1">{submission.status}</p>
+                        <p className={`font-medium mt-1 ${reviewPending ? 'text-amber-700' : ''}`}>{statusLabel}</p>
                     </CardContent>
                 </Card>
             </div>
@@ -145,7 +161,7 @@ export default function AssistantSubmissionDetailPage() {
                             <label className="block text-sm font-medium text-gray-700 mb-1">Feedback</label>
                             <textarea
                                 className="w-full min-h-[120px] rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                                value={feedback || submission.feedback || ''}
+                                value={feedback}
                                 onChange={(e) => setFeedback(e.target.value)}
                                 placeholder="Add feedback..."
                             />
@@ -156,7 +172,7 @@ export default function AssistantSubmissionDetailPage() {
                             disabled={gradeMutation.isPending}
                         >
                             <Save className="w-4 h-4 mr-2" />
-                            {gradeMutation.isPending ? 'Saving...' : 'Save Grade'}
+                            {gradeMutation.isPending ? 'Saving...' : 'Save Review & Feedback'}
                         </Button>
                     </CardContent>
                 </Card>

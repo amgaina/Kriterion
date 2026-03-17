@@ -36,11 +36,10 @@ router = APIRouter()
 
 
 def _is_submission_graded(submission: Submission) -> bool:
-    """Treat submission as graded if it has a score or a graded/completed status."""
+    """Treat submission as graded only after explicit human review/completion."""
     status_value = str(submission.status or "").lower()
     return (
-        submission.final_score is not None
-        or status_value in {"completed", "autograded", "graded"}
+        status_value in {"completed", "graded"}
     )
 
 
@@ -873,7 +872,7 @@ def save_manual_grade(
     rubric_scores_json: Optional[str] = Form(None),
     test_overrides_json: Optional[str] = Form(None),
 ):
-    """Save manual grading: feedback, rubric scores, test overrides, final score"""
+    """Save human review: feedback/comments, rubric scores, test overrides, optional final score."""
     import json as json_lib
     submission = db.query(Submission).options(joinedload(Submission.assignment)).filter(Submission.id == submission_id).first()
     if not submission:
@@ -941,8 +940,8 @@ def save_manual_grade(
 
     audit = AuditLog(
         user_id=current_user.id,
-        event_type="manual_grade",
-        description=f"Manual grade saved for submission {submission_id}: score={final_score}"
+        event_type="manual_review",
+        description=f"Manual review saved for submission {submission_id}: score={final_score}"
     )
     db.add(audit)
 
@@ -959,7 +958,7 @@ def save_manual_grade(
 
     db.commit()
 
-    return {"message": "Grade saved successfully", "submission_id": submission_id}
+    return {"message": "Review saved successfully", "submission_id": submission_id}
 
 
 # ---------------------------------------------------------------------------

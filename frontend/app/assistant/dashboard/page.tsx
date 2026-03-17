@@ -28,6 +28,7 @@ export default function AssistantDashboardPage() {
     const { data: gradingStats, isLoading: statsLoading } = useQuery({
         queryKey: ['assistant-grading-stats'],
         queryFn: () => apiClient.getGradingStats(),
+        refetchInterval: 15_000,
     });
 
     const firstName = user?.full_name?.split(' ')[0] || 'Assistant';

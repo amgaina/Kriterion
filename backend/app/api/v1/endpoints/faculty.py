@@ -2,7 +2,7 @@
 Faculty Endpoints - Course Management, Grading, Analytics
 """
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func, desc, case
@@ -169,19 +169,41 @@ def get_faculty_dashboard(
             Assignment.course_id.in_(active_course_ids),
         ).count()
 
-    # Pending = assignments whose due_date has NOT yet passed
-    pending_assignments = 0
+    # Pending grading = count of unique student/assignment pairs where latest submission is ungraded
+    pending_grading = 0
     if active_course_ids:
-        pending_assignments = db.query(Assignment).filter(
-            Assignment.course_id.in_(active_course_ids),
-            Assignment.due_date >= now,
-        ).count()
+        assignment_ids = [a.id for a in db.query(Assignment.id).filter(Assignment.course_id.in_(active_course_ids)).all()]
+        if assignment_ids:
+            submissions = db.query(Submission).filter(Submission.assignment_id.in_(assignment_ids)).all()
+
+            latest_by_student: Dict[Tuple[int, int], Submission] = {}
+            latest_rank: Dict[Tuple[int, int], Tuple[datetime, int, int]] = {}
+
+            for submission in submissions:
+                key = (submission.assignment_id, submission.student_id)
+                rank = (
+                    submission.submitted_at or datetime.min,
+                    int(submission.attempt_number or 0),
+                    int(submission.id or 0),
+                )
+                existing_rank = latest_rank.get(key)
+                if existing_rank is None or rank > existing_rank:
+                    latest_rank[key] = rank
+                    latest_by_student[key] = submission
+
+            for submission in latest_by_student.values():
+                status_value = str(submission.status or "").lower()
+                is_graded = (
+                    status_value in {"completed", "graded"}
+                )
+                if not is_graded:
+                    pending_grading += 1
 
     return FacultyDashboardStats(
         total_courses=total_courses,
         total_students=total_students,
         total_assignments=total_assignments,
-        pending_grading=pending_assignments,
+        pending_grading=pending_grading,
     )
 
 
