@@ -9,7 +9,10 @@ export const ROLE_NOTIFICATION_TYPES: Record<NotificationRole, readonly string[]
         'assignment_new', 'assignment_due', 'assignment_graded',
     ],
     FACULTY: ['NEW_SUBMISSION_RECEIVED', 'GRADING_PENDING', 'SUBMISSION_RECEIVED', 'submission_received'],
-    ASSISTANT: ['NEW_SUBMISSION_RECEIVED', 'GRADING_PENDING', 'SUBMISSION_RECEIVED', 'submission_received'],
+    ASSISTANT: [
+        'NEW_SUBMISSION_RECEIVED', 'GRADING_PENDING', 'SUBMISSION_RECEIVED', 'submission_received',
+        'ASSIGNMENT_NEW', 'assignment_new', 'ASSIGNMENT_DUE', 'assignment_due',
+    ],
     ADMIN: ['NEW_USER_REGISTERED', 'COURSE_APPROVAL_REQUIRED', 'SYSTEM_ALERT'],
 } as const;
 
@@ -39,7 +42,7 @@ export interface NotificationTypeConfig {
 export const NOTIFICATION_TYPE_CONFIG: Record<NotificationType, NotificationTypeConfig> = {
     ASSIGNMENT_NEW: {
         label: 'Assignment Posted',
-        roles: ['STUDENT'],
+        roles: ['STUDENT', 'ASSISTANT'],
     },
     ASSIGNMENT_GRADED: {
         label: 'Assignment Graded',
@@ -47,7 +50,7 @@ export const NOTIFICATION_TYPE_CONFIG: Record<NotificationType, NotificationType
     },
     ASSIGNMENT_DUE: {
         label: 'Assignment Due',
-        roles: ['STUDENT'],
+        roles: ['STUDENT', 'ASSISTANT'],
     },
     SUBMISSION_RECEIVED: {
         label: 'Submission Received',
@@ -55,11 +58,11 @@ export const NOTIFICATION_TYPE_CONFIG: Record<NotificationType, NotificationType
     },
     assignment_new: {
         label: 'Assignment Posted',
-        roles: ['STUDENT'],
+        roles: ['STUDENT', 'ASSISTANT'],
     },
     assignment_due: {
         label: 'Assignment Due',
-        roles: ['STUDENT'],
+        roles: ['STUDENT', 'ASSISTANT'],
     },
     assignment_graded: {
         label: 'Assignment Graded',

@@ -30,7 +30,7 @@ from app.core.logging import logger
 from app.services.grading import GradingService
 from app.services.notifications import create_notification, notify_users, get_assistant_ids_for_course
 from app.services.s3_storage import s3_service
-from app.services.notification import notify_faculty_submission_received, notify_student_grade_posted
+from app.services.notification import notify_student_grade_posted
 
 router = APIRouter()
 
@@ -593,35 +593,6 @@ async def create_submission(
     
     db.commit()
     db.refresh(submission)
-    
-    # Send submission received notification to faculty/assistants
-    try:
-        notify_faculty_submission_received(
-            db=db,
-            course_id=assignment.course_id,
-            assignment_id=assignment.id,
-            student_name=current_user.full_name or "A student",
-            course_code=assignment.course.code,
-            faculty_id=assignment.course.instructor_id,
-        )
-        
-        # Also notify assigned assistants
-        assistants = db.query(CourseAssistant).filter(
-            CourseAssistant.course_id == assignment.course_id
-        ).all()
-        for assistant in assistants:
-            notify_faculty_submission_received(
-                db=db,
-                course_id=assignment.course_id,
-                assignment_id=assignment.id,
-                student_name=current_user.full_name or "A student",
-                course_code=assignment.course.code,
-                faculty_id=assistant.assistant_id,
-            )
-        
-        db.commit()
-    except Exception as notif_err:
-        logger.warning(f"Failed to send submission notifications: {str(notif_err)}")
     
     logger.info(f"Submission {submission.id} created by user {current_user.id} for assignment {assignment_id}")
 

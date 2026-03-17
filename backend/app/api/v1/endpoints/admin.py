@@ -5,11 +5,12 @@ from sqlalchemy import func, or_, and_
 from datetime import datetime, timedelta
 
 from app.api.deps import get_db, get_current_user, require_role
-from app.models import User, UserRole, AuditLog, Course, Assignment
+from app.models import User, UserRole, AuditLog, Course, Assignment, NotificationType
 from app.schemas.user import User as UserSchema, UserUpdate, UserCreate
 from app.schemas.audit_log import AuditLog as AuditLogSchema
 from app.core.security import get_password_hash
 from app.core.logging import logger
+from app.services.notifications import notify_users
 
 router = APIRouter()
 
@@ -82,6 +83,27 @@ def create_user(
         description=f"User {user.email} created with role {user.role.value} by admin"
     )
     db.add(audit)
+
+    admin_ids = [
+        admin_id for (admin_id,) in (
+            db.query(User.id)
+            .filter(
+                User.role == UserRole.ADMIN,
+                User.is_active == True,
+                User.id != current_user.id,
+            )
+            .all()
+        )
+    ]
+    if admin_ids:
+        notify_users(
+            db,
+            user_ids=admin_ids,
+            notification_type=NotificationType.NEW_USER_REGISTERED,
+            title="New user created",
+            message=f"{user.email} was created as {user.role.value} by {current_user.full_name or current_user.email}.",
+        )
+
     db.commit()
 
     # If a welcome email is requested, record it and log. Integrate actual email sending

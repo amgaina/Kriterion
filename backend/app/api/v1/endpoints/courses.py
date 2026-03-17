@@ -627,6 +627,27 @@ def enroll_student_by_email(
             description=f"Faculty requested to add student {email_lower} for {course.code}. Student not in system."
         )
         db.add(audit)
+
+        admin_ids = [
+            admin_id for (admin_id,) in (
+                db.query(User.id)
+                .filter(User.role == UserRole.ADMIN, User.is_active == True)
+                .all()
+            )
+        ]
+        if admin_ids:
+            notify_users(
+                db,
+                user_ids=admin_ids,
+                notification_type=NotificationType.SYSTEM_ALERT,
+                title="Student add request",
+                message=(
+                    f"{current_user.full_name or current_user.email} requested adding {email_lower} "
+                    f"to {course.code} - {course.name}."
+                ),
+                course_id=course.id,
+            )
+
         db.commit()
 
         admin_notified = send_student_add_request_to_admin(
@@ -783,6 +804,27 @@ def bulk_enroll_students(
             faculty_name=current_user.full_name or current_user.email,
             faculty_email=current_user.email,
         )
+
+        admin_ids = [
+            admin_id for (admin_id,) in (
+                db.query(User.id)
+                .filter(User.role == UserRole.ADMIN, User.is_active == True)
+                .all()
+            )
+        ]
+        if admin_ids:
+            sample_email = not_found[0]
+            notify_users(
+                db,
+                user_ids=admin_ids,
+                notification_type=NotificationType.SYSTEM_ALERT,
+                title="Bulk student add request",
+                message=(
+                    f"{current_user.full_name or current_user.email} requested {len(not_found)} new student account(s) "
+                    f"for {course.code}. Example: {sample_email}."
+                ),
+                course_id=course.id,
+            )
 
     # Audit log
     audit = AuditLog(

@@ -13,10 +13,11 @@ from app.core.security import (
     create_refresh_token,
     decode_token
 )
-from app.models import User, AuditLog, UserRole
+from app.models import User, AuditLog, UserRole, NotificationType
 from app.schemas.token import Token, LoginRequest, RefreshTokenRequest
 from app.schemas.user import UserCreate, User as UserSchema
 from app.core.config import settings
+from app.services.notifications import notify_users
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
@@ -96,6 +97,27 @@ def register(
         description=f"User {user.email} registered as {user.role.value}"
     )
     db.add(audit)
+
+    admin_ids = [
+        admin_id for (admin_id,) in (
+            db.query(User.id)
+            .filter(
+                User.role == UserRole.ADMIN,
+                User.is_active == True,
+                User.id != current_user.id,
+            )
+            .all()
+        )
+    ]
+    if admin_ids:
+        notify_users(
+            db,
+            user_ids=admin_ids,
+            notification_type=NotificationType.NEW_USER_REGISTERED,
+            title="New user registered",
+            message=f"{user.email} was registered as {user.role.value}.",
+        )
+
     db.commit()
     
     return user

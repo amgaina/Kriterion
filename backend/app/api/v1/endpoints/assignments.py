@@ -515,6 +515,18 @@ async def create_assignment(
         except Exception as notif_err:
             logger.warning(f"Failed to send new assignment notifications to assistants: {str(notif_err)}")
 
+        if assignment.is_published:
+            try:
+                notify_course_students_assignment_posted(
+                    db=db,
+                    course_id=assignment.course_id,
+                    assignment_id=assignment.id,
+                    assignment_title=assignment.title,
+                    course_code=course.code,
+                )
+            except Exception as notif_err:
+                logger.warning(f"Failed to send assignment notifications to students: {str(notif_err)}")
+
         db.commit()
         
         db.refresh(assignment)
@@ -552,6 +564,7 @@ def update_assignment(
     available_columns = {c.name for c in Assignment.__table__.columns}
 
     previous_grading_due_at = assignment.grading_due_at
+    was_published = bool(assignment.is_published)
 
     # Update fields
     update_data_in = assignment_in.model_dump(exclude_unset=True)
@@ -615,6 +628,18 @@ def update_assignment(
             )
         except Exception as notif_err:
             logger.warning(f"Failed to send grading deadline update notifications: {str(notif_err)}")
+
+    if not was_published and assignment.is_published:
+        try:
+            notify_course_students_assignment_posted(
+                db=db,
+                course_id=assignment.course_id,
+                assignment_id=assignment.id,
+                assignment_title=assignment.title,
+                course_code=assignment.course.code,
+            )
+        except Exception as notif_err:
+            logger.warning(f"Failed to send assignment publish notifications: {str(notif_err)}")
     
     # The 'updated_at' field on assignment is handled by 'onupdate' in the model
     db.commit()
@@ -682,17 +707,17 @@ def publish_assignment(
     )
     db.add(audit)
     
-    # Send notifications to enrolled students
-    try:
-        notify_course_students_assignment_posted(
-            db=db,
-            course_id=assignment.course_id,
-            assignment_id=assignment.id,
-            assignment_title=assignment.title,
-            course_code=assignment.course.code,
-        )
-    except Exception as notif_err:
-        logger.warning(f"Failed to send assignment notifications: {str(notif_err)}")
+    if not was_published:
+        try:
+            notify_course_students_assignment_posted(
+                db=db,
+                course_id=assignment.course_id,
+                assignment_id=assignment.id,
+                assignment_title=assignment.title,
+                course_code=assignment.course.code,
+            )
+        except Exception as notif_err:
+            logger.warning(f"Failed to send assignment notifications: {str(notif_err)}")
 
     db.commit()
     
