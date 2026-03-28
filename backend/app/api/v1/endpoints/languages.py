@@ -7,6 +7,8 @@ from app.models import Language, UserRole
 from app.schemas.language import Language as LanguageSchema, LanguageWithExtensions
 from app.core.language_extensions import get_extensions_for_language
 
+ALLOWED_LANGUAGE_NAMES = {"python", "java"}
+
 router = APIRouter()
 
 
@@ -20,6 +22,9 @@ def get_languages(
     if active_only:
         query = query.filter(Language.is_active == True)
     languages = query.all()
+    if ALLOWED_LANGUAGE_NAMES:
+        allowed = {name.strip().lower() for name in ALLOWED_LANGUAGE_NAMES}
+        languages = [lang for lang in languages if (lang.name or "").strip().lower() in allowed]
     result = []
     for lang in languages:
         data = LanguageSchema.model_validate(lang).model_dump()

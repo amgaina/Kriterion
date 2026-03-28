@@ -92,6 +92,8 @@ type AttachmentFile = {
     id: string;
 };
 
+const ALLOWED_LANGUAGE_NAMES = ['python', 'java'];
+
 const parseDateTimeInput = (value?: string): Date | null => {
     if (!value) return null;
     const date = new Date(value);
@@ -183,19 +185,35 @@ export default function NewAssignmentPage() {
         }
     });
 
+    const languageAutoSelectRef = useRef(false);
+
     useEffect(() => {
         const loadLanguages = async () => {
             try {
                 const list = await apiClient.getLanguages();
-                setLanguages(list || []);
+                const allowed = (list || []).filter((lang) =>
+                    ALLOWED_LANGUAGE_NAMES.includes((lang.name || '').toLowerCase())
+                );
+                setLanguages(allowed);
+
+                // Auto-select Python (or first allowed) after languages load
+                if (!languageAutoSelectRef.current && allowed.length > 0) {
+                    const defaultLanguage = allowed.find((lang) => (lang.name || '').toLowerCase() === 'python')
+                        || allowed[0];
+                    if (defaultLanguage) {
+                        setValue('language_id', Number(defaultLanguage.id), { shouldValidate: false });
+                        languageAutoSelectRef.current = true;
+                    }
+                }
             } catch (e) {
                 console.error('Failed to load languages', e);
             }
         };
         loadLanguages();
-    }, []);
+    }, [setValue]);
 
     const watchLangId = watch('language_id');
+
     useEffect(() => {
         const langId = watchLangId ? Number(watchLangId) : undefined;
         if (!langId || languages.length === 0) return;
