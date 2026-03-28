@@ -169,8 +169,12 @@ export function Calendar({
 		if (isDayDisabled(day)) return;
 
 		const nextDate = new Date(day);
-		if (includeTime && selectedDate) {
-			nextDate.setHours(selectedDate.getHours(), selectedDate.getMinutes(), 0, 0);
+		if (includeTime) {
+			if (selectedDate) {
+				nextDate.setHours(selectedDate.getHours(), selectedDate.getMinutes(), 0, 0);
+			} else {
+				nextDate.setHours(23, 59, 0, 0);
+			}
 		}
 
 		onDateChange(nextDate);

@@ -833,6 +833,7 @@ export default function NewAssignmentPage() {
                                                 label="Due Date & Time"
                                                 selectedDate={parseDateTimeInput(field.value)}
                                                 onDateChange={(date) => field.onChange(date ? toDateTimeInput(date) : '')}
+                                                minDate={new Date()}
                                                 includeTime
                                                 error={errors.due_date?.message}
                                                 required
