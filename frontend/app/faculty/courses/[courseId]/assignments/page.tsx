@@ -113,7 +113,7 @@ export default function AssignmentsPage() {
         });
     };
 
-    const { data: allAssignments = [], isLoading, isFetching, refetch } = useQuery({
+    const { data: allAssignments = [], isLoading, isFetching, isError, error, refetch } = useQuery({
         queryKey: ['course-assignments', courseId],
         queryFn: () => apiClient.getCourseAssignments(courseId, true, 'all') as Promise<Assignment[]>,
         enabled: !!courseId && !isNaN(courseId),
@@ -194,6 +194,26 @@ export default function AssignmentsPage() {
 
     if (isLoading) {
         return <CourseLoadingPage message="Loading assignments..." />;
+    }
+
+    if (isError) {
+        const message = (error as { response?: { data?: { detail?: string } }; message?: string })?.response?.data?.detail
+            || (error as { message?: string })?.message
+            || 'Failed to load assignments';
+        return (
+            <div className="space-y-4">
+                <BackLink href={`/faculty/courses/${courseId}`} label="Back to Course" />
+                <Card>
+                    <CardContent className="p-6 text-center">
+                        <AlertCircle className="w-8 h-8 text-red-500 mx-auto mb-2" />
+                        <p className="text-sm text-red-700 mb-3">{message}</p>
+                        <Button onClick={() => refetch()} className="gap-2">
+                            <RefreshCw className="w-4 h-4" /> Try Again
+                        </Button>
+                    </CardContent>
+                </Card>
+            </div>
+        );
     }
 
     return (
