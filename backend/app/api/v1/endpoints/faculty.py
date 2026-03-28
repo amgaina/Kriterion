@@ -71,7 +71,17 @@ class StudentInCourse(BaseModel):
 
 class AssignmentAnalytics(BaseModel):
     id: int
+    course_id: int
     title: str
+    description: Optional[str] = None
+    due_date: datetime
+    is_published: bool
+    max_score: float
+    passing_score: float
+    max_attempts: int
+    allow_late: bool
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     submissions_count: int
     graded_count: int
     pending_count: int
@@ -511,7 +521,17 @@ def get_course_assignments(
         
         result.append(AssignmentAnalytics(
             id=assignment.id,
+            course_id=assignment.course_id,
             title=assignment.title,
+            description=assignment.description,
+            due_date=assignment.due_date,
+            is_published=assignment.is_published,
+            max_score=assignment.max_score,
+            passing_score=assignment.passing_score,
+            max_attempts=assignment.max_attempts,
+            allow_late=assignment.allow_late,
+            created_at=assignment.created_at,
+            updated_at=assignment.updated_at,
             submissions_count=submissions_count,
             graded_count=graded_count,
             pending_count=pending_count,
