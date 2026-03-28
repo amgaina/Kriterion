@@ -858,7 +858,8 @@ def get_course_assignments(
     course_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    include_unpublished: bool = False
+    include_unpublished: bool = False,
+    assignment_status: Optional[str] = Query("all", alias="status"),
 ):
     """Get all assignments for a course with test cases eager-loaded"""
     course = db.query(Course).filter(Course.id == course_id).first()
@@ -896,24 +897,24 @@ def get_course_assignments(
                 detail="Not assigned as assistant for this course"
             )
     
-    # Query assignments with test_cases eager-loaded to avoid lazy loading issues
+    # Query assignments for listing views; avoid eager-loading test cases here
+    # so the endpoint remains compatible with databases missing newer test case columns.
     query = db.query(Assignment).options(
-        joinedload(Assignment.test_cases),
         joinedload(Assignment.course)
     ).filter(Assignment.course_id == course_id)
 
     # Students only see published assignments
     if current_user.role == UserRole.STUDENT or not include_unpublished:
         query = query.filter(Assignment.is_published == True)
-    elif status and status != "all":
+    elif assignment_status and assignment_status != "all":
         now = datetime.utcnow()
-        if status == "published":
+        if assignment_status == "published":
             query = query.filter(
                 and_(Assignment.is_published == True, or_(Assignment.due_date.is_(None), Assignment.due_date >= now))
             )
-        elif status == "draft":
+        elif assignment_status == "draft":
             query = query.filter(Assignment.is_published == False)
-        elif status == "closed":
+        elif assignment_status == "closed":
             query = query.filter(and_(Assignment.is_published == True, Assignment.due_date < now))
 
     assignments = query.order_by(Assignment.due_date).all()

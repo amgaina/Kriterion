@@ -66,6 +66,23 @@ class AssignmentAnalytics(BaseModel):
     plagiarism_flags: int
     ai_flags: int
 
+    class Config:
+        from_attributes = True
+
+
+@router.get("/rubric-items", response_model=List[RubricItemSchema])
+def list_rubric_items(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.FACULTY, UserRole.ADMIN])),
+):
+    """List all rubric items available for reuse in manual grading."""
+    items = (
+        db.query(RubricItem)
+        .order_by(RubricItem.name.asc(), RubricItem.id.asc())
+        .all()
+    )
+    return items
+
 class SubmissionForGrading(BaseModel):
     id: int
     student_id: int
