@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session, joinedload, subqueryload
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, text
 from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel, Field
 import tempfile
@@ -566,6 +566,9 @@ def delete_assignment(
         ]
 
         if submission_ids:
+            db.query(Notification).filter(
+                Notification.submission_id.in_(submission_ids)
+            ).delete(synchronize_session=False)
             db.query(PlagiarismMatch).filter(
                 or_(
                     PlagiarismMatch.submission_id.in_(submission_ids),
@@ -582,18 +585,47 @@ def delete_assignment(
                 SubmissionFile.submission_id.in_(submission_ids)
             ).delete(synchronize_session=False)
 
+        # Clean up notifications by assignment_id
         db.query(Notification).filter(Notification.assignment_id == assignment_id).delete(synchronize_session=False)
+        
+        # Clean up submissions
         db.query(Submission).filter(Submission.assignment_id == assignment_id).delete(synchronize_session=False)
+        
+        # Clean up rubric categories and items before rubrics
+        # Get all rubric IDs for this assignment
+        rubric_ids = [rid for (rid,) in db.query(Rubric.id).filter(Rubric.assignment_id == assignment_id).all()]
+        if rubric_ids:
+            rubric_ids_str = ','.join(str(rid) for rid in rubric_ids)
+            # Delete rubric_items that belong to categories of our rubrics
+            db.execute(text(f"""
+                DELETE FROM rubric_items 
+                WHERE category_id IN (
+                    SELECT id FROM rubric_categories WHERE rubric_id IN ({rubric_ids_str})
+                )
+            """))
+            # Delete the rubric_categories
+            db.execute(text(f"""
+                DELETE FROM rubric_categories WHERE rubric_id IN ({rubric_ids_str})
+            """))
+        
+        # Clean up rubrics
         db.query(Rubric).filter(Rubric.assignment_id == assignment_id).delete(synchronize_session=False)
+        
+        # Clean up test cases
         db.query(TestCase).filter(TestCase.assignment_id == assignment_id).delete(synchronize_session=False)
+        
+        # Finally delete the assignment
         db.query(Assignment).filter(Assignment.id == assignment_id).delete(synchronize_session=False)
 
         db.commit()
-    except IntegrityError:
+    except IntegrityError as e:
         db.rollback()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"IntegrityError deleting assignment {assignment_id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Cannot delete assignment because related records still exist."
+            detail=f"Cannot delete assignment: {str(e.orig)}"
         )
     
     return None
