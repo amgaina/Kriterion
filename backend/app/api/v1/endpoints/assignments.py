@@ -3,6 +3,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session, joinedload, subqueryload
 from sqlalchemy import and_, or_
+from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel, Field
 import tempfile
 import os
@@ -27,6 +28,8 @@ from app.models import (
     AuditLog,
     Language,
     NotificationType,
+    Submission,
+    PlagiarismMatch,
 )
 from app.schemas.assignment import (
     AssignmentCreate,
@@ -537,6 +540,9 @@ def delete_assignment(
     current_user: User = Depends(require_role([UserRole.FACULTY, UserRole.ADMIN]))
 ):
     """Delete an assignment"""
+    from app.models.notification import Notification
+    from app.models.submission import SubmissionFile, TestResult as SubmissionTestResult, RubricScore
+
     assignment = db.query(Assignment).filter(Assignment.id == assignment_id).first()
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
@@ -545,10 +551,6 @@ def delete_assignment(
     if current_user.role == UserRole.FACULTY and assignment.course.instructor_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    # Delete related notifications first to avoid foreign key constraint violation
-    from app.models.notification import Notification
-    db.query(Notification).filter(Notification.assignment_id == assignment_id).delete()
-    
     # Audit log before deletion
     audit = AuditLog(
         user_id=current_user.id,
@@ -556,9 +558,43 @@ def delete_assignment(
         description=f"Assignment '{assignment.title}' deleted"
     )
     db.add(audit)
-    
-    db.delete(assignment)
-    db.commit()
+
+    try:
+        # Collect submission ids first for dependent-table cleanup.
+        submission_ids = [
+            sid for (sid,) in db.query(Submission.id).filter(Submission.assignment_id == assignment_id).all()
+        ]
+
+        if submission_ids:
+            db.query(PlagiarismMatch).filter(
+                or_(
+                    PlagiarismMatch.submission_id.in_(submission_ids),
+                    PlagiarismMatch.matched_submission_id.in_(submission_ids),
+                )
+            ).delete(synchronize_session=False)
+            db.query(SubmissionTestResult).filter(
+                SubmissionTestResult.submission_id.in_(submission_ids)
+            ).delete(synchronize_session=False)
+            db.query(RubricScore).filter(
+                RubricScore.submission_id.in_(submission_ids)
+            ).delete(synchronize_session=False)
+            db.query(SubmissionFile).filter(
+                SubmissionFile.submission_id.in_(submission_ids)
+            ).delete(synchronize_session=False)
+
+        db.query(Notification).filter(Notification.assignment_id == assignment_id).delete(synchronize_session=False)
+        db.query(Submission).filter(Submission.assignment_id == assignment_id).delete(synchronize_session=False)
+        db.query(Rubric).filter(Rubric.assignment_id == assignment_id).delete(synchronize_session=False)
+        db.query(TestCase).filter(TestCase.assignment_id == assignment_id).delete(synchronize_session=False)
+        db.query(Assignment).filter(Assignment.id == assignment_id).delete(synchronize_session=False)
+
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot delete assignment because related records still exist."
+        )
     
     return None
 
