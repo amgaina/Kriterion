@@ -27,6 +27,41 @@ interface AuthContextType {
     register: (userData: any) => Promise<void>;
 }
 
+function extractErrorMessage(error: any, fallback: string): string {
+    const detail = error?.response?.data?.detail;
+
+    if (typeof detail === 'string' && detail.trim()) {
+        return detail;
+    }
+
+    if (Array.isArray(detail) && detail.length > 0) {
+        const messages = detail
+            .map((item) => {
+                if (typeof item === 'string') return item;
+                if (typeof item?.msg === 'string') return item.msg;
+                return null;
+            })
+            .filter(Boolean);
+        if (messages.length > 0) return messages.join(' | ');
+    }
+
+    const status = error?.response?.status;
+    const message = error?.message;
+
+    if (typeof message === 'string' && message.trim()) {
+        if (message.toLowerCase() === 'network error') {
+            return 'Cannot reach server. Check backend availability and API URL.';
+        }
+        return status ? `${message} (HTTP ${status})` : message;
+    }
+
+    if (status) {
+        return `Request failed with HTTP ${status}`;
+    }
+
+    return fallback;
+}
+
 const ROLE_HOME: Record<UserRole, string> = {
     STUDENT: '/student/dashboard',
     FACULTY: '/faculty/dashboard',
@@ -90,8 +125,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const home = ROLE_HOME[userData.role as UserRole] || '/';
             router.push(home);
         } catch (error: any) {
-            console.error('Login failed:', error);
-            throw new Error(error.response?.data?.detail || 'Login failed');
+            const message = extractErrorMessage(error, 'Login failed');
+            console.error('Login failed:', message, error);
+            throw new Error(message);
         }
     }, [router]);
 
