@@ -4,35 +4,40 @@ export type NotificationRole = UserRole;
 
 export const ROLE_NOTIFICATION_TYPES: Record<NotificationRole, readonly string[]> = {
     STUDENT: [
-        'HOMEWORK_POSTED', 'HOMEWORK_DUE', 'GRADE_POSTED',
-        'ASSIGNMENT_NEW', 'ASSIGNMENT_DUE', 'ASSIGNMENT_GRADED',
-        'assignment_new', 'assignment_due', 'assignment_graded',
+        'assignment_new',
+        'assignment_due',
+        'assignment_graded',
+        'grade_posted',
+        'student_enrolled',
     ],
-    FACULTY: ['NEW_SUBMISSION_RECEIVED', 'GRADING_PENDING', 'SUBMISSION_RECEIVED', 'submission_received'],
+    FACULTY: [
+        'submission_received',
+        'new_submission_received',
+    ],
     ASSISTANT: [
-        'NEW_SUBMISSION_RECEIVED', 'GRADING_PENDING', 'SUBMISSION_RECEIVED', 'submission_received',
-        'ASSIGNMENT_NEW', 'assignment_new', 'ASSIGNMENT_DUE', 'assignment_due',
+        'submission_received',
+        'new_submission_received',
+        'assignment_new',
+        'assignment_due',
     ],
-    ADMIN: ['NEW_USER_REGISTERED', 'COURSE_APPROVAL_REQUIRED', 'SYSTEM_ALERT'],
+    ADMIN: [
+        'new_user_registered',
+        'course_approval_required',
+        'system_alert',
+    ],
 } as const;
 
 export type NotificationType =
-    | 'ASSIGNMENT_NEW'
-    | 'ASSIGNMENT_DUE'
-    | 'ASSIGNMENT_GRADED'
-    | 'SUBMISSION_RECEIVED'
     | 'assignment_new'
     | 'assignment_due'
     | 'assignment_graded'
     | 'submission_received'
-    | 'HOMEWORK_POSTED'
-    | 'HOMEWORK_DUE'
-    | 'GRADE_POSTED'
-    | 'NEW_SUBMISSION_RECEIVED'
-    | 'GRADING_PENDING'
-    | 'NEW_USER_REGISTERED'
-    | 'COURSE_APPROVAL_REQUIRED'
-    | 'SYSTEM_ALERT';
+    | 'new_submission_received'
+    | 'grade_posted'
+    | 'student_enrolled'
+    | 'new_user_registered'
+    | 'course_approval_required'
+    | 'system_alert';
 
 export interface NotificationTypeConfig {
     label: string;
@@ -40,67 +45,43 @@ export interface NotificationTypeConfig {
 }
 
 export const NOTIFICATION_TYPE_CONFIG: Record<NotificationType, NotificationTypeConfig> = {
-    ASSIGNMENT_NEW: {
-        label: 'Assignment Posted',
-        roles: ['STUDENT', 'ASSISTANT'],
-    },
-    ASSIGNMENT_GRADED: {
-        label: 'Assignment Graded',
-        roles: ['STUDENT'],
-    },
-    ASSIGNMENT_DUE: {
-        label: 'Assignment Due',
-        roles: ['STUDENT', 'ASSISTANT'],
-    },
-    SUBMISSION_RECEIVED: {
-        label: 'Submission Received',
-        roles: ['FACULTY', 'ASSISTANT'],
-    },
     assignment_new: {
         label: 'Assignment Posted',
-        roles: ['STUDENT', 'ASSISTANT'],
-    },
-    assignment_due: {
-        label: 'Assignment Due',
         roles: ['STUDENT', 'ASSISTANT'],
     },
     assignment_graded: {
         label: 'Assignment Graded',
         roles: ['STUDENT'],
     },
+    assignment_due: {
+        label: 'Assignment Due',
+        roles: ['STUDENT', 'ASSISTANT'],
+    },
     submission_received: {
         label: 'Submission Received',
         roles: ['FACULTY', 'ASSISTANT'],
     },
-    HOMEWORK_POSTED: {
-        label: 'Homework Posted',
-        roles: ['STUDENT'],
-    },
-    HOMEWORK_DUE: {
-        label: 'Homework Due',
-        roles: ['STUDENT'],
-    },
-    GRADE_POSTED: {
-        label: 'Grade Posted',
-        roles: ['STUDENT'],
-    },
-    NEW_SUBMISSION_RECEIVED: {
+    new_submission_received: {
         label: 'New Submission Received',
         roles: ['FACULTY', 'ASSISTANT'],
     },
-    GRADING_PENDING: {
-        label: 'Grading Pending',
-        roles: ['FACULTY', 'ASSISTANT'],
+    grade_posted: {
+        label: 'Grade Posted',
+        roles: ['STUDENT'],
     },
-    NEW_USER_REGISTERED: {
+    student_enrolled: {
+        label: 'Enrolled in Course',
+        roles: ['STUDENT'],
+    },
+    new_user_registered: {
         label: 'New User Registered',
         roles: ['ADMIN'],
     },
-    COURSE_APPROVAL_REQUIRED: {
+    course_approval_required: {
         label: 'Course Approval Required',
         roles: ['ADMIN'],
     },
-    SYSTEM_ALERT: {
+    system_alert: {
         label: 'System Alert',
         roles: ['ADMIN'],
     },

@@ -397,9 +397,9 @@ def enroll_student(
             create_notification(
                 db,
                 user_id=student.id,
-                notification_type=NotificationType.ASSIGNMENT_NEW,
-                title=f"You were enrolled in {course.code}",
-                message=f"You were added to {course.code} - {course.name}.",
+                notification_type=NotificationType.STUDENT_ENROLLED,
+                title=f"Enrolled in {course.code}",
+                message=f"You have been enrolled in {course.code} - {course.name}.",
                 course_id=course.id,
             )
             db.commit()
@@ -425,9 +425,9 @@ def enroll_student(
     create_notification(
         db,
         user_id=student.id,
-        notification_type=NotificationType.ASSIGNMENT_NEW,
-        title=f"You were enrolled in {course.code}",
-        message=f"You were added to {course.code} - {course.name}.",
+        notification_type=NotificationType.STUDENT_ENROLLED,
+        title=f"Enrolled in {course.code}",
+        message=f"You have been enrolled in {course.code} - {course.name}.",
         course_id=course.id,
     )
     db.commit()
@@ -678,9 +678,9 @@ def enroll_student_by_email(
             create_notification(
                 db,
                 user_id=student.id,
-                notification_type=NotificationType.ASSIGNMENT_NEW,
-                title=f"You were enrolled in {course.code}",
-                message=f"You were added to {course.code} - {course.name}.",
+                notification_type=NotificationType.STUDENT_ENROLLED,
+                title=f"Enrolled in {course.code}",
+                message=f"You have been enrolled in {course.code} - {course.name}.",
                 course_id=course.id,
             )
             db.commit()
@@ -705,9 +705,9 @@ def enroll_student_by_email(
     create_notification(
         db,
         user_id=student.id,
-        notification_type=NotificationType.ASSIGNMENT_NEW,
-        title=f"You were enrolled in {course.code}",
-        message=f"You were added to {course.code} - {course.name}.",
+        notification_type=NotificationType.STUDENT_ENROLLED,
+        title=f"Enrolled in {course.code}",
+        message=f"You have been enrolled in {course.code} - {course.name}.",
         course_id=course.id,
     )
     db.commit()
@@ -831,9 +831,9 @@ def bulk_enroll_students(
         notify_users(
             db,
             user_ids=notified_student_ids,
-            notification_type=NotificationType.ASSIGNMENT_NEW,
-            title=f"You were enrolled in {course.code}",
-            message=f"You were added to {course.code} - {course.name}.",
+            notification_type=NotificationType.STUDENT_ENROLLED,
+            title=f"Enrolled in {course.code}",
+            message=f"You have been enrolled in {course.code} - {course.name}.",
             course_id=course.id,
         )
     db.commit()

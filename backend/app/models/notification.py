@@ -9,18 +9,20 @@ from app.core.database import Base
 
 
 class NotificationType(str, PyEnum):
+    # Assignment notifications
     ASSIGNMENT_NEW = "assignment_new"
     ASSIGNMENT_DUE = "assignment_due"
     ASSIGNMENT_GRADED = "assignment_graded"
+    # Submission notifications
     SUBMISSION_RECEIVED = "submission_received"
-    HOMEWORK_POSTED = "HOMEWORK_POSTED"
-    HOMEWORK_DUE = "HOMEWORK_DUE"
-    GRADE_POSTED = "GRADE_POSTED"
-    NEW_SUBMISSION_RECEIVED = "NEW_SUBMISSION_RECEIVED"
-    GRADING_PENDING = "GRADING_PENDING"
-    NEW_USER_REGISTERED = "NEW_USER_REGISTERED"
-    COURSE_APPROVAL_REQUIRED = "COURSE_APPROVAL_REQUIRED"
-    SYSTEM_ALERT = "SYSTEM_ALERT"
+    # Grade notifications
+    GRADE_POSTED = "grade_posted"
+    # Course enrollment
+    STUDENT_ENROLLED = "student_enrolled"
+    # Admin/System
+    NEW_USER_REGISTERED = "new_user_registered"
+    COURSE_APPROVAL_REQUIRED = "course_approval_required"
+    SYSTEM_ALERT = "system_alert"
 
 
 class Notification(Base):

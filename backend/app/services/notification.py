@@ -62,9 +62,7 @@ def notify_course_students_assignment_posted(
                 user_id=enrollment.student_id,
                 notification_type=NotificationType.ASSIGNMENT_NEW,
                 title=f"New assignment posted in {course_code}",
-                message=(
-                    f"A new assignment, '{assignment_title}', has been posted in {course_code}."
-                ),
+                message=f"A new assignment '{assignment_title}' has been posted in {course_code}.",
                 link=f"/student/assignments/{assignment_id}",
                 course_id=course_id,
                 assignment_id=assignment_id,
@@ -131,9 +129,9 @@ def notify_faculty_submission_received(
         notification = create_notification(
             db=db,
             user_id=faculty_id,
-            notification_type=NotificationType.NEW_SUBMISSION_RECEIVED,
+            notification_type=NotificationType.SUBMISSION_RECEIVED,
             title=f"New submission in {course_code}",
-            message=f"{student_name} submitted assignment #{assignment_id} in {course_code}.",
+            message=f"{student_name} submitted an assignment in {course_code}.",
             link=f"/faculty/courses/{course_id}",
             course_id=course_id,
             assignment_id=assignment_id,
