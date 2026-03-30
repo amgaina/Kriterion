@@ -19,6 +19,7 @@ export const ROLE_NOTIFICATION_TYPES: Record<NotificationRole, readonly string[]
         'new_submission_received',
         'assignment_new',
         'assignment_due',
+        'grading_pending',
     ],
     ADMIN: [
         'new_user_registered',
@@ -35,6 +36,7 @@ export type NotificationType =
     | 'new_submission_received'
     | 'grade_posted'
     | 'student_enrolled'
+    | 'grading_pending'
     | 'new_user_registered'
     | 'course_approval_required'
     | 'system_alert';
@@ -72,6 +74,10 @@ export const NOTIFICATION_TYPE_CONFIG: Record<NotificationType, NotificationType
     student_enrolled: {
         label: 'Enrolled in Course',
         roles: ['STUDENT'],
+    },
+    grading_pending: {
+        label: 'Grading Pending',
+        roles: ['ASSISTANT'],
     },
     new_user_registered: {
         label: 'New User Registered',

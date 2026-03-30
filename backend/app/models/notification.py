@@ -19,6 +19,8 @@ class NotificationType(str, PyEnum):
     GRADE_POSTED = "grade_posted"
     # Course enrollment
     STUDENT_ENROLLED = "student_enrolled"
+    # Assistant/Grading
+    GRADING_PENDING = "grading_pending"
     # Admin/System
     NEW_USER_REGISTERED = "new_user_registered"
     COURSE_APPROVAL_REQUIRED = "course_approval_required"
