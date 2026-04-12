@@ -358,12 +358,8 @@ The system includes a configurable rubric template (customizable per assignment)
 
 - Python 3.11+
 - Java 17
-- C++ (g++)
-- C (gcc)
-- JavaScript (Node.js)
-- TypeScript
-
-Additional languages can be added by extending the sandbox container.
+ 
+Only Python and Java are supported (intentionally).
 
 ## 📦 Database Schema
 

@@ -56,9 +56,9 @@ def get_languages(
             id=lang.id,
             name=lang.name,
             display_name=lang.display_name,
-            version=lang.version,
+            version=getattr(lang, "version", None),
             file_extension=lang.file_extension,
-            monaco_language=lang.monaco_language
+            monaco_language=getattr(lang, "monaco_language", None)
         ) for lang in languages
     ]
 
@@ -178,14 +178,14 @@ async def test_against_samples(
     if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
     
-    # Get sample test cases only
+    # Get visible (non-hidden) test cases for run
     test_cases = db.query(TestCase).filter(
         TestCase.assignment_id == assignment_id,
-        TestCase.is_sample == True
+        TestCase.is_hidden == False
     ).order_by(TestCase.order).all()
-    
+
     if not test_cases:
-        return {"message": "No sample test cases available", "results": []}
+        return {"message": "No visible test cases available", "results": []}
     
     language = assignment.language
     results = []

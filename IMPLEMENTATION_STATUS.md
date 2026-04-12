@@ -49,7 +49,7 @@
 
 1. **GradingService** - Automated grading with sandbox execution
    - Runs test cases in Docker containers
-   - Supports Python, Java, C, C++
+   - Supports Python, Java
    - Calculates rubric scores
    - Handles timeouts and errors
    - Stores test results
@@ -226,7 +226,7 @@ Create script to populate:
 
 ### 8. Docker & Infrastructure
 
-- Ensure sandbox Docker images built (python, java, c, cpp)
+- Ensure sandbox Docker images built (python, java)
 - Update docker-compose with all services
 - Environment variables properly set
 - Volume mounts for submissions

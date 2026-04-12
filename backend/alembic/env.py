@@ -12,14 +12,32 @@ from app.core.database import Base
 
 # Import all models to ensure they're registered with SQLAlchemy
 from app.models import (
-    User, Course, Enrollment, Group, GroupMembership, Announcement,
-    Assignment, TestCase, Rubric, RubricCategory, RubricItem,
-    Submission, SubmissionFile, TestResult, RubricScore, PlagiarismMatch,
-    Language, FacultyLanguagePermission,
-    StudentProgress, Achievement, StudentAchievement, Skill, StudentSkill,
-    NotificationSettings, UserPreferences,
+    User,
+    Course,
+    Enrollment,
+    Group,
+    GroupMembership,
+    Announcement,
+    Assignment,
+    TestCase,
+    Rubric,
+    RubricItem,
+    Submission,
+    SubmissionFile,
+    TestResult,
+    RubricScore,
+    PlagiarismMatch,
+    Language,
+    FacultyLanguagePermission,
+    StudentProgress,
+    Achievement,
+    StudentAchievement,
+    Skill,
+    StudentSkill,
+    NotificationSettings,
+    UserPreferences,
     AuditLog,
-    Notification
+    Notification,
 )
 
 config = context.config

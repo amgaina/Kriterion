@@ -15,14 +15,26 @@ from app.core.database import SessionLocal
 from app.core.security import get_password_hash
 from app.core.config import settings
 from app.models import (
-    User, UserRole,
-    Course, CourseStatus, CourseAssistant, Enrollment, EnrollmentStatus,
-    Assignment, DifficultyLevel, TestCase,
-    Rubric, RubricCategory, RubricItem,
-    Language, DEFAULT_LANGUAGES,
-    Achievement, Skill, StudentProgress,
-    DEFAULT_ACHIEVEMENTS, DEFAULT_SKILLS,
-    NotificationSettings, UserPreferences,
+    User,
+    UserRole,
+    Course,
+    CourseStatus,
+    CourseAssistant,
+    Enrollment,
+    EnrollmentStatus,
+    Assignment,
+    TestCase,
+    Rubric,
+    RubricItem,
+    Language,
+    DEFAULT_LANGUAGES,
+    Achievement,
+    Skill,
+    StudentProgress,
+    DEFAULT_ACHIEVEMENTS,
+    DEFAULT_SKILLS,
+    NotificationSettings,
+    UserPreferences,
     FacultyLanguagePermission,
 )
 
@@ -101,7 +113,7 @@ COURSES = [
     {
         "code": "CS3030",
         "name": "Data Structures & Algorithms",
-        "description": "Trees, graphs, heaps, hash tables, and algorithm analysis. Implementations in C++.",
+        "description": "Trees, graphs, heaps, hash tables, and algorithm analysis. Implementations in Python and Java.",
         "section": "B",
         "semester": "Spring",
         "year": 2026,
@@ -109,7 +121,7 @@ COURSES = [
         "end_date": datetime(2026, 5, 8),
         "faculty_email": "mwilson@ulm.edu",
         "color": "#065F46",
-        "languages": ["cpp", "python"],
+        "languages": ["python", "java"],
     },
 ]
 
@@ -145,12 +157,11 @@ ASSIGNMENTS = [
         "solution_code": 'print("Hello, World!")\n',
         "max_score": 100.0,
         "passing_score": 60.0,
-        "difficulty": DifficultyLevel.EASY,
         "due_days": 7,
         "test_cases": [
-            {"name": "Basic Output", "input_data": "", "expected_output": "Hello, World!", "points": 50.0, "is_hidden": False, "is_sample": True, "order": 1},
-            {"name": "Exact Match", "input_data": "", "expected_output": "Hello, World!", "points": 30.0, "is_hidden": True, "is_sample": False, "order": 2},
-            {"name": "No Extra Output", "input_data": "", "expected_output": "Hello, World!", "points": 20.0, "is_hidden": True, "is_sample": False, "ignore_whitespace": True, "order": 3},
+            {"name": "Basic Output", "input_data": "", "expected_output": "Hello, World!", "points": 50.0, "is_hidden": False, "order": 1},
+            {"name": "Exact Match", "input_data": "", "expected_output": "Hello, World!", "points": 30.0, "is_hidden": True, "order": 2},
+            {"name": "No Extra Output", "input_data": "", "expected_output": "Hello, World!", "points": 20.0, "is_hidden": True, "ignore_whitespace": True, "order": 3},
         ],
         "rubric_categories": [
             {
@@ -194,14 +205,13 @@ ASSIGNMENTS = [
         "solution_code": "def fibonacci(n):\n    if n <= 1:\n        return n\n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b\n    return b\n\nn = int(input())\nprint(fibonacci(n))\n",
         "max_score": 100.0,
         "passing_score": 60.0,
-        "difficulty": DifficultyLevel.MEDIUM,
         "due_days": 14,
         "test_cases": [
-            {"name": "fib(0)", "input_data": "0", "expected_output": "0", "points": 20.0, "is_hidden": False, "is_sample": True, "order": 1},
-            {"name": "fib(1)", "input_data": "1", "expected_output": "1", "points": 20.0, "is_hidden": False, "is_sample": True, "order": 2},
-            {"name": "fib(5)", "input_data": "5", "expected_output": "5", "points": 20.0, "is_hidden": True, "is_sample": False, "order": 3},
-            {"name": "fib(10)", "input_data": "10", "expected_output": "55", "points": 20.0, "is_hidden": True, "is_sample": False, "order": 4},
-            {"name": "fib(20)", "input_data": "20", "expected_output": "6765", "points": 20.0, "is_hidden": True, "is_sample": False, "order": 5},
+            {"name": "fib(0)", "input_data": "0", "expected_output": "0", "points": 20.0, "is_hidden": False, "order": 1},
+            {"name": "fib(1)", "input_data": "1", "expected_output": "1", "points": 20.0, "is_hidden": False, "order": 2},
+            {"name": "fib(5)", "input_data": "5", "expected_output": "5", "points": 20.0, "is_hidden": True, "order": 3},
+            {"name": "fib(10)", "input_data": "10", "expected_output": "55", "points": 20.0, "is_hidden": True, "order": 4},
+            {"name": "fib(20)", "input_data": "20", "expected_output": "6765", "points": 20.0, "is_hidden": True, "order": 5},
         ],
         "rubric_categories": [
             {
@@ -246,13 +256,12 @@ ASSIGNMENTS = [
         "solution_code": "",
         "max_score": 100.0,
         "passing_score": 60.0,
-        "difficulty": DifficultyLevel.MEDIUM,
         "due_days": 14,
         "test_cases": [
-            {"name": "Push & Peek", "input_data": "push 10\npeek\n", "expected_output": "10", "points": 25.0, "is_hidden": False, "is_sample": True, "order": 1},
-            {"name": "Push & Pop", "input_data": "push 5\npush 10\npop\n", "expected_output": "10", "points": 25.0, "is_hidden": False, "is_sample": True, "order": 2},
-            {"name": "isEmpty true", "input_data": "isEmpty\n", "expected_output": "true", "points": 25.0, "is_hidden": True, "is_sample": False, "order": 3},
-            {"name": "Mixed ops", "input_data": "push 1\npush 2\npush 3\npop\npeek\n", "expected_output": "3\n2", "points": 25.0, "is_hidden": True, "is_sample": False, "order": 4},
+            {"name": "Push & Peek", "input_data": "push 10\npeek\n", "expected_output": "10", "points": 25.0, "is_hidden": False, "order": 1},
+            {"name": "Push & Pop", "input_data": "push 5\npush 10\npop\n", "expected_output": "10", "points": 25.0, "is_hidden": False, "order": 2},
+            {"name": "isEmpty true", "input_data": "isEmpty\n", "expected_output": "true", "points": 25.0, "is_hidden": True, "order": 3},
+            {"name": "Mixed ops", "input_data": "push 1\npush 2\npush 3\npop\npeek\n", "expected_output": "3\n2", "points": 25.0, "is_hidden": True, "order": 4},
         ],
         "rubric_categories": [
             {
@@ -277,53 +286,7 @@ ASSIGNMENTS = [
         ],
     },
     # ── CS3030 ──
-    {
-        "course_code": "CS3030",
-        "title": "Binary Search",
-        "description": "Implement binary search on a sorted array in C++. Return the index of the target or -1 if not found.",
-        "instructions": (
-            "## Input\n"
-            "First line: N (size of array)\n"
-            "Second line: N space-separated sorted integers\n"
-            "Third line: target integer\n\n"
-            "## Output\n"
-            "Print the 0-based index of the target, or -1 if not found.\n"
-        ),
-        "language": "cpp",
-        "starter_code": "#include <iostream>\nusing namespace std;\n\nint binarySearch(int arr[], int n, int target) {\n    // Your code here\n    return -1;\n}\n\nint main() {\n    int n;\n    cin >> n;\n    int arr[n];\n    for(int i=0;i<n;i++) cin >> arr[i];\n    int target;\n    cin >> target;\n    cout << binarySearch(arr, n, target) << endl;\n    return 0;\n}\n",
-        "solution_code": "",
-        "max_score": 100.0,
-        "passing_score": 60.0,
-        "difficulty": DifficultyLevel.MEDIUM,
-        "due_days": 10,
-        "test_cases": [
-            {"name": "Found middle", "input_data": "5\n1 3 5 7 9\n5", "expected_output": "2", "points": 25.0, "is_hidden": False, "is_sample": True, "order": 1},
-            {"name": "Found first", "input_data": "5\n1 3 5 7 9\n1", "expected_output": "0", "points": 25.0, "is_hidden": False, "is_sample": True, "order": 2},
-            {"name": "Not found", "input_data": "5\n1 3 5 7 9\n4", "expected_output": "-1", "points": 25.0, "is_hidden": True, "is_sample": False, "order": 3},
-            {"name": "Single element", "input_data": "1\n42\n42", "expected_output": "0", "points": 25.0, "is_hidden": True, "is_sample": False, "order": 4},
-        ],
-        "rubric_categories": [
-            {
-                "name": "Algorithm",
-                "description": "Correct O(log n) binary search",
-                "weight": 0.8,
-                "items": [
-                    {"name": "O(log n) time complexity", "max_points": 15.0},
-                    {"name": "Correct boundary handling", "max_points": 10.0},
-                    {"name": "Returns -1 when not found", "max_points": 5.0},
-                ],
-            },
-            {
-                "name": "Style",
-                "description": "Code quality",
-                "weight": 0.2,
-                "items": [
-                    {"name": "Clean variable names", "max_points": 5.0},
-                    {"name": "No unnecessary includes", "max_points": 5.0},
-                ],
-            },
-        ],
-    },
+    # Removed legacy C++ seeded assignment; only Python and Java are supported.
 ]
 
 
@@ -524,11 +487,8 @@ def seed_database():
                 description=a["description"],
                 instructions=a["instructions"],
                 language_id=lang.id if lang else 1,
-                starter_code=a.get("starter_code", ""),
-                solution_code=a.get("solution_code", ""),
                 max_score=a["max_score"],
                 passing_score=a["passing_score"],
-                difficulty=a["difficulty"],
                 due_date=datetime.utcnow() + timedelta(days=a["due_days"]),
                 allow_late=True,
                 late_penalty_per_day=10.0,
@@ -536,8 +496,6 @@ def seed_database():
                 max_attempts=5,
                 enable_plagiarism_check=True,
                 plagiarism_threshold=30.0,
-                test_weight=70.0,
-                rubric_weight=30.0,
                 is_published=True,
             )
             db.add(asgn)

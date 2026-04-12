@@ -73,14 +73,11 @@ def run_code_task(
                 "tests_total": 0,
             }
         
-        # Get test cases (only public/sample for practice runs)
+        # Get visible (non-hidden) test cases for practice runs
         test_cases = self.db.query(TestCase).filter(
             and_(
                 TestCase.assignment_id == assignment_id,
-                or_(
-                    TestCase.is_sample == True,
-                    TestCase.is_hidden == False
-                )
+                TestCase.is_hidden == False
             )
         ).order_by(TestCase.order).all()
         
@@ -152,7 +149,8 @@ def run_code_task(
                         "max_score": test_case.points,
                         "output": execution_result.get("stdout", "")[:1000],
                         "error": execution_result.get("stderr", "")[:1000] if not execution_result.get("success") else None,
-                        "expected_output": expected_output if not passed else None,
+                        # Always include expected_output so UI can display it even when tests pass.
+                        "expected_output": expected_output,
                         "execution_time": execution_result.get("runtime", 0)
                     })
                     

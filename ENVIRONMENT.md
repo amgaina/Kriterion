@@ -67,7 +67,7 @@ RATE_LIMIT_API=100/minute
 MAX_UPLOAD_SIZE_MB=50
 
 # Allowed file extensions (comma-separated)
-ALLOWED_EXTENSIONS=.py,.java,.cpp,.c,.js,.ts,.txt,.md,.pdf
+ALLOWED_EXTENSIONS=.py,.java
 
 # Upload directory path
 UPLOAD_DIR=/tmp/kriterion/uploads

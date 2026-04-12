@@ -212,7 +212,7 @@ This document describes the use cases for the Kriterion Automated Grading System
 **Business Rules:**
 
 - Maximum file size: 50MB
-- Supported languages: Python, Java, C++, C, JavaScript, TypeScript
+- Supported languages: Python and Java
 - Default max attempts: 3 (configurable per assignment)
 - Late submissions not accepted after due date
 

@@ -126,10 +126,33 @@ class PlagiarismMatchOut(BaseModel):
         from_attributes = True
 
 
+class RubricItemInfo(BaseModel):
+    id: int
+    name: str
+
+    class Config:
+        from_attributes = True
+
+
+class RubricScoreOut(BaseModel):
+    id: int
+    rubric_item_id: int
+    score: float
+    max_score: float
+    comment: Optional[str] = None
+    graded_by: Optional[int] = None
+    graded_at: Optional[datetime] = None
+    item: Optional[RubricItemInfo] = None
+
+    class Config:
+        from_attributes = True
+
+
 class SubmissionDetail(Submission):
     files: List[SubmissionFileOut] = []
     test_results: List[TestResultOut] = []
     plagiarism_matches: List[PlagiarismMatchOut] = []
+    rubric_scores: List[RubricScoreOut] = []
 
     class Config:
         from_attributes = True
@@ -145,8 +168,30 @@ class StudentInfo(BaseModel):
         from_attributes = True
 
 
+class GroupMemberInSubmission(BaseModel):
+    id: int
+    user_id: int
+    full_name: str
+    email: str
+    student_id: Optional[str] = None
+    is_leader: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class GroupInSubmission(BaseModel):
+    id: int
+    name: str
+    members: List[GroupMemberInSubmission] = []
+
+    class Config:
+        from_attributes = True
+
+
 class SubmissionWithStudent(Submission):
     student: Optional[StudentInfo] = None
+    group: Optional[GroupInSubmission] = None
 
     class Config:
         from_attributes = True
@@ -154,6 +199,7 @@ class SubmissionWithStudent(Submission):
 
 class SubmissionDetailWithStudent(SubmissionDetail):
     student: Optional[StudentInfo] = None
+    group: Optional[GroupInSubmission] = None
 
     class Config:
         from_attributes = True

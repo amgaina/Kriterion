@@ -16,7 +16,7 @@ const CHANNELS = [
 
 const FAQ = [
   { q: "How do I create my first course?", a: "Admins can create courses from the Admin Dashboard → Courses → New Course. Select supported languages, set the semester, and invite faculty." },
-  { q: "Which programming languages are supported?", a: "Python, Java, C++, C#, and JavaScript. Each language runs inside an isolated Docker container with configurable time limits." },
+  { q: "Which programming languages are supported?", a: "Python and Java. Each language runs inside an isolated Docker container with configurable time limits." },
   { q: "How does plagiarism detection work?", a: "Kriterion uses JPlag (Greedy String Tiling) to compare all submissions. Suspicious pairs are flagged automatically with line-level detail and similarity percentages." },
   { q: "Can faculty override auto-generated grades?", a: "Yes. Faculty can adjust individual test case scores, modify rubric grades, and override the final score from the grading interface." },
   { q: "Is student code secure?", a: "Absolutely. Every submission compiles and runs inside a sandboxed Docker container with no network access, limited memory, and strict time limits." },

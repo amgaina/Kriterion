@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { AdminLayout } from '@/components/layouts/AdminLayout';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
+import { useMutationWithInvalidation } from '@/lib/use-mutation-with-invalidation';
 import apiClient from '@/lib/api-client';
 import { DataTable } from '@/components/ui/data-table';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -18,6 +18,7 @@ import { Switch } from '@/components/ui/switch';
 import { Dropdown } from '@/components/ui/dropdown';
 import { Tabs, TabPanel } from '@/components/ui/tabs';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
     Plus,
     MoreVertical,
@@ -27,9 +28,10 @@ import {
     BookOpen,
     Calendar,
     Eye,
-    Copy,
     Archive,
-    UserPlus
+    UserPlus,
+    UserCog,
+    CheckCircle
 } from 'lucide-react';
 
 interface Course {
@@ -49,11 +51,16 @@ interface Course {
 }
 
 export default function CoursesPage() {
-    const queryClient = useQueryClient();
+    const router = useRouter();
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState('all');
     const [createModal, setCreateModal] = useState(false);
     const [enrollModal, setEnrollModal] = useState<{ open: boolean; course?: Course }>({ open: false });
+    const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
+    const [enrollSearch, setEnrollSearch] = useState('');
+    const [enrollSuccess, setEnrollSuccess] = useState<string | null>(null);
+    const [assistantModal, setAssistantModal] = useState<{ open: boolean; course?: Course }>({ open: false });
+    const [assistantEmail, setAssistantEmail] = useState('');
     const [editCourseId, setEditCourseId] = useState<number | null>(null);
     const [editFormData, setEditFormData] = useState<any>(null);
 
@@ -84,6 +91,11 @@ export default function CoursesPage() {
         queryFn: () => apiClient.getUsers('STUDENT'),
     });
 
+    const { data: assistants = [] } = useQuery({
+        queryKey: ['users', 'ASSISTANT'],
+        queryFn: () => apiClient.getUsers('ASSISTANT'),
+    });
+
     // Transform courses data to match admin page interface
     // Map backend field names (students_count, assignments_count) to frontend interface names
     const transformedCourses = courses.map((course: any) => {
@@ -96,10 +108,10 @@ export default function CoursesPage() {
         };
     });
 
-    const createMutation = useMutation({
+    const createMutation = useMutationWithInvalidation({
         mutationFn: (data: any) => apiClient.createCourse(data),
+        invalidateGroups: ['allCourses', 'allDashboards'],
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['courses'] });
             setCreateModal(false);
             setNewCourse({
                 name: '',
@@ -114,18 +126,43 @@ export default function CoursesPage() {
         },
     });
 
-    const updateMutation = useMutation({
+    const updateMutation = useMutationWithInvalidation({
         mutationFn: ({ id, data }: { id: number; data: any }) => apiClient.updateCourse(id, data),
+        invalidateGroups: ['allCourses', 'allDashboards'],
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['courses'] });
             setEditCourseId(null);
             setEditFormData(null);
         },
     });
 
-    const deleteMutation = useMutation({
+    const deleteMutation = useMutationWithInvalidation({
         mutationFn: (courseId: number) => apiClient.deleteCourse(courseId),
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['courses'] }),
+        invalidateGroups: ['allCourses', 'allDashboards'],
+    });
+
+    const archiveMutation = useMutationWithInvalidation({
+        mutationFn: (courseId: number) => apiClient.updateCourse(courseId, { is_active: false }),
+        invalidateGroups: ['allCourses', 'allDashboards'],
+    });
+
+    const addAssistantMutation = useMutationWithInvalidation({
+        mutationFn: ({ courseId, email }: { courseId: number; email: string }) =>
+            apiClient.addCourseAssistant(courseId, email),
+        invalidateGroups: ['allCourses', 'allDashboards'],
+        onSuccess: () => {
+            setAssistantModal({ open: false });
+            setAssistantEmail('');
+        },
+    });
+
+    const enrollMutation = useMutationWithInvalidation({
+        mutationFn: ({ courseId, studentIds }: { courseId: number; studentIds: number[] }) =>
+            Promise.all(studentIds.map(id => apiClient.enrollStudent(courseId, id))),
+        invalidateGroups: ['allCourses', 'allDashboards'],
+        onSuccess: () => {
+            setEnrollSuccess(`Successfully enrolled ${selectedStudentIds.length} student(s).`);
+            setSelectedStudentIds([]);
+        },
     });
 
     const filteredCourses = transformedCourses.filter((course: Course) =>
@@ -214,13 +251,24 @@ export default function CoursesPage() {
                         { label: 'View', value: 'view', icon: <Eye className="w-4 h-4" /> },
                         { label: 'Edit', value: 'edit', icon: <Edit className="w-4 h-4" /> },
                         { label: 'Enroll Students', value: 'enroll', icon: <UserPlus className="w-4 h-4" /> },
-                        { label: 'Duplicate', value: 'duplicate', icon: <Copy className="w-4 h-4" /> },
+                        { label: 'Add Assistant', value: 'assistant', icon: <UserCog className="w-4 h-4" /> },
                         { label: 'Archive', value: 'archive', icon: <Archive className="w-4 h-4" /> },
                         { label: 'Delete', value: 'delete', icon: <Trash2 className="w-4 h-4" />, danger: true },
                     ]}
                     onSelect={(value) => {
-                        if (value === 'enroll') setEnrollModal({ open: true, course });
+                        if (value === 'view') router.push(`/faculty/courses/${course.id}`);
+                        else if (value === 'enroll') {
+                            setSelectedStudentIds([]);
+                            setEnrollSearch('');
+                            setEnrollSuccess(null);
+                            setEnrollModal({ open: true, course });
+                        }
                         else if (value === 'delete') deleteMutation.mutate(course.id);
+                        else if (value === 'assistant') {
+                            setAssistantEmail('');
+                            setAssistantModal({ open: true, course });
+                        }
+                        else if (value === 'archive') archiveMutation.mutate(course.id);
                         else if (value === 'edit') {
                             setEditCourseId(course.id);
                             setEditFormData({
@@ -243,7 +291,6 @@ export default function CoursesPage() {
 
     return (
         <ProtectedRoute allowedRoles={['ADMIN']}>
-            <AdminLayout>
                 <div className="space-y-6">
                     {/* Header */}
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -519,44 +566,117 @@ export default function CoursesPage() {
                 {/* Enroll Students Modal */}
                 <Modal
                     isOpen={enrollModal.open}
-                    onClose={() => setEnrollModal({ open: false })}
+                    onClose={() => { setEnrollModal({ open: false }); setSelectedStudentIds([]); setEnrollSearch(''); setEnrollSuccess(null); }}
                     title="Enroll Students"
                     description={`Add students to ${enrollModal.course?.name}`}
                     size="lg"
                 >
                     <div className="space-y-4">
                         <SearchInput
-                            value=""
-                            onChange={() => { }}
+                            value={enrollSearch}
+                            onChange={setEnrollSearch}
                             placeholder="Search students..."
                         />
+                        {enrollSuccess && (
+                            <div className="flex items-center gap-2 rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800">
+                                <CheckCircle className="w-4 h-4 flex-shrink-0" />
+                                {enrollSuccess}
+                            </div>
+                        )}
                         <div className="border rounded-lg divide-y max-h-64 overflow-y-auto">
-                            {students.map((student: any) => (
-                                <div key={student.id} className="flex items-center gap-3 p-3 hover:bg-gray-50">
-                                    <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-[#862733] focus:ring-[#862733]" />
+                            {students
+                                .filter((s: any) =>
+                                    !enrollSearch ||
+                                    s.full_name.toLowerCase().includes(enrollSearch.toLowerCase()) ||
+                                    s.email.toLowerCase().includes(enrollSearch.toLowerCase())
+                                )
+                                .map((student: any) => (
+                                <div key={student.id} className="flex items-center gap-3 p-3 hover:bg-gray-50 cursor-pointer"
+                                    onClick={() => setSelectedStudentIds(prev =>
+                                        prev.includes(student.id)
+                                            ? prev.filter(id => id !== student.id)
+                                            : [...prev, student.id]
+                                    )}>
+                                    <input
+                                        type="checkbox"
+                                        readOnly
+                                        checked={selectedStudentIds.includes(student.id)}
+                                        className="w-4 h-4 rounded border-gray-300 text-[#862733] focus:ring-[#862733] pointer-events-none"
+                                    />
                                     <div className="flex-1">
                                         <p className="text-sm font-medium">{student.full_name}</p>
                                         <p className="text-xs text-gray-500">{student.email}</p>
                                     </div>
                                     <Badge variant="outline">{student.student_id || 'N/A'}</Badge>
                                 </div>
-                            ))}
+                                ))}
                         </div>
                         <div className="flex items-center justify-between text-sm text-gray-500">
-                            <span>0 students selected</span>
-                            <button className="text-[#862733] hover:underline">Import from Canvas</button>
+                            <span>{selectedStudentIds.length} student(s) selected</span>
                         </div>
                     </div>
                     <ModalFooter>
-                        <Button variant="outline" onClick={() => setEnrollModal({ open: false })}>
+                        <Button variant="outline" onClick={() => { setEnrollModal({ open: false }); setSelectedStudentIds([]); setEnrollSearch(''); setEnrollSuccess(null); }}>
                             Cancel
                         </Button>
-                        <Button onClick={() => setEnrollModal({ open: false })}>
-                            Enroll Students
+                        <Button
+                            onClick={() => {
+                                if (enrollModal.course && selectedStudentIds.length > 0) {
+                                    enrollMutation.mutate({ courseId: enrollModal.course.id, studentIds: selectedStudentIds });
+                                }
+                            }}
+                            disabled={selectedStudentIds.length === 0 || enrollMutation.isPending}
+                        >
+                            {enrollMutation.isPending ? 'Enrolling...' : `Enroll ${selectedStudentIds.length > 0 ? `(${selectedStudentIds.length})` : 'Students'}`}
                         </Button>
                     </ModalFooter>
                 </Modal>
-            </AdminLayout>
+
+                {/* Add Assistant Modal */}
+                <Modal
+                    isOpen={assistantModal.open}
+                    onClose={() => { setAssistantModal({ open: false }); setAssistantEmail(''); }}
+                    title="Add Grading Assistant"
+                    description={`Assign an assistant to ${assistantModal.course?.name}`}
+                    size="md"
+                >
+                    <div className="space-y-4">
+                        <Select
+                            label="Assistant"
+                            value={assistantEmail}
+                            onChange={(e) => setAssistantEmail(e.target.value)}
+                            options={assistants.map((assistant: any) => ({
+                                value: assistant.email,
+                                label: `${assistant.full_name || assistant.email} (${assistant.email})`,
+                            }))}
+                            placeholder="Select assistant"
+                        />
+                        <Input
+                            label="Or enter assistant email"
+                            value={assistantEmail}
+                            onChange={(e) => setAssistantEmail(e.target.value)}
+                            placeholder="assistant@kriterion.edu"
+                        />
+                    </div>
+                    <ModalFooter>
+                        <Button variant="outline" onClick={() => { setAssistantModal({ open: false }); setAssistantEmail(''); }}>
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={() => {
+                                if (assistantModal.course && assistantEmail.trim()) {
+                                    addAssistantMutation.mutate({
+                                        courseId: assistantModal.course.id,
+                                        email: assistantEmail.trim(),
+                                    });
+                                }
+                            }}
+                            disabled={!assistantEmail.trim() || addAssistantMutation.isPending}
+                        >
+                            {addAssistantMutation.isPending ? 'Adding...' : 'Add Assistant'}
+                        </Button>
+                    </ModalFooter>
+                </Modal>
         </ProtectedRoute>
     );
 }

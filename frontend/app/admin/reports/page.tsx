@@ -2,12 +2,12 @@
 
 import { useState } from 'react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { AdminLayout } from '@/components/layouts/AdminLayout';
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { ScoreBadge } from '@/components/ui/ScoreBadge';
 import { Select } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
 import { Tabs } from '@/components/ui/tabs';
@@ -70,9 +70,6 @@ export default function ReportsPage() {
     const languageStats = [
         { name: 'Python', count: 1250, percentage: 44 },
         { name: 'Java', count: 850, percentage: 30 },
-        { name: 'C++', count: 450, percentage: 16 },
-        { name: 'JavaScript', count: 200, percentage: 7 },
-        { name: 'Other', count: 97, percentage: 3 },
     ];
 
     const recentActivity = [
@@ -91,7 +88,6 @@ export default function ReportsPage() {
 
     return (
         <ProtectedRoute allowedRoles={['ADMIN']}>
-            <AdminLayout>
                 <div className="space-y-6">
                     {/* Header */}
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -220,9 +216,9 @@ export default function ReportsPage() {
                                                         <p className="font-medium text-gray-900">{course.name}</p>
                                                         <p className="text-sm text-gray-500">{course.students} students • {course.submissions} submissions</p>
                                                     </div>
-                                                    <Badge variant={course.avgScore >= 80 ? 'success' : course.avgScore >= 60 ? 'warning' : 'danger'}>
+                                                    <ScoreBadge percent={course.avgScore}>
                                                         {course.avgScore}%
-                                                    </Badge>
+                                                    </ScoreBadge>
                                                 </div>
                                             ))}
                                         </div>
@@ -341,9 +337,9 @@ export default function ReportsPage() {
                                                     <td className="py-3 px-4">8</td>
                                                     <td className="py-3 px-4">{course.submissions}</td>
                                                     <td className="py-3 px-4">
-                                                        <Badge variant={course.avgScore >= 80 ? 'success' : course.avgScore >= 60 ? 'warning' : 'danger'}>
+                                                        <ScoreBadge percent={course.avgScore}>
                                                             {course.avgScore}%
-                                                        </Badge>
+                                                        </ScoreBadge>
                                                     </td>
                                                     <td className="py-3 px-4">
                                                         <div className="flex items-center gap-2">
@@ -514,7 +510,6 @@ export default function ReportsPage() {
                         </div>
                     )}
                 </div>
-            </AdminLayout>
         </ProtectedRoute>
     );
 }

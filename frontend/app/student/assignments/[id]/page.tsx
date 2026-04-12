@@ -17,7 +17,6 @@ import {
     Upload as UploadIcon,
     AlertCircle,
     Loader2,
-    History,
     CheckCircle2,
     XCircle,
     Info,
@@ -26,11 +25,14 @@ import {
     Terminal,
     Code,
     ChevronDown,
+    ChevronUp,
     Clock,
     Plus,
     PartyPopper,
     Paperclip,
     Download,
+    Users,
+    Crown,
 } from 'lucide-react'
 
 import { ProtectedRoute } from '@/components/ProtectedRoute'
@@ -38,6 +40,9 @@ import { Button } from '@/components/ui/button'
 import { Modal, ModalFooter } from '@/components/ui/modal'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/components/ui/use-toast'
+import { ConfettiPopup } from '@/components/ui/confetti-popup'
+import { InteractiveTerminal, type InteractiveTerminalRef } from '@/components/InteractiveTerminal'
+import { useInteractiveTerminal } from '@/hooks/useInteractiveTerminal'
 
 /* ====================================================================
    TYPES
@@ -47,6 +52,8 @@ interface UploadedFile {
     name: string
     content: string
     size: number
+    readOnly?: boolean
+    origin?: 'student' | 'utility'
 }
 
 interface TestResultItem {
@@ -70,6 +77,8 @@ interface RunCodeResult {
     tests_total: number
     message?: string
     compilation_status?: string
+    stdout?: string | null
+    stderr?: string | null
 }
 
 interface Assignment {
@@ -83,14 +92,12 @@ interface Assignment {
     max_attempts: number
     max_file_size_mb: number
     allowed_file_extensions: string[] | null
-    required_files: string[] | null
     allow_late: boolean
     late_penalty_per_day: number
     max_late_days: number
-    difficulty: string
-    test_weight: number
-    rubric_weight: number
-    starter_code: string | null
+    allow_groups: boolean
+    max_group_size: number
+    grades_published: boolean
     language: {
         id: number
         name: string
@@ -105,6 +112,23 @@ interface Assignment {
     rubric?: any
 }
 
+interface GroupMember {
+    id: number
+    user_id: number
+    full_name: string
+    email: string
+    student_id: string | null
+    is_leader: boolean
+}
+
+interface MyGroup {
+    id: number
+    name: string
+    max_members: number
+    created_at: string
+    members: GroupMember[]
+}
+
 interface SubmissionItem {
     id: number
     created_at: string
@@ -114,12 +138,27 @@ interface SubmissionItem {
     tests_passed: number
     tests_total: number
     is_late: boolean
+    late_penalty_applied?: number | null
     attempt_number: number
 }
 
+interface SubmissionDetail extends SubmissionItem {
+    test_score?: number | null
+    rubric_score?: number | null
+    raw_score?: number | null
+    max_score?: number | null
+    override_score?: number | null
+    late_penalty_applied?: number | null
+    feedback?: string | null
+    rubric_scores?: { rubric_item_id: number; score: number; max_score: number; comment?: string | null; item?: { name?: string; description?: string; min_points?: number; max_points?: number; points?: number } }[]
+    files?: { id: number; filename: string }[]
+}
+
 const FILE_ICONS: Record<string, string> = {
-    '.py': '🐍', '.java': '☕', '.cpp': '⚡', '.c': '⚙️',
-    '.js': '🟨', '.ts': '🔷', '.txt': '📄', '.md': '📝',
+    '.py': '🐍',
+    '.java': '☕',
+    '.txt': '📄',
+    '.md': '📝',
 }
 
 function getFileIcon(filename: string) {
@@ -138,11 +177,24 @@ export default function StudentAssignmentPage() {
     const { toast } = useToast()
     const assignmentId = Number(id)
     const fileInputRef = useRef<HTMLInputElement>(null)
+    const datasetFileInputRef = useRef<HTMLInputElement>(null)
+    const runInputFileRef = useRef<HTMLInputElement>(null)
 
     // State
     const [files, setFiles] = useState<UploadedFile[]>([])
     const [selectedFile, setSelectedFile] = useState<UploadedFile | null>(null)
     const [runResult, setRunResult] = useState<RunCodeResult | null>(null)
+    const terminalRef = useRef<InteractiveTerminalRef>(null)
+    const { output: interactiveOutput, running: interactiveRunning, exitCode: interactiveExitCode, setOutput: setInteractiveOutput, setExitCode: setInteractiveExitCode, start: startInteractiveTerminal, sendStdin: sendInteractiveStdin, close: closeInteractiveTerminal, outputEndRef: interactiveOutputEndRef } = useInteractiveTerminal({ assignmentId })
+    // User-uploaded test datasets (run in addition to professor tests)
+    const [uploadedDatasets, setUploadedDatasets] = useState<{ name: string; content: string }[]>([])
+    const [datasetRunResults, setDatasetRunResults] = useState<{ name: string; stdout?: string; stderr?: string; compilation_status?: string; success: boolean }[]>([])
+    const [testInputMode, setTestInputMode] = useState<'stdin' | 'file'>('stdin')
+    const [customInput, setCustomInput] = useState('')
+    const [inputFileName, setInputFileName] = useState('input.txt')
+    const [inputFileContent, setInputFileContent] = useState('')
+    // Custom input mode: either stdin text OR a single input file.
+    const [datasetInputMode, setDatasetInputMode] = useState<'stdin' | 'file'>('stdin')
     const [isRunning, setIsRunning] = useState(false)
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [showSubmitDialog, setShowSubmitDialog] = useState(false)
@@ -151,7 +203,10 @@ export default function StudentAssignmentPage() {
     const [explorerOpen, setExplorerOpen] = useState(true)
     const [panelOpen, setPanelOpen] = useState(true)
     const [activePanel, setActivePanel] = useState<'output' | 'tests'>('output')
-    const [rightPanel, setRightPanel] = useState<'description' | 'instructions' | 'rubric' | 'history' | 'supplementary' | null>(null)
+    const [rightPanel, setRightPanel] = useState<'description' | 'instructions' | 'rubric' | 'grading' | 'supplementary' | 'custom' | 'group' | null>(null)
+    const [showConfetti, setShowConfetti] = useState(false)
+    const [expandedTests, setExpandedTests] = useState<Set<number>>(new Set())
+    const [submittedAttemptNum, setSubmittedAttemptNum] = useState<number | null>(null)
 
     // API
     const { data: assignment, isLoading, error: loadError } = useQuery<Assignment>({
@@ -160,7 +215,7 @@ export default function StudentAssignmentPage() {
         retry: 2,
     })
 
-    const { data: submissions = [], isLoading: isLoadingSubs } = useQuery<SubmissionItem[]>({
+    const { data: submissionsAll = [], isLoading: isLoadingSubs } = useQuery<SubmissionItem[]>({
         queryKey: ['submissions', assignmentId],
         queryFn: () => apiClient.getSubmissions(assignmentId),
         enabled: !!assignment,
@@ -170,6 +225,12 @@ export default function StudentAssignmentPage() {
         queryKey: ['assignment-supplementary', assignmentId],
         queryFn: () => apiClient.getAssignmentSupplementaryFiles(assignmentId),
         enabled: !!assignmentId && !!assignment,
+    })
+
+    const { data: myGroup } = useQuery<MyGroup | null>({
+        queryKey: ['my-group', assignment?.course?.id],
+        queryFn: () => apiClient.getMyGroup(assignment!.course.id),
+        enabled: !!assignment?.allow_groups && !!assignment?.course?.id,
     })
 
     // Derived: normalize allowed extensions (lowercase, leading dot); fallback to language ext
@@ -184,36 +245,84 @@ export default function StudentAssignmentPage() {
         const langExt = assignment?.language?.file_extension
         return langExt ? [langExt.startsWith('.') ? langExt : '.' + langExt] : ['.py']
     }, [assignment?.allowed_file_extensions, assignment?.language?.file_extension])
+
+    const toggleTestDetails = (id: number) => {
+        setExpandedTests(prev => {
+            const next = new Set(prev)
+            if (next.has(id)) next.delete(id)
+            else next.add(id)
+            return next
+        })
+    }
     const maxFileSizeMB = assignment?.max_file_size_mb || 10
     const maxFileSize = maxFileSizeMB * 1024 * 1024
     const isOverdue = useMemo(() => assignment ? new Date(assignment.due_date) < new Date() : false, [assignment])
     const dueDate = useMemo(() => assignment ? new Date(assignment.due_date) : null, [assignment])
+    const submissions = useMemo(() => (submissionsAll.length > 0 ? [submissionsAll[0]] : []), [submissionsAll])
     const latestSubmission = useMemo(() => submissions.length > 0 ? submissions[0] : null, [submissions])
     const maxAttempts = assignment?.max_attempts || 0
-    const attemptsLeft = maxAttempts > 0 ? maxAttempts - submissions.length : Infinity
+    const attemptsUsed = latestSubmission?.attempt_number ?? 0
+    const attemptsLeft = maxAttempts > 0 ? Math.max(maxAttempts - attemptsUsed, 0) : Infinity
+
+    const gradesPublished = !!assignment?.grades_published
+
+    const isGraded = useMemo(() => {
+        if (!latestSubmission || !gradesPublished) return false
+        if (latestSubmission.final_score !== null) return true
+        const s = String(latestSubmission.status || '').toLowerCase()
+        return s === 'completed' || s === 'graded'
+    }, [latestSubmission, gradesPublished])
+
+    const isSubmitted = !!latestSubmission
+    const isAwaitingGrade = isSubmitted && !isGraded
+
+    // Auto-open grading panel when grade becomes available
+    useEffect(() => {
+        if (isGraded && rightPanel === null) {
+            setRightPanel('grading')
+        }
+    }, [isGraded]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    const { data: latestSubmissionDetail } = useQuery<SubmissionDetail>({
+        queryKey: ['submission', latestSubmission?.id],
+        queryFn: () => apiClient.getSubmission(latestSubmission!.id),
+        enabled: !!latestSubmission?.id,
+    })
 
     const editorLines = (selectedFile?.content || '').split('\n')
+    const hasStdinInput = customInput.trim().length > 0
+    const hasTestFileInput = inputFileContent.trim().length > 0
 
-    // Load starter code only if it contains actual code
+    // No auto-loaded starter code; students start with their own files.
+
+    const hasLoadedFromLastSubmission = useRef(false)
+
     useEffect(() => {
-        if (!assignment || files.length > 0) return
-        if (!assignment.starter_code) return
-
-        let codeContent = ''
-        try {
-            const parsed = JSON.parse(assignment.starter_code)
-            codeContent = parsed.code || ''
-        } catch {
-            codeContent = assignment.starter_code
+        if (!latestSubmissionDetail || hasLoadedFromLastSubmission.current) return
+        hasLoadedFromLastSubmission.current = true
+        const loadLastSubmissionFiles = async () => {
+            try {
+                const loadedFiles: UploadedFile[] = []
+                for (const f of latestSubmissionDetail.files ?? []) {
+                    const fileData = await apiClient.getSubmissionFileContent(latestSubmissionDetail.id, f.id)
+                    loadedFiles.push({
+                        name: fileData.filename,
+                        content: fileData.content ?? '',
+                        size: (fileData.content ?? '').length,
+                        readOnly: false,
+                        origin: 'student',
+                    })
+                }
+                if (loadedFiles.length > 0) {
+                    setFiles(loadedFiles)
+                    setSelectedFile(loadedFiles[0])
+                }
+            } catch (e) {
+                // Silently ignore load failures; student can still upload new files.
+            }
         }
-
-        if (codeContent.trim()) {
-            const ext = assignment.language?.file_extension || '.py'
-            const f: UploadedFile = { name: `main${ext}`, content: codeContent, size: new Blob([codeContent]).size }
-            setFiles([f])
-            setSelectedFile(f)
-        }
-    }, [assignment])
+        loadLastSubmissionFiles()
+    }, [latestSubmissionDetail])
 
     /* ===== File Handling ===== */
 
@@ -237,91 +346,288 @@ export default function StudentAssignmentPage() {
             const reader = new FileReader()
             reader.onload = (e) => {
                 const content = e.target?.result as string
-                const newFile: UploadedFile = { name: file.name, content, size: file.size }
+                const newFile: UploadedFile = { name: file.name, content, size: file.size, origin: 'student' }
                 setFiles((prev) => {
                     const idx = prev.findIndex((f) => f.name === file.name)
                     if (idx >= 0) { const u = [...prev]; u[idx] = newFile; return u }
                     return [...prev, newFile]
                 })
                 setSelectedFile(newFile)
+                // Immediately allow renaming newly added file
+                setEditingFileName(file.name)
+                setRenameDraft(file.name)
             }
             reader.readAsText(file)
         }
     }, [maxFileSize, maxFileSizeMB, allowedExtensions, toast])
 
-    const handleNewFile = useCallback(() => {
-        const ext = allowedExtensions[0] || assignment?.language?.file_extension || '.py'
-        let name = `file${ext}`
-        let c = 1
-        while (files.some(f => f.name === name)) { name = `file${c}${ext}`; c++ }
-        const nf: UploadedFile = { name, content: '', size: 0 }
-        setFiles(prev => [...prev, nf])
-        setSelectedFile(nf)
-    }, [assignment, files, allowedExtensions])
+    // Students can only upload files (no file creation) to reduce complexity.
 
     const removeFile = useCallback((name: string) => {
+        const target = files.find((f) => f.name === name)
+        if (target?.readOnly || target?.origin === 'utility') return
         setFiles((prev) => prev.filter((f) => f.name !== name))
         if (selectedFile?.name === name) {
             const rest = files.filter(f => f.name !== name)
             setSelectedFile(rest.length > 0 ? rest[0] : null)
         }
+        setEditingFileName(null)
     }, [selectedFile, files])
+
+    const [editingFileName, setEditingFileName] = useState<string | null>(null)
+    const [renameDraft, setRenameDraft] = useState('')
+    const renameInputRef = useRef<HTMLInputElement | null>(null)
+
+    useEffect(() => {
+        if (!editingFileName) return
+        const t = window.setTimeout(() => {
+            renameInputRef.current?.focus()
+            renameInputRef.current?.select()
+        }, 0)
+        return () => window.clearTimeout(t)
+    }, [editingFileName])
+
+    const startRenameFile = useCallback((name: string) => {
+        const target = files.find((f) => f.name === name)
+        if (target?.readOnly || target?.origin === 'utility') return
+        setEditingFileName(name)
+        setRenameDraft(name)
+    }, [files])
+
+    const renameFile = useCallback((oldName: string, newName: string) => {
+        const target = files.find((f) => f.name === oldName)
+        if (target?.readOnly || target?.origin === 'utility') {
+            setEditingFileName(null)
+            return
+        }
+        const trimmed = newName.trim()
+        if (!trimmed || trimmed === oldName) {
+            setEditingFileName(null)
+            return
+        }
+        const ext = '.' + (trimmed.split('.').pop()?.toLowerCase() || '')
+        if (!allowedExtensions.includes(ext)) {
+            toast({ title: 'Invalid extension', description: `Use: ${allowedExtensions.join(', ')}`, variant: 'destructive' })
+            return
+        }
+        if (files.some((f) => f.name !== oldName && f.name === trimmed)) {
+            toast({ title: 'Duplicate name', description: 'A file with this name already exists.', variant: 'destructive' })
+            return
+        }
+        setFiles((prev) => prev.map((f) => f.name === oldName ? { ...f, name: trimmed } : f))
+        if (selectedFile?.name === oldName) {
+            setSelectedFile({ ...selectedFile, name: trimmed })
+        }
+        setEditingFileName(null)
+        setRenameDraft('')
+    }, [allowedExtensions, files, selectedFile, toast])
 
     const updateFileContent = useCallback((value: string) => {
         if (!selectedFile) return
+        if (selectedFile.readOnly || selectedFile.origin === 'utility') return
         const updated = { ...selectedFile, content: value, size: new Blob([value]).size }
         setSelectedFile(updated)
         setFiles((prev) => prev.map((f) => (f.name === updated.name ? updated : f)))
     }, [selectedFile])
 
+    // Utility files: load instructor-provided files into workspace (read-only helper files)
+    useEffect(() => {
+        if (!supplementaryFiles || supplementaryFiles.length === 0) return
+        let cancelled = false
+            ; (async () => {
+                try {
+                    const downloads = await Promise.all(
+                        supplementaryFiles.map(async (f: { filename: string; download_url: string }) => {
+                            try {
+                                const res = await fetch(f.download_url)
+                                if (!res.ok) return null
+                                const ct = res.headers.get('content-type') || ''
+                                // Best-effort: only inject text-like files into workspace
+                                if (ct && !ct.startsWith('text/') && !ct.includes('json') && !ct.includes('xml')) return null
+                                const content = await res.text()
+                                return { name: f.filename, content }
+                            } catch {
+                                return null
+                            }
+                        }),
+                    )
+                    if (cancelled) return
+                    const toAdd = downloads.filter(Boolean) as { name: string; content: string }[]
+                    if (toAdd.length === 0) return
+                    setFiles((prev) => {
+                        const existing = new Set(prev.map((p) => p.name))
+                        const merged = [...prev]
+                        for (const f of toAdd) {
+                            if (existing.has(f.name)) continue
+                            merged.push({
+                                name: f.name,
+                                content: f.content,
+                                size: new Blob([f.content]).size,
+                                readOnly: true,
+                                origin: 'utility',
+                            })
+                        }
+                        return merged
+                    })
+                } catch {
+                    // ignore
+                }
+            })()
+        return () => { cancelled = true }
+    }, [supplementaryFiles])
+
     /* ===== Run Code ===== */
 
-    const runCode = async () => {
+    const runCode = () => {
         if (!files.length) {
-            toast({ title: 'No files', description: 'Create or upload a file first.', variant: 'destructive' })
+            toast({ title: 'No files', description: 'Create or upload a file first.', variant: 'destructive', silent: true })
             return
         }
-        // Validate no empty files
         const emptyFiles = files.filter(f => !f.content.trim())
         if (emptyFiles.length === files.length) {
-            toast({ title: 'Empty files', description: 'Write some code before running.', variant: 'destructive' })
+            toast({ title: 'Empty files', description: 'Write some code before running.', variant: 'destructive', silent: true })
+            return
+        }
+
+        setPanelOpen(true)
+        setActivePanel('output')
+
+        startInteractiveTerminal(files.map(f => ({ name: f.name, content: f.content })))
+        setTimeout(() => terminalRef.current?.focusInput(), 300)
+    }
+
+    const runCustomInput = async () => {
+        if (!files.length) {
+            toast({ title: 'No files', description: 'Create or upload a file first.', variant: 'destructive', silent: true })
+            return
+        }
+        const emptyFiles = files.filter(f => !f.content.trim())
+        if (emptyFiles.length === files.length) {
+            toast({ title: 'Empty files', description: 'Write some code before running custom input.', variant: 'destructive', silent: true })
+            return
+        }
+        // Exactly one source: either stdin text or one input file, not both
+        if (datasetInputMode === 'stdin') {
+            if (!hasStdinInput) {
+                toast({ title: 'No stdin', description: 'Enter stdin text before running custom input.', variant: 'destructive', silent: true })
+                return
+            }
+        } else {
+            if (uploadedDatasets.length === 0) {
+                toast({ title: 'No input file', description: 'Upload one input file before running custom input.', variant: 'destructive', silent: true })
+                return
+            }
+        }
+
+        closeInteractiveTerminal()
+
+        setIsRunning(true)
+        setError(null)
+        setPanelOpen(true)
+        setActivePanel('output')
+        setInteractiveOutput([{ type: 'stdout', text: 'Running with custom input...\n' }])
+        setInteractiveExitCode(null)
+
+        try {
+            // Decide stdin to send based on mode
+            let stdinPayload = ''
+            if (datasetInputMode === 'stdin') {
+                stdinPayload = customInput
+            } else {
+                // Use first uploaded file content as stdin
+                stdinPayload = uploadedDatasets[0]?.content || ''
+            }
+
+            const r = await apiClient.runCode(assignmentId, files, { stdin: stdinPayload })
+
+            setDatasetRunResults([{
+                name: datasetInputMode === 'stdin' ? 'stdin' : (uploadedDatasets[0]?.name || 'input.txt'),
+                stdout: r.stdout ?? undefined,
+                stderr: r.stderr ?? undefined,
+                compilation_status: r.compilation_status,
+                success: r.success && (r.compilation_status === 'Compiled Successfully'),
+            }])
+
+            // Also mirror the custom run output into the terminal area for immediate feedback
+            if (r.stdout) {
+                setInteractiveOutput(prev => [...prev, { type: 'stdout', text: r.stdout }])
+            }
+            if (r.stderr) {
+                setInteractiveOutput(prev => [...prev, { type: 'stderr', text: r.stderr }])
+            }
+
+            if (!r.success || r.compilation_status !== 'Compiled Successfully') {
+                const msg = r.message || r.compilation_status || 'Failed to run with custom input'
+                toast({ title: 'Custom Input Run', description: msg, variant: 'destructive', silent: true })
+            }
+
+        } catch (err: any) {
+            const raw = err?.response?.data?.detail
+            const msg = typeof raw === 'string' ? raw
+                : Array.isArray(raw) ? raw.map((e: { msg?: string }) => e?.msg || JSON.stringify(e)).join('. ') || 'Failed to run with custom input'
+                    : raw?.message || 'Failed to run with custom input'
+            setError(msg)
+            toast({ title: 'Custom Input Failed', description: msg, variant: 'destructive', silent: true })
+        } finally {
+            setIsRunning(false)
+        }
+    }
+
+    const runTestCases = async () => {
+        if (!files.length) {
+            toast({ title: 'No files', description: 'Create or upload a file first.', variant: 'destructive', silent: true })
+            return
+        }
+        const emptyFiles = files.filter(f => !f.content.trim())
+        if (emptyFiles.length === files.length) {
+            toast({ title: 'Empty files', description: 'Write some code before running tests.', variant: 'destructive', silent: true })
             return
         }
 
         setIsRunning(true)
         setRunResult(null)
+        setDatasetRunResults([])
         setError(null)
         setPanelOpen(true)
-        setActivePanel('output')
+        setActivePanel('tests')
+
+        const stdinToSend = testInputMode === 'stdin' ? (customInput.trim() || undefined) : undefined
+        const hasInputFile = testInputMode === 'file' && inputFileContent.trim() && (inputFileName.trim() || 'input.txt')
+        const inputFileToSend = hasInputFile
+            ? { name: (inputFileName.trim() || 'input.txt'), content: inputFileContent }
+            : undefined
+
+        const runPromises: Promise<RunCodeResult>[] = [
+            apiClient.runCode(assignmentId, files, {}),
+        ]
 
         try {
-            const response: RunCodeResult = await apiClient.runCode(assignmentId, files)
-            setRunResult(response)
-            setActivePanel(response.results.length > 0 ? 'tests' : 'output')
-
-            if (response.compilation_status === 'Time Exceeds') {
-                toast({ title: 'Time Exceeds', description: 'Your code took too long to run.', variant: 'destructive' })
-            } else if (response.compilation_status === 'Not Compiled Successfully') {
-                toast({ title: 'Not Compiled Successfully', description: 'Check the output panel.', variant: 'destructive' })
-            } else if (response.compilation_status === 'Compiled Successfully') {
-                if (response.results.length > 0) {
-                    const p = response.tests_passed, t = response.tests_total
-                    toast({
-                        title: p === t ? 'All Tests Passed!' : `${p}/${t} Tests Passed`,
-                        variant: p === t ? 'default' : 'destructive',
-                    })
-                } else {
-                    toast({ title: 'Compiled Successfully', description: 'Your code ran without errors.' })
-                }
+            const results = await Promise.all(runPromises)
+            const professorResult = results[0] as RunCodeResult
+            // Keep the user on the Tests tab; just update test data
+            setRunResult(professorResult)
+            if (professorResult.compilation_status === 'Time Exceeds') {
+                toast({ title: 'Time Exceeds', description: 'Your code took too long to run.', variant: 'destructive', silent: true })
+            } else if (professorResult.compilation_status === 'Not Compiled Successfully') {
+                toast({ title: 'Code error', description: 'Check the Tests / Output panel for details.', variant: 'destructive', silent: true })
+            } else if (professorResult.compilation_status === 'Compiled Successfully' && professorResult.results.length > 0) {
+                const p = professorResult.tests_passed, t = professorResult.tests_total
+                if (p === t) setShowConfetti(true)
+                else toast({ title: `${p}/${t} Tests Passed`, variant: 'destructive', silent: true })
+            } else if (professorResult.compilation_status === 'Compiled Successfully') {
+                toast({ title: 'Compiled Successfully', description: 'Your code ran without errors.', silent: true })
             }
         } catch (err: any) {
-            const msg = err?.response?.data?.detail || 'Failed to run code'
+            const raw = err?.response?.data?.detail
+            const msg = typeof raw === 'string' ? raw
+                : Array.isArray(raw) ? raw.map((e: { msg?: string }) => e?.msg || JSON.stringify(e)).join('. ') || 'Failed to run code'
+                    : raw?.message || 'Failed to run code'
             setError(msg)
             setRunResult({
                 success: false, results: [], total_score: 0, max_score: 0,
                 tests_passed: 0, tests_total: 0, message: msg, compilation_status: 'Not Compiled Successfully'
             })
-            toast({ title: 'Execution Failed', description: msg, variant: 'destructive' })
+            toast({ title: 'Execution Failed', description: msg, variant: 'destructive', silent: true })
         } finally {
             setIsRunning(false)
         }
@@ -330,20 +636,17 @@ export default function StudentAssignmentPage() {
     /* ===== Submit ===== */
 
     const handleSubmit = () => {
-        if (!files.length) {
-            toast({ title: 'No files', description: 'Upload files before submitting.', variant: 'destructive' }); return
+        const studentFiles = files.filter(f => f.origin !== 'utility' && !f.readOnly)
+        if (!studentFiles.length) {
+            toast({ title: 'No files', description: 'Upload your code files before submitting.', variant: 'destructive' }); return
         }
-        if (files.every(f => !f.content.trim())) {
-            toast({ title: 'Empty files', description: 'Write code before submitting.', variant: 'destructive' }); return
+        const emptyFiles = studentFiles.filter(f => !f.content.trim())
+        if (emptyFiles.length > 0) {
+            const names = emptyFiles.map(f => f.name).join(', ')
+            toast({ title: 'Empty file detected', description: `Please add code to: ${names}`, variant: 'destructive' }); return
         }
         if (attemptsLeft <= 0) {
             toast({ title: 'No attempts left', description: `You've used all ${maxAttempts} attempts.`, variant: 'destructive' }); return
-        }
-        if (assignment?.required_files?.length) {
-            const missing = assignment.required_files.filter(rf => !files.some(f => f.name === rf))
-            if (missing.length > 0) {
-                toast({ title: 'Missing required files', description: `Required: ${missing.join(', ')}`, variant: 'destructive' }); return
-            }
         }
         setSubmitPhase('confirm')
         setShowSubmitDialog(true)
@@ -354,13 +657,18 @@ export default function StudentAssignmentPage() {
         setIsSubmitting(true)
         setError(null)
         setSubmitPhase('loading')
+        // Capture attempt number before query invalidation refreshes the data
+        const capturedAttemptNum = attemptsUsed + 1
+        setSubmittedAttemptNum(capturedAttemptNum)
 
         try {
-            const fileObjects = files.map((f) => {
+            // Only submit student-authored files (not read-only utility/support files)
+            const studentFiles = files.filter(f => f.origin !== 'utility' && !f.readOnly)
+            const fileObjects = studentFiles.map((f) => {
                 const blob = new Blob([f.content], { type: 'text/plain' })
                 return new File([blob], f.name)
             })
-            await apiClient.createSubmission(assignmentId, fileObjects)
+            await apiClient.createSubmission(assignmentId, fileObjects, myGroup?.id ?? undefined)
             await queryClient.invalidateQueries({ queryKey: ['submissions', assignmentId] })
             setSubmitPhase('success')
             // Auto-redirect to course page after 2.5s
@@ -368,7 +676,10 @@ export default function StudentAssignmentPage() {
                 router.push(`/student/courses/${assignment.course.id}`)
             }, 2500)
         } catch (err: any) {
-            const msg = err?.response?.data?.detail || 'Submission failed'
+            const raw = err?.response?.data?.detail
+            const msg = typeof raw === 'string' ? raw
+                : Array.isArray(raw) ? raw.map((e: { msg?: string; loc?: unknown[] }) => e?.msg || JSON.stringify(e)).join('. ') || 'Submission failed'
+                    : raw?.message || 'Submission failed'
             setError(msg)
             toast({ title: 'Submission Failed', description: msg, variant: 'destructive' })
             setShowSubmitDialog(false)
@@ -390,7 +701,7 @@ export default function StudentAssignmentPage() {
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
             if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === 'Enter') {
-                e.preventDefault(); if (!isRunning && files.length > 0) runCode()
+                e.preventDefault(); if (!isRunning && files.length > 0) runTestCases()
             }
             if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'Enter') {
                 e.preventDefault(); if (!isSubmitting && files.length > 0) handleSubmit()
@@ -434,10 +745,10 @@ export default function StudentAssignmentPage() {
 
     return (
         <ProtectedRoute allowedRoles={['STUDENT']}>
-            <div className="flex flex-col h-screen bg-[#1e1e1e] text-[#cccccc] overflow-hidden">
+            <div className="flex flex-col h-screen bg-gradient-to-b from-[#1b1d1f] via-[#1e1e1e] to-[#1b1d1f] text-[#cccccc] overflow-hidden">
 
                 {/* ===== Title Bar ===== */}
-                <div className="flex items-center justify-between bg-[#323233] px-4 py-1.5 border-b border-[#3c3c3c] select-none shrink-0">
+                <div className="flex items-center justify-between bg-gradient-to-r from-[#2b2c2d] via-[#323233] to-[#2b2c2d] px-4 py-1.5 border-b border-[#3c3c3c] select-none shrink-0">
                     <div className="flex items-center gap-3 min-w-0">
                         <Button variant="ghost" size="sm" onClick={() => router.back()}
                             className="h-6 px-2 text-[#cccccc] hover:text-white hover:bg-[#505050] text-xs shrink-0">
@@ -447,9 +758,17 @@ export default function StudentAssignmentPage() {
                         <span className="text-xs text-[#cccccc] font-medium truncate">
                             {assignment.course?.code} &mdash; {assignment.title}
                         </span>
-                        {isOverdue
-                            ? <Badge variant="danger" className="text-[10px] px-1.5 py-0 shrink-0"><Clock className="w-2.5 h-2.5 mr-0.5" /> Overdue</Badge>
-                            : <Badge variant="success" className="text-[10px] px-1.5 py-0 shrink-0">Active</Badge>
+                        {isGraded
+                            ? <span className="text-[10px] px-2 py-0.5 rounded bg-[#4ec9b0]/20 text-[#4ec9b0] font-semibold border border-[#4ec9b0]/30 shrink-0">
+                                ✓ Graded {latestSubmission?.final_score != null ? `${Number(latestSubmission.final_score).toFixed(1)}/${assignment.max_score}` : ''}
+                            </span>
+                            : isAwaitingGrade
+                                ? <span className="text-[10px] px-2 py-0.5 rounded bg-[#dcdcaa]/20 text-[#dcdcaa] font-medium border border-[#dcdcaa]/30 shrink-0">
+                                    Awaiting Grade
+                                </span>
+                                : isOverdue
+                                    ? <Badge variant="danger" className="text-[10px] px-1.5 py-0 shrink-0"><Clock className="w-2.5 h-2.5 mr-0.5" /> Overdue</Badge>
+                                    : <Badge variant="success" className="text-[10px] px-1.5 py-0 shrink-0">Active</Badge>
                         }
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -470,11 +789,19 @@ export default function StudentAssignmentPage() {
                 </div>
 
                 {/* ===== Toolbar ===== */}
-                <div className="flex items-center justify-between bg-[#252526] px-3 py-1 border-b border-[#3c3c3c] shrink-0">
-                    <div className="flex items-center gap-1">
+                <div className="flex items-center justify-between bg-[#252526] px-3 py-1 border-b border-[#3c3c3c] shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.03)] shrink-0">
+                    <div className="flex items-center gap-2">
                         {latestSubmission && (
-                            <span className="text-[10px] text-[#858585] mr-2 px-2 py-0.5 bg-[#333] rounded">
-                                Last score: {latestSubmission.final_score ?? 'Grading...'}/{assignment.max_score}
+                            <span className={`text-[10px] px-2 py-0.5 rounded ${isGraded ? 'bg-[#4ec9b0]/15 text-[#4ec9b0] border border-[#4ec9b0]/25' : 'bg-[#333] text-[#858585]'}`}>
+                                {isGraded
+                                    ? `Score: ${Number(latestSubmission.final_score ?? 0).toFixed(1)} / ${assignment.max_score}`
+                                    : `Attempt #${latestSubmission.attempt_number} · Awaiting grade`
+                                }
+                            </span>
+                        )}
+                        {files.filter(f => f.origin === 'utility').length > 0 && (
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-[#505050] text-[#858585]" title="Utility files are automatically included in all runs">
+                                📎 {files.filter(f => f.origin === 'utility').length} util file{files.filter(f => f.origin === 'utility').length !== 1 ? 's' : ''} included
                             </span>
                         )}
                     </div>
@@ -491,22 +818,47 @@ export default function StudentAssignmentPage() {
                             className={`h-6 px-2 text-[10px] rounded flex items-center gap-1 transition-colors ${rightPanel === 'rubric' ? 'bg-[#094771] text-white' : 'text-[#cccccc] hover:bg-[#505050]'}`}>
                             <ClipboardList className="w-3 h-3" /> Rubric
                         </button>
-                        <button onClick={() => setRightPanel(rightPanel === 'history' ? null : 'history')}
-                            className={`h-6 px-2 text-[10px] rounded flex items-center gap-1 transition-colors ${rightPanel === 'history' ? 'bg-[#094771] text-white' : 'text-[#cccccc] hover:bg-[#505050]'}`}>
-                            <History className="w-3 h-3" /> History
-                            {submissions.length > 0 && <span className="px-1 py-0 text-[9px] bg-[#505050] rounded">{submissions.length}</span>}
-                        </button>
+                        {isSubmitted && (
+                            <button
+                                onClick={() => setRightPanel(rightPanel === 'grading' ? null : 'grading')}
+                                className={`h-6 px-2 text-[10px] rounded flex items-center gap-1 transition-colors ${rightPanel === 'grading'
+                                    ? 'bg-[#094771] text-white'
+                                    : isGraded
+                                        ? 'text-[#4ec9b0] hover:bg-[#505050] font-semibold'
+                                        : 'text-[#cccccc] hover:bg-[#505050]'
+                                    }`}
+                            >
+                                <Target className="w-3 h-3" />
+                                {isGraded ? 'Graded ✓' : 'Grading'}
+                            </button>
+                        )}
                         <button onClick={() => setRightPanel(rightPanel === 'supplementary' ? null : 'supplementary')}
                             className={`h-6 px-2 text-[10px] rounded flex items-center gap-1 transition-colors ${rightPanel === 'supplementary' ? 'bg-[#094771] text-white' : 'text-[#cccccc] hover:bg-[#505050]'}`}>
                             <Paperclip className="w-3 h-3" /> Files
                             {supplementaryFiles.length > 0 && <span className="px-1 py-0 text-[9px] bg-[#505050] rounded">{supplementaryFiles.length}</span>}
                         </button>
+                        <button onClick={() => setRightPanel(rightPanel === 'custom' ? null : 'custom')}
+                            className={`h-6 px-2 text-[10px] rounded flex items-center gap-1 transition-colors ${rightPanel === 'custom' ? 'bg-[#094771] text-white' : 'text-[#cccccc] hover:bg-[#505050]'}`}>
+                            <UploadIcon className="w-3 h-3" /> Custom Input
+                            {uploadedDatasets.length > 0 && <span className="px-1 py-0 text-[9px] bg-[#505050] rounded">{uploadedDatasets.length}</span>}
+                        </button>
+                        {assignment.allow_groups && (
+                            <button onClick={() => setRightPanel(rightPanel === 'group' ? null : 'group')}
+                                className={`h-6 px-2 text-[10px] rounded flex items-center gap-1 transition-colors ${rightPanel === 'group' ? 'bg-[#094771] text-white' : myGroup ? 'text-[#4ec9b0] hover:bg-[#505050]' : 'text-[#dcdcaa] hover:bg-[#505050]'}`}>
+                                <Users className="w-3 h-3" /> Group
+                                {myGroup && <span className="px-1 py-0 text-[9px] bg-[#505050] rounded">{myGroup.members.length}</span>}
+                            </button>
+                        )}
                         <div className="w-px h-4 bg-[#5a5a5a] mx-1" />
                         <Button onClick={runCode} disabled={isRunning || files.length === 0} size="sm"
                             className="h-6 px-3 text-[10px] bg-[#0e639c] hover:bg-[#1177bb] text-white border-0">
+                            <Play className="w-3 h-3 mr-1" /> Run Code
+                        </Button>
+                        <Button onClick={runTestCases} disabled={isRunning || files.length === 0} size="sm"
+                            className="h-6 px-3 text-[10px] bg-[#0e639c] hover:bg-[#1177bb] text-white border-0">
                             {isRunning
-                                ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Running...</>
-                                : <><Play className="w-3 h-3 mr-1" /> Run Code <span className="ml-1 text-[9px] opacity-60">⌘↵</span></>
+                                ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Running Tests...</>
+                                : <>Run Test Cases</>
                             }
                         </Button>
                         <Button onClick={handleSubmit} disabled={isSubmitting || files.length === 0 || attemptsLeft <= 0} size="sm"
@@ -545,8 +897,14 @@ export default function StudentAssignmentPage() {
                             <div className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-[#bbbbbb] flex items-center justify-between">
                                 <span>Explorer</span>
                                 <div className="flex gap-0.5">
-                                    <button onClick={handleNewFile} className="p-0.5 rounded hover:bg-[#505050]" title="New File"><Plus className="w-3.5 h-3.5" /></button>
-                                    <button onClick={() => fileInputRef.current?.click()} className="p-0.5 rounded hover:bg-[#505050]" title="Upload"><UploadIcon className="w-3.5 h-3.5" /></button>
+                                    <button
+                                        onClick={() => fileInputRef.current?.click()}
+                                        className="h-7 px-3 rounded-md bg-gradient-to-r from-[#0e639c] to-[#1177bb] hover:from-[#1177bb] hover:to-[#1588cc] text-white text-[11px] font-semibold inline-flex items-center gap-1.5 shadow-md hover:shadow-lg transition-all duration-200 active:scale-95"
+                                        title="Upload files"
+                                    >
+                                        <UploadIcon className="w-3.5 h-3.5 transition-transform group-hover:translate-y-0.5" />
+                                        <span>Upload</span>
+                                    </button>
                                 </div>
                             </div>
                             <input ref={fileInputRef} type="file" multiple hidden accept={allowedExtensions.join(',')} onChange={(e) => { handleUpload(e.target.files); e.target.value = '' }} />
@@ -559,29 +917,132 @@ export default function StudentAssignmentPage() {
                                 </div>
                             </div>
 
-                            <div className="flex-1 overflow-y-auto px-1"
+                            <div
+                                className="flex-1 overflow-y-auto px-1"
                                 onDragOver={(e) => e.preventDefault()}
-                                onDrop={(e) => { e.preventDefault(); handleUpload(e.dataTransfer.files) }}>
+                                onDrop={(e) => { e.preventDefault(); handleUpload(e.dataTransfer.files) }}
+                            >
                                 {files.length === 0 ? (
-                                    <div className="flex flex-col items-center justify-center py-8 cursor-pointer text-center"
-                                        onClick={() => fileInputRef.current?.click()}>
-                                        <UploadIcon className="w-8 h-8 text-[#505050] mb-2" />
-                                        <p className="text-[11px] text-[#858585]">Drop files or click to upload</p>
-                                        <p className="text-[10px] text-[#606060] mt-1">Max {maxFileSizeMB}MB per file</p>
+                                    <div className="flex flex-col items-center justify-center py-10 text-center px-3">
+                                        <div className="w-12 h-12 rounded-xl bg-[#0e639c]/15 flex items-center justify-center mb-3 border border-[#0e639c]/25">
+                                            <UploadIcon className="w-6 h-6 text-[#4fc1ff]" />
+                                        </div>
+                                        <p className="text-[12px] text-[#e6e6e6] font-medium">Upload your files to start</p>
+                                        <p className="text-[11px] text-[#bdbdbd] mt-1">
+                                            Drag & drop here, or click upload. Max {maxFileSizeMB}MB per file.
+                                        </p>
+                                        <button
+                                            onClick={() => fileInputRef.current?.click()}
+                                            className="mt-4 h-9 px-4 rounded-lg bg-gradient-to-r from-[#0e639c] to-[#1177bb] hover:from-[#1177bb] hover:to-[#1588cc] text-white text-[12px] font-semibold inline-flex items-center gap-2 shadow-lg hover:shadow-xl transition-all duration-200 active:scale-95"
+                                        >
+                                            <UploadIcon className="w-4 h-4 transition-transform group-hover:translate-y-0.5" />
+                                            <span>Upload files</span>
+                                        </button>
                                     </div>
                                 ) : (
-                                    <div className="space-y-0.5 pl-4">
-                                        {files.map((file) => (
-                                            <div key={file.name} onClick={() => setSelectedFile(file)}
-                                                className={`group flex items-center gap-2 px-2 py-1 rounded cursor-pointer text-[12px] ${selectedFile?.name === file.name ? 'bg-[#094771] text-white' : 'text-[#cccccc] hover:bg-[#2a2d2e]'}`}>
-                                                <span className="text-xs">{getFileIcon(file.name)}</span>
-                                                <span className="flex-1 truncate font-mono text-[12px]">{file.name}</span>
-                                                <button onClick={(e) => { e.stopPropagation(); removeFile(file.name) }}
-                                                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-500/30 text-[#858585] hover:text-red-400">
-                                                    <X className="w-3 h-3" />
-                                                </button>
+                                    <div className="space-y-2 pl-4">
+                                        {(() => {
+                                            const studentFiles = files.filter((f) => f.origin !== 'utility')
+                                            const utilityFiles = files.filter((f) => f.origin === 'utility')
+                                            return (
+                                                <>
+                                                    <div className="space-y-0.5">
+                                                        {studentFiles.map((file) => (
+                                                            <div
+                                                                key={file.name}
+                                                                onClick={() => setSelectedFile(file)}
+                                                                className={`group flex items-center gap-2 px-2 py-1 rounded cursor-pointer text-[12px] ${selectedFile?.name === file.name
+                                                                    ? 'bg-[#094771] text-white'
+                                                                    : 'text-[#cccccc] hover:bg-[#2a2d2e]'
+                                                                    }`}
+                                                            >
+                                                                <span className="text-xs shrink-0">{getFileIcon(file.name)}</span>
+                                                                {editingFileName === file.name ? (
+                                                                    <input
+                                                                        type="text"
+                                                                        value={renameDraft}
+                                                                        ref={renameInputRef}
+                                                                        onClick={(e) => e.stopPropagation()}
+                                                                        onChange={(e) => { e.stopPropagation(); setRenameDraft(e.target.value) }}
+                                                                        onBlur={() => { renameFile(file.name, renameDraft.trim()) }}
+                                                                        onKeyDown={(e) => {
+                                                                            e.stopPropagation()
+                                                                            if (e.key === 'Enter') {
+                                                                                renameFile(file.name, renameDraft.trim())
+                                                                                    ; (e.target as HTMLInputElement).blur()
+                                                                            }
+                                                                            if (e.key === 'Escape') {
+                                                                                setRenameDraft(file.name)
+                                                                                setEditingFileName(null)
+                                                                                    ; (e.target as HTMLInputElement).blur()
+                                                                            }
+                                                                        }}
+                                                                        autoFocus
+                                                                        className="flex-1 min-w-0 bg-[#1e1e1e] border border-[#0e639c] rounded px-1 py-0.5 font-mono text-[12px] text-[#d4d4d4] focus:outline-none focus:ring-1 focus:ring-[#0e639c]"
+                                                                    />
+                                                                ) : (
+                                                                    <span
+                                                                        className="flex-1 truncate font-mono text-[12px]"
+                                                                        onDoubleClick={(e) => { e.stopPropagation(); startRenameFile(file.name) }}
+                                                                        title="Double-click to rename"
+                                                                    >
+                                                                        {file.name}
+                                                                    </span>
+                                                                )}
+                                                                <button
+                                                                    onClick={(e) => { e.stopPropagation(); removeFile(file.name) }}
+                                                                    className={`opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-500/30 text-[#858585] hover:text-red-400 shrink-0 ${file.readOnly || file.origin === 'utility' ? 'hidden' : ''}`}
+                                                                >
+                                                                    <X className="w-3 h-3" />
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+
+                                                    {utilityFiles.length > 0 && (
+                                                        <div className="pt-2">
+                                                            <div className="flex items-center gap-1 px-2 py-1 text-[10px] text-[#bdbdbd] uppercase tracking-wider">
+                                                                <ChevronDown className="w-3 h-3" />
+                                                                <Paperclip className="w-3 h-3" />
+                                                                <span className="font-semibold">Utility files (read-only)</span>
+                                                            </div>
+                                                            <div className="space-y-0.5 pl-4">
+                                                                {utilityFiles.map((file) => (
+                                                                    <div
+                                                                        key={file.name}
+                                                                        onClick={() => setSelectedFile(file)}
+                                                                        className={`flex items-center gap-2 px-2 py-1 rounded cursor-pointer text-[12px] ${selectedFile?.name === file.name
+                                                                            ? 'bg-[#094771] text-white'
+                                                                            : 'text-[#cfcfcf] hover:bg-[#2a2d2e]'
+                                                                            }`}
+                                                                    >
+                                                                        <span className="text-xs shrink-0">{getFileIcon(file.name)}</span>
+                                                                        <span className="flex-1 truncate font-mono text-[12px]">{file.name}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </>
+                                            )
+                                        })()}
+
+                                        {uploadedDatasets.length > 0 && (
+                                            <div className="mt-3">
+                                                <div className="flex items-center gap-1 px-2 py-1 text-[10px] text-[#777777] uppercase tracking-wider">
+                                                    <ChevronDown className="w-3 h-3" />
+                                                    <span className="font-semibold">Run input</span>
+                                                </div>
+                                                <div className="pl-4 space-y-0.5">
+                                                    <div className="flex items-center gap-2 px-2 py-1 rounded text-[11px] text-[#cccccc]">
+                                                        <UploadIcon className="w-3 h-3" />
+                                                        <span className="flex-1 truncate font-mono text-[11px]">
+                                                            {uploadedDatasets.length} dataset{uploadedDatasets.length !== 1 ? 's' : ''}
+                                                        </span>
+                                                    </div>
+                                                </div>
                                             </div>
-                                        ))}
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -598,10 +1059,37 @@ export default function StudentAssignmentPage() {
                         <div className="bg-[#252526] border-b border-[#3c3c3c] flex items-center min-h-[35px] overflow-x-auto shrink-0">
                             {files.map((file) => (
                                 <div key={file.name} onClick={() => setSelectedFile(file)}
-                                    className={`flex items-center gap-1.5 px-3 py-1.5 cursor-pointer text-[12px] border-r border-[#3c3c3c] shrink-0 ${selectedFile?.name === file.name ? 'bg-[#1e1e1e] text-white border-t-2 border-t-[#0e639c]' : 'bg-[#2d2d2d] text-[#969696] hover:bg-[#2d2d2d]/80'}`}>
-                                    <span className="text-xs">{getFileIcon(file.name)}</span>
-                                    <span className="font-mono">{file.name}</span>
-                                    <button onClick={(e) => { e.stopPropagation(); removeFile(file.name) }} className="ml-1 p-0.5 rounded hover:bg-[#505050]">
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 cursor-pointer text-[12px] border-r border-[#3c3c3c] shrink-0 min-w-0 max-w-[180px] ${selectedFile?.name === file.name ? 'bg-[#1e1e1e] text-white border-t-2 border-t-[#0e639c]' : 'bg-[#2d2d2d] text-[#969696] hover:bg-[#2d2d2d]/80'}`}>
+                                    <span className="text-xs shrink-0">{getFileIcon(file.name)}</span>
+                                    {editingFileName === file.name ? (
+                                        <input
+                                            type="text"
+                                            value={renameDraft}
+                                            ref={renameInputRef}
+                                            onClick={(e) => e.stopPropagation()}
+                                            onChange={(e) => { e.stopPropagation(); setRenameDraft(e.target.value) }}
+                                            onBlur={() => { renameFile(file.name, renameDraft.trim()) }}
+                                            onKeyDown={(e) => {
+                                                e.stopPropagation()
+                                                if (e.key === 'Enter') { renameFile(file.name, renameDraft.trim()); (e.target as HTMLInputElement).blur() }
+                                                if (e.key === 'Escape') { setRenameDraft(file.name); setEditingFileName(null); (e.target as HTMLInputElement).blur() }
+                                            }}
+                                            autoFocus
+                                            className="flex-1 min-w-0 max-w-[120px] bg-[#1e1e1e] border border-[#0e639c] rounded px-1 py-0.5 font-mono text-[11px] text-[#d4d4d4] focus:outline-none focus:ring-1 focus:ring-[#0e639c]"
+                                        />
+                                    ) : (
+                                        <span
+                                            className="flex-1 truncate font-mono"
+                                            onDoubleClick={(e) => { e.stopPropagation(); startRenameFile(file.name) }}
+                                            title="Double-click to rename"
+                                        >
+                                            {file.name}
+                                        </span>
+                                    )}
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); removeFile(file.name) }}
+                                        className={`ml-1 p-0.5 rounded hover:bg-[#505050] shrink-0 ${file.readOnly || file.origin === 'utility' ? 'hidden' : ''}`}
+                                    >
                                         <X className="w-3 h-3" />
                                     </button>
                                 </div>
@@ -631,13 +1119,10 @@ export default function StudentAssignmentPage() {
                                         <div className="text-center space-y-4">
                                             <Code className="w-16 h-16 mx-auto text-[#505050]" />
                                             <p className="text-sm text-[#858585]">
-                                                {files.length > 0 ? 'Select a file to start editing' : 'Upload or create a file to get started'}
+                                                {files.length > 0 ? 'Select a file to start editing' : 'Upload files to get started'}
                                             </p>
                                             {files.length === 0 && (
                                                 <div className="flex gap-2 justify-center">
-                                                    <Button onClick={handleNewFile} size="sm" className="bg-[#0e639c] hover:bg-[#1177bb] text-white text-xs h-7">
-                                                        <Plus className="w-3 h-3 mr-1" /> New File
-                                                    </Button>
                                                     <Button onClick={() => fileInputRef.current?.click()} size="sm" variant="outline" className="text-[#cccccc] border-[#505050] hover:bg-[#505050] text-xs h-7">
                                                         <UploadIcon className="w-3 h-3 mr-1" /> Upload
                                                     </Button>
@@ -672,56 +1157,65 @@ export default function StudentAssignmentPage() {
                                         <button onClick={() => setPanelOpen(false)} className="p-1 rounded hover:bg-[#505050] text-[#858585]"><X className="w-3 h-3" /></button>
                                     </div>
 
-                                    <div className="flex-1 overflow-y-auto p-3 font-mono text-[12px]">
+                                    <div className="flex-1 overflow-y-auto p-3 font-mono text-[12px] flex flex-col min-h-0">
                                         {activePanel === 'output' ? (
-                                            <div>
-                                                {isRunning ? (
-                                                    <div className="flex items-center gap-2 text-[#569cd6]">
-                                                        <Loader2 className="w-4 h-4 animate-spin" /> Running your code...
+                                            <div className="flex flex-col min-h-0 flex-1">
+                                                <InteractiveTerminal
+                                                    ref={terminalRef}
+                                                    output={interactiveOutput}
+                                                    running={interactiveRunning}
+                                                    exitCode={interactiveExitCode}
+                                                    onSendStdin={sendInteractiveStdin}
+                                                    outputEndRef={interactiveOutputEndRef}
+                                                />
+                                                {/* Removed pre-configured test stdin/file section to rely purely on interactive terminal input */}
+                                                {isRunning && !interactiveRunning && (
+                                                    <div className="flex items-center gap-2 text-[#569cd6] shrink-0 mt-2">
+                                                        <Loader2 className="w-4 h-4 animate-spin" /> Running professor tests and your datasets...
                                                     </div>
-                                                ) : runResult ? (
-                                                    <div className="space-y-3">
-                                                        {/* Compilation Status Banner */}
-                                                        <div className={`flex items-center gap-3 p-3 rounded-lg ${runResult.compilation_status === 'Compiled Successfully'
+                                                )}
+                                                {(runResult || datasetRunResults.length > 0) ? (
+                                                    <div className="space-y-3 flex-1 min-h-0 overflow-y-auto mt-3">
+                                                        {/* Compilation status (from professor run) */}
+                                                        {runResult && (
+                                                            <div className={`flex items-center gap-3 p-3 rounded-lg shrink-0 ${runResult.compilation_status === 'Compiled Successfully'
                                                                 ? 'bg-[#0d2818] border border-[#2ea04366]'
                                                                 : runResult.compilation_status === 'Time Exceeds'
                                                                     ? 'bg-[#332b00] border border-[#665500]'
                                                                     : 'bg-[#2d0000] border border-[#5c1e1e]'
-                                                            }`}>
-                                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${runResult.compilation_status === 'Compiled Successfully'
+                                                                }`}>
+                                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${runResult.compilation_status === 'Compiled Successfully'
                                                                     ? 'bg-[#2ea043]/20'
                                                                     : runResult.compilation_status === 'Time Exceeds'
                                                                         ? 'bg-[#dcdcaa]/20'
                                                                         : 'bg-[#f44747]/20'
-                                                                }`}>
-                                                                {runResult.compilation_status === 'Compiled Successfully'
-                                                                    ? <CheckCircle2 className="w-5 h-5 text-[#4ec9b0]" />
-                                                                    : runResult.compilation_status === 'Time Exceeds'
-                                                                        ? <Clock className="w-5 h-5 text-[#dcdcaa]" />
-                                                                        : <XCircle className="w-5 h-5 text-[#f44747]" />
-                                                                }
-                                                            </div>
-                                                            <div>
-                                                                <p className={`text-[13px] font-semibold ${runResult.compilation_status === 'Compiled Successfully' ? 'text-[#4ec9b0]'
+                                                                    }`}>
+                                                                    {runResult.compilation_status === 'Compiled Successfully'
+                                                                        ? <CheckCircle2 className="w-5 h-5 text-[#4ec9b0]" />
+                                                                        : runResult.compilation_status === 'Time Exceeds'
+                                                                            ? <Clock className="w-5 h-5 text-[#dcdcaa]" />
+                                                                            : <XCircle className="w-5 h-5 text-[#f44747]" />
+                                                                    }
+                                                                </div>
+                                                                <div>
+                                                                    <p className={`text-[13px] font-semibold ${runResult.compilation_status === 'Compiled Successfully' ? 'text-[#4ec9b0]'
                                                                         : runResult.compilation_status === 'Time Exceeds' ? 'text-[#dcdcaa]'
                                                                             : 'text-[#f44747]'
-                                                                    }`}>
-                                                                    {runResult.compilation_status || (runResult.success ? 'Compiled Successfully' : 'Not Compiled Successfully')}
-                                                                </p>
-                                                                {runResult.results.length === 0 && runResult.compilation_status === 'Compiled Successfully' && (
-                                                                    <p className="text-[11px] text-[#858585] mt-0.5">Your code ran without errors.</p>
-                                                                )}
-                                                                {runResult.compilation_status === 'Time Exceeds' && (
-                                                                    <p className="text-[11px] text-[#858585] mt-0.5">Your code exceeded the time limit.</p>
-                                                                )}
+                                                                        }`}>
+                                                                        {runResult.compilation_status || (runResult.success ? 'Compiled Successfully' : 'Not Compiled Successfully')}
+                                                                    </p>
+                                                                    {runResult.results.length > 0 && (
+                                                                        <p className="text-[11px] text-[#858585] mt-0.5">Professor tests: {runResult.tests_passed}/{runResult.tests_total}</p>
+                                                                    )}
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                        {runResult.message && runResult.compilation_status !== 'Compiled Successfully' && (
-                                                            <pre className="text-[#f44747] whitespace-pre-wrap text-[11px] leading-relaxed bg-[#2d0000] p-3 rounded border border-[#5c1e1e]">{runResult.message}</pre>
                                                         )}
-                                                        {runResult.results.length > 0 && (
-                                                            <div className="pt-2 border-t border-[#3c3c3c]">
-                                                                <div className="text-[#858585] text-[11px] mb-2">Test Results: {runResult.tests_passed}/{runResult.tests_total} passed</div>
+                                                        {runResult?.message && runResult.compilation_status !== 'Compiled Successfully' && (
+                                                            <pre className="text-[#f44747] whitespace-pre-wrap text-[11px] leading-relaxed bg-[#2d0000] p-3 rounded border border-[#5c1e1e] shrink-0">{runResult.message}</pre>
+                                                        )}
+                                                        {runResult && runResult.results.length > 0 && (
+                                                            <div className="pt-2 border-t border-[#3c3c3c] shrink-0">
+                                                                <div className="text-[#858585] text-[11px] mb-2">Professor test results</div>
                                                                 {runResult.results.map((r) => (
                                                                     <div key={r.id} className={`flex items-center gap-2 py-0.5 ${r.passed ? 'text-[#4ec9b0]' : 'text-[#f44747]'}`}>
                                                                         {r.passed ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0" /> : <XCircle className="w-3.5 h-3.5 shrink-0" />}
@@ -730,12 +1224,30 @@ export default function StudentAssignmentPage() {
                                                                 ))}
                                                             </div>
                                                         )}
+                                                        {/* User-uploaded dataset run results */}
+                                                        {datasetRunResults.length > 0 && (
+                                                            <div className="pt-2 border-t border-[#3c3c3c] space-y-3 shrink-0">
+                                                                <div className="text-[#858585] text-[11px] uppercase tracking-wider">Your test datasets</div>
+                                                                {datasetRunResults.map((dr, idx) => (
+                                                                    <div key={idx} className="rounded-lg border border-[#3c3c3c] bg-[#252526] overflow-hidden">
+                                                                        <div className="px-3 py-1.5 border-b border-[#3c3c3c] flex items-center gap-2">
+                                                                            <span className="text-[11px] font-medium text-[#cccccc]">{dr.name}</span>
+                                                                            {dr.success ? <CheckCircle2 className="w-3.5 h-3.5 text-[#4ec9b0]" /> : <XCircle className="w-3.5 h-3.5 text-[#f44747]" />}
+                                                                        </div>
+                                                                        <div className="p-3 space-y-1">
+                                                                            {dr.stdout && <pre className="whitespace-pre-wrap text-[#d4d4d4] text-[11px] leading-relaxed">{dr.stdout}</pre>}
+                                                                            {dr.stderr && <pre className="whitespace-pre-wrap text-[#f44747] text-[11px] leading-relaxed">{dr.stderr}</pre>}
+                                                                            {dr.compilation_status && dr.compilation_status !== 'Compiled Successfully' && (
+                                                                                <p className="text-[11px] text-[#f44747]">{dr.compilation_status}</p>
+                                                                            )}
+                                                                            {dr.success && !dr.stdout && !dr.stderr && <p className="text-[11px] text-[#858585]">(no output)</p>}
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
                                                     </div>
-                                                ) : (
-                                                    <div className="text-[#858585] space-y-1">
-                                                        <p>{'>'} Ready. Press <span className="text-[#569cd6]">Run Code</span> or <kbd className="px-1 py-0.5 rounded bg-[#333] text-[#aaa] text-[10px]">⌘+Enter</kbd></p>
-                                                    </div>
-                                                )}
+                                                ) : null}
                                             </div>
                                         ) : (
                                             <div>
@@ -753,27 +1265,83 @@ export default function StudentAssignmentPage() {
                                                             </div>
                                                             <span className="text-[10px] text-[#858585]">{runResult.total_score}/{runResult.max_score} pts</span>
                                                         </div>
-                                                        {runResult.results.map((test) => (
-                                                            <div key={test.id} className={`flex items-center gap-3 px-3 py-2 rounded border ${test.passed ? 'border-[#2ea04366] bg-[#2ea04310]' : 'border-[#f4474766] bg-[#f4474710]'}`}>
-                                                                <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${test.passed ? 'bg-[#2ea043] text-white' : 'bg-[#f44747] text-white'}`}>
-                                                                    {test.passed ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
-                                                                </div>
-                                                                <div className="flex-1">
-                                                                    <div className={`text-[12px] font-medium ${test.passed ? 'text-[#4ec9b0]' : 'text-[#f44747]'}`}>
-                                                                        {test.name} &mdash; {test.passed ? 'passed' : 'failed'}
+                                                        {runResult.results.map((test) => {
+                                                            const isExpanded = expandedTests.has(test.id)
+                                                            const hasDiffView = true
+                                                            return (
+                                                                <div key={test.id} className={`px-3 py-2 rounded border ${test.passed ? 'border-[#2ea04366] bg-[#2ea04310]' : 'border-[#f4474766] bg-[#f4474710]'} space-y-1`}>
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${test.passed ? 'bg-[#2ea043] text-white' : 'bg-[#f44747] text-white'}`}>
+                                                                            {test.passed ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                                                                        </div>
+                                                                        <div className="flex-1 min-w-0">
+                                                                            <div className={`text-[12px] font-medium truncate ${test.passed ? 'text-[#4ec9b0]' : 'text-[#f44747]'}`}>
+                                                                                {test.name} &mdash; {test.passed ? 'passed' : 'failed'}
+                                                                            </div>
+                                                                            {test.error && test.error !== 'Output does not match expected' && (
+                                                                                <div className="text-[10px] text-[#f44747] mt-0.5 truncate">{test.error}</div>
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="flex items-center gap-2 shrink-0">
+                                                                            <div className="text-[10px] text-[#858585]">{test.score}/{test.max_score} pts</div>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => toggleTestDetails(test.id)}
+                                                                                className="flex items-center gap-1 text-[10px] text-[#858585] hover:text-[#cccccc]"
+                                                                            >
+                                                                                <span>Details</span>
+                                                                                {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                                                            </button>
+                                                                        </div>
                                                                     </div>
-                                                                    {test.error && test.error !== 'Output does not match expected' && (
-                                                                        <div className="text-[10px] text-[#f44747] mt-0.5">{test.error}</div>
+                                                                    {isExpanded && (
+                                                                        <div className="mt-2 space-y-2 text-[11px]">
+                                                                            {test.error && test.error !== 'Output does not match expected' && (
+                                                                                <pre className="bg-[#2d0000] border border-[#5c1e1e] text-[#f44747] rounded p-2 whitespace-pre-wrap max-h-28 overflow-auto">
+                                                                                    {test.error}
+                                                                                </pre>
+                                                                            )}
+                                                                            <div className="grid grid-cols-2 gap-2">
+                                                                                <div>
+                                                                                    <div className="flex items-center gap-1 mb-1 text-[#858585]">
+                                                                                        <CheckCircle2 className="w-2.5 h-2.5 text-[#4ec9b0]" />
+                                                                                        <span className="text-[9px] uppercase tracking-wider">Expected</span>
+                                                                                    </div>
+                                                                                    <pre className="max-h-36 overflow-auto bg-[#0d2818] border border-[#2ea04333] rounded p-2 whitespace-pre-wrap text-[#d4d4d4] leading-relaxed">
+                                                                                        {(test.expected_output ?? '').trim() || '(empty)'}
+                                                                                    </pre>
+                                                                                </div>
+                                                                                <div>
+                                                                                    <div className="flex items-center gap-1 mb-1 text-[#858585]">
+                                                                                        {test.passed
+                                                                                            ? <CheckCircle2 className="w-2.5 h-2.5 text-[#4ec9b0]" />
+                                                                                            : <XCircle className="w-2.5 h-2.5 text-[#f44747]" />
+                                                                                        }
+                                                                                        <span className="text-[9px] uppercase tracking-wider">Your Output</span>
+                                                                                    </div>
+                                                                                    <pre className={`max-h-36 overflow-auto rounded p-2 whitespace-pre-wrap leading-relaxed ${test.passed
+                                                                                        ? 'bg-[#0d2818] border border-[#2ea04333] text-[#d4d4d4]'
+                                                                                        : 'bg-[#2d0000] border border-[#5c1e1e] text-[#f4a0a0]'
+                                                                                        }`}>
+                                                                                        {(test.output ?? '').trim() || '(no output)'}
+                                                                                    </pre>
+                                                                                </div>
+                                                                            </div>
+                                                                            {test.execution_time != null && (
+                                                                                <p className="text-[10px] text-[#606060]">
+                                                                                    ⏱ {test.execution_time.toFixed(3)}s
+                                                                                </p>
+                                                                            )}
+                                                                        </div>
                                                                     )}
                                                                 </div>
-                                                                <div className="text-[10px] text-[#858585]">{test.score}/{test.max_score} pts</div>
-                                                            </div>
-                                                        ))}
+                                                            )
+                                                        })}
                                                     </div>
                                                 ) : runResult && runResult.results.length === 0 ? (
                                                     <div className="text-center py-8 space-y-3">
                                                         <div className={`w-14 h-14 mx-auto rounded-full flex items-center justify-center ${runResult.compilation_status === 'Compiled Successfully'
-                                                                ? 'bg-[#2ea043]/20' : 'bg-[#f44747]/20'
+                                                            ? 'bg-[#2ea043]/20' : 'bg-[#f44747]/20'
                                                             }`}>
                                                             {runResult.compilation_status === 'Compiled Successfully'
                                                                 ? <CheckCircle2 className="w-7 h-7 text-[#4ec9b0]" />
@@ -782,13 +1350,12 @@ export default function StudentAssignmentPage() {
                                                         </div>
                                                         <p className={`text-[13px] font-semibold ${runResult.compilation_status === 'Compiled Successfully' ? 'text-[#4ec9b0]' : 'text-[#f44747]'
                                                             }`}>
-                                                            {runResult.compilation_status || (runResult.success ? 'Compiled Successfully' : 'Not Compiled Successfully')}
+                                                            {runResult.compilation_status === 'Compiled Successfully' ? 'Compiled Successfully' : 'Code Error'}
                                                         </p>
                                                         <p className="text-[11px] text-[#858585]">
-                                                            No test cases for this assignment.
                                                             {runResult.compilation_status === 'Compiled Successfully'
-                                                                ? ' Your code compiled and ran without errors.'
-                                                                : ' Check the output panel for details.'}
+                                                                ? 'No test cases for this assignment. Your code ran without errors.'
+                                                                : 'Your code has errors. Check the Output tab for details.'}
                                                         </p>
                                                     </div>
                                                 ) : (
@@ -810,21 +1377,32 @@ export default function StudentAssignmentPage() {
                     {rightPanel && (
                         <div className="w-80 bg-[#252526] border-l border-[#3c3c3c] flex flex-col min-h-0 shrink-0">
                             <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#3c3c3c] shrink-0">
-                                <div className="flex items-center gap-2 text-[13px] font-semibold text-white">
+                                <div className="flex items-center gap-2 text-[14px] font-semibold text-white">
                                     {rightPanel === 'description' && <><BookOpen className="w-4 h-4 text-[#569cd6]" /> Description</>}
                                     {rightPanel === 'instructions' && <><Info className="w-4 h-4 text-[#dcdcaa]" /> Instructions</>}
                                     {rightPanel === 'rubric' && <><ClipboardList className="w-4 h-4 text-[#c586c0]" /> Rubric</>}
-                                    {rightPanel === 'history' && <><History className="w-4 h-4 text-[#4ec9b0]" /> Submissions</>}
+                                    {rightPanel === 'grading' && <><Target className="w-4 h-4 text-[#4ec9b0]" /> Grading</>}
                                     {rightPanel === 'supplementary' && <><Paperclip className="w-4 h-4 text-[#dcdcaa]" /> Supplementary Files</>}
+                                    {rightPanel === 'custom' && <><UploadIcon className="w-4 h-4 text-[#4ec9b0]" /> Custom Input</>}
+                                    {rightPanel === 'group' && <><Users className="w-4 h-4 text-[#4ec9b0]" /> My Group</>}
                                 </div>
                                 <button onClick={() => setRightPanel(null)} className="p-1 rounded hover:bg-[#505050] text-[#858585]">
                                     <X className="w-3.5 h-3.5" />
                                 </button>
                             </div>
 
-                            <div className="flex-1 overflow-y-auto p-4 text-[13px] leading-relaxed">
+                            <div className="flex-1 overflow-y-auto p-4 text-[14px] leading-relaxed">
                                 {rightPanel === 'description' && (
                                     <div className="space-y-4">
+                                        {assignment.allow_groups && (
+                                            <div className="flex items-center gap-2 p-2.5 rounded-lg border border-[#4fc1ff]/30 bg-[#0e639c]/10">
+                                                <Users className="w-4 h-4 text-[#4fc1ff] shrink-0" />
+                                                <div>
+                                                    <p className="text-[11px] font-semibold text-[#4fc1ff]">Group Assignment</p>
+                                                    <p className="text-[10px] text-[#858585]">Groups up to {assignment.max_group_size} members. One submission per group.</p>
+                                                </div>
+                                            </div>
+                                        )}
                                         <p className="text-[#cccccc] whitespace-pre-wrap">{assignment.description || 'No description provided.'}</p>
                                         <div className="grid grid-cols-2 gap-2 mt-4">
                                             <div className="bg-[#1e1e1e] p-2.5 rounded border border-[#3c3c3c]">
@@ -834,10 +1412,6 @@ export default function StudentAssignmentPage() {
                                             <div className="bg-[#1e1e1e] p-2.5 rounded border border-[#3c3c3c]">
                                                 <p className="text-[10px] text-[#858585] uppercase">Max Score</p>
                                                 <p className="text-[12px] text-white font-medium mt-0.5">{assignment.max_score} pts</p>
-                                            </div>
-                                            <div className="bg-[#1e1e1e] p-2.5 rounded border border-[#3c3c3c]">
-                                                <p className="text-[10px] text-[#858585] uppercase">Difficulty</p>
-                                                <p className="text-[12px] text-white font-medium mt-0.5 capitalize">{assignment.difficulty || 'Medium'}</p>
                                             </div>
                                             <div className="bg-[#1e1e1e] p-2.5 rounded border border-[#3c3c3c]">
                                                 <p className="text-[10px] text-[#858585] uppercase">Attempts</p>
@@ -854,21 +1428,6 @@ export default function StudentAssignmentPage() {
                                             <div className="bg-[#1e1e1e] border border-[#3c3c3c] p-3 rounded">
                                                 <p className="text-[11px] font-medium text-[#569cd6]">Allowed File Types</p>
                                                 <p className="text-[11px] text-[#cccccc] mt-1">Only these extensions can be submitted: <code className="px-1 py-0.5 bg-[#333] rounded text-[#dcdcaa]">{allowedExtensions.join(', ')}</code></p>
-                                            </div>
-                                        )}
-                                        {assignment.required_files && assignment.required_files.length > 0 && (
-                                            <div className="bg-[#1e1e1e] border border-[#3c3c3c] p-3 rounded">
-                                                <p className="text-[11px] font-medium text-[#569cd6]">Required Files</p>
-                                                <div className="flex flex-wrap gap-1 mt-1">
-                                                    {assignment.required_files.map(f => {
-                                                        const exists = files.some(uf => uf.name === f)
-                                                        return (
-                                                            <span key={f} className={`text-[10px] px-1.5 py-0.5 rounded ${exists ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-                                                                {exists ? '✓' : '✗'} {f}
-                                                            </span>
-                                                        )
-                                                    })}
-                                                </div>
                                             </div>
                                         )}
                                     </div>
@@ -891,25 +1450,216 @@ export default function StudentAssignmentPage() {
                                     <div>
                                         {assignment.rubric ? (
                                             <div className="space-y-3">
-                                                <div className="bg-[#1e1e1e] p-3 rounded border border-[#3c3c3c]">
-                                                    <p className="text-[11px] text-[#858585]">Grading Weight</p>
-                                                    <div className="flex gap-4 mt-1">
-                                                        <span className="text-[12px] text-[#4ec9b0]">Tests: {assignment.test_weight}%</span>
-                                                        <span className="text-[12px] text-[#c586c0]">Rubric: {assignment.rubric_weight}%</span>
+                                                <p className="text-[12px] text-[#bdbdbd]">
+                                                    Your submission will be evaluated against these criteria.
+                                                </p>
+                                                <div className="rounded-lg border border-[#3c3c3c] overflow-hidden">
+                                                    <div className="px-3 py-2.5 bg-[#1e1e1e] border-b border-[#3c3c3c] flex items-center justify-between">
+                                                        <span className="text-[11px] font-semibold text-[#cccccc] uppercase tracking-wider">Criteria</span>
+                                                        <span className="text-[11px] text-[#dcdcaa] font-semibold">
+                                                            {assignment.rubric.total_points} pts total
+                                                        </span>
                                                     </div>
-                                                    <div className="flex h-2 mt-2 rounded-full overflow-hidden bg-[#333]">
-                                                        <div className="bg-[#4ec9b0]" style={{ width: `${assignment.test_weight}%` }} />
-                                                        <div className="bg-[#c586c0]" style={{ width: `${assignment.rubric_weight}%` }} />
+                                                    <div className="divide-y divide-[#3c3c3c]">
+                                                        {assignment.rubric.items?.map((item: any, idx: number) => {
+                                                            const hasScale = item.min_points != null && item.max_points != null
+                                                            // Find graded score for this item if available
+                                                            const gradedScore = latestSubmissionDetail?.rubric_scores?.find(
+                                                                rs => rs.rubric_item_id === item.id
+                                                            )
+                                                            return (
+                                                                <div key={item.id ?? idx} className="px-3 py-3 hover:bg-[#2a2d2e]">
+                                                                    <div className="flex items-start justify-between gap-2 mb-1">
+                                                                        <span className="text-[12px] font-medium text-white leading-tight">{item.name}</span>
+                                                                        <span className="text-[11px] text-[#dcdcaa] font-semibold shrink-0">
+                                                                            {gradedScore != null
+                                                                                ? `${Number(gradedScore.score).toFixed(1)} / ${item.points ?? item.max_points ?? '?'}`
+                                                                                : `${item.points ?? item.max_points ?? '?'} pts`
+                                                                            }
+                                                                        </span>
+                                                                    </div>
+                                                                    {item.description && (
+                                                                        <p className="text-[11px] text-[#858585] mt-0.5 leading-relaxed">{item.description}</p>
+                                                                    )}
+                                                                    {hasScale && (
+                                                                        <p className="text-[10px] text-[#606060] mt-1">
+                                                                            Scale: {item.min_points} – {item.max_points} → 0 – {item.points} pts
+                                                                        </p>
+                                                                    )}
+                                                                    {gradedScore?.comment && (
+                                                                        <p className="mt-1.5 text-[11px] text-[#a0a0a0] bg-[#1e1e1e] rounded p-1.5 border border-[#3c3c3c]">
+                                                                            💬 {gradedScore.comment}
+                                                                        </p>
+                                                                    )}
+                                                                </div>
+                                                            )
+                                                        })}
                                                     </div>
                                                 </div>
-                                                <p className="text-[11px] text-[#858585]">Detailed rubric criteria are evaluated during grading.</p>
                                             </div>
                                         ) : (
                                             <div className="text-center py-8">
                                                 <ClipboardList className="w-10 h-10 mx-auto text-[#505050] mb-3" />
                                                 <p className="text-[#858585]">No rubric for this assignment.</p>
-                                                <p className="text-[10px] text-[#606060] mt-1">Grading: {assignment.test_weight}% tests</p>
                                             </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {rightPanel === 'grading' && (
+                                    <div className="space-y-4">
+                                        {!isGraded ? (
+                                            <div className="text-center py-10 space-y-4">
+                                                <div className="w-16 h-16 mx-auto rounded-full bg-[#dcdcaa]/10 border border-[#dcdcaa]/20 flex items-center justify-center">
+                                                    <Clock className="w-7 h-7 text-[#dcdcaa]" />
+                                                </div>
+                                                <div>
+                                                    <p className="text-[#cfcfcf] font-semibold text-[14px]">Awaiting Grade</p>
+                                                    <p className="text-[12px] text-[#858585] mt-1">Submitted on attempt #{latestSubmission?.attempt_number}.</p>
+                                                    <p className="text-[11px] text-[#606060] mt-1">Your instructor will grade this soon.</p>
+                                                </div>
+                                                {latestSubmission?.is_late && (
+                                                    <div className="rounded-lg border border-[#665500] bg-[#332b00] p-3 text-left">
+                                                        <p className="text-[11px] font-semibold text-[#dcdcaa]">⚠ Late Submission</p>
+                                                        <p className="text-[10px] text-[#cccccc] mt-1">
+                                                            A {latestSubmission.late_penalty_applied ?? 0}% penalty may be applied.
+                                                        </p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <>
+                                                {/* Final score hero */}
+                                                {(() => {
+                                                    const finalScore = latestSubmissionDetail?.final_score ?? latestSubmission?.final_score ?? 0
+                                                    const maxScore = assignment.max_score
+                                                    const pct = maxScore > 0 ? Math.round((Number(finalScore) / maxScore) * 100) : 0
+                                                    const scoreColor = pct >= 90 ? '#4ec9b0' : pct >= 70 ? '#dcdcaa' : pct >= 50 ? '#ce9178' : '#f44747'
+                                                    const rubricScore = latestSubmissionDetail?.rubric_score ?? 0
+                                                    const latePenalty = latestSubmissionDetail?.late_penalty_applied ?? latestSubmission?.late_penalty_applied ?? 0
+                                                    return (
+                                                        <>
+                                                            {/* Score hero block */}
+                                                            <div className="rounded-xl border border-[#3c3c3c] bg-gradient-to-br from-[#1e1e1e] to-[#252526] p-4 text-center">
+                                                                <p className="text-[10px] text-[#858585] uppercase tracking-widest mb-2">Final Score</p>
+                                                                <div className="flex items-end justify-center gap-1">
+                                                                    <span className="text-4xl font-bold" style={{ color: scoreColor }}>
+                                                                        {Number(finalScore).toFixed(1)}
+                                                                    </span>
+                                                                    <span className="text-[#858585] text-[14px] mb-1.5">/ {maxScore}</span>
+                                                                </div>
+                                                                <div className="mt-3 h-2 bg-[#333] rounded-full overflow-hidden">
+                                                                    <div className="h-full rounded-full transition-all duration-700"
+                                                                        style={{ width: `${pct}%`, backgroundColor: scoreColor }} />
+                                                                </div>
+                                                                <p className="mt-1.5 text-[11px]" style={{ color: scoreColor }}>{pct}%</p>
+                                                            </div>
+
+                                                            {/* Score breakdown */}
+                                                            <div className="rounded-lg border border-[#3c3c3c] overflow-hidden">
+                                                                <div className="px-3 py-2 bg-[#1e1e1e] border-b border-[#3c3c3c]">
+                                                                    <span className="text-[10px] font-semibold text-[#bdbdbd] uppercase tracking-wider">Score Breakdown</span>
+                                                                </div>
+                                                                <div className="divide-y divide-[#3c3c3c]">
+                                                                    <div className="px-3 py-2.5">
+                                                                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                                                                            <span className="text-[12px] text-[#4fc1ff]">Possible Points</span>
+                                                                            <span className="text-[12px] text-white font-semibold">{Number(maxScore).toFixed(1)} pts</span>
+                                                                        </div>
+                                                                        <div className="h-1.5 bg-[#333] rounded-full overflow-hidden">
+                                                                            <div className="h-full bg-[#4fc1ff] rounded-full" style={{ width: '100%' }} />
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="px-3 py-2.5">
+                                                                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                                                                            <span className="text-[12px] text-[#c586c0]">Rubric</span>
+                                                                            <span className="text-[12px] text-white font-semibold">{Number(rubricScore).toFixed(1)} pts</span>
+                                                                        </div>
+                                                                        <div className="h-1.5 bg-[#333] rounded-full overflow-hidden">
+                                                                            <div className="h-full bg-[#c586c0] rounded-full"
+                                                                                style={{ width: `${maxScore > 0 ? Math.min(100, (Number(rubricScore) / maxScore) * 100) : 0}%` }} />
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Rubric item breakdown */}
+                                                            {latestSubmissionDetail?.rubric_scores && latestSubmissionDetail.rubric_scores.length > 0 && (
+                                                                <div className="rounded-lg border border-[#3c3c3c] overflow-hidden">
+                                                                    <div className="px-3 py-2 bg-[#1e1e1e] border-b border-[#3c3c3c]">
+                                                                        <span className="text-[10px] font-semibold text-[#bdbdbd] uppercase tracking-wider">Rubric Criteria</span>
+                                                                    </div>
+                                                                    <div className="divide-y divide-[#3c3c3c]">
+                                                                        {latestSubmissionDetail.rubric_scores.map((rs, idx) => {
+                                                                            const rubricItem = assignment?.rubric?.items?.find((item: any) => item?.id === rs.rubric_item_id)
+                                                                            const rubricScaleMax = Number(rubricItem?.max_points ?? rs?.item?.max_points ?? 0)
+                                                                            const criterionMaxPoints = Number(rubricItem?.points ?? rs.max_score ?? 0)
+                                                                            const itemScore = Number(rs.score ?? 0)
+                                                                            const weightedCriterionScore = rubricScaleMax > 0
+                                                                                ? (itemScore / rubricScaleMax) * criterionMaxPoints
+                                                                                : itemScore
+                                                                            const itemPct = criterionMaxPoints > 0 ? (weightedCriterionScore / criterionMaxPoints) * 100 : 0
+                                                                            const itemColor = itemPct >= 90 ? '#4ec9b0' : itemPct >= 70 ? '#dcdcaa' : itemPct >= 50 ? '#ce9178' : '#f44747'
+                                                                            return (
+                                                                                <div key={`${rs.rubric_item_id}-${idx}`} className="px-3 py-3 hover:bg-[#2a2d2e]">
+                                                                                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                                                                                        <span className="text-[12px] font-medium text-white truncate">
+                                                                                            {rs?.item?.name || `Criterion ${idx + 1}`}
+                                                                                        </span>
+                                                                                        <span className="text-[11px] font-semibold shrink-0" style={{ color: itemColor }}>
+                                                                                            {weightedCriterionScore.toFixed(1)}/{criterionMaxPoints.toFixed(1)}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                    {rubricScaleMax > 0 && criterionMaxPoints > 0 && (
+                                                                                        <p className="text-[10px] text-[#9a9a9a] mb-1.5">
+                                                                                            {itemScore.toFixed(1)}/{rubricScaleMax.toFixed(1)} × {criterionMaxPoints.toFixed(1)} = {weightedCriterionScore.toFixed(1)} pts
+                                                                                        </p>
+                                                                                    )}
+                                                                                    <div className="h-1.5 bg-[#333] rounded-full overflow-hidden">
+                                                                                        <div className="h-full rounded-full transition-all duration-500"
+                                                                                            style={{ width: `${itemPct}%`, backgroundColor: itemColor }} />
+                                                                                    </div>
+                                                                                    {rs.comment && (
+                                                                                        <p className="mt-2 text-[11px] text-[#a0a0a0] whitespace-pre-wrap leading-relaxed bg-[#1e1e1e] rounded p-2 border border-[#3c3c3c]">
+                                                                                            {rs.comment}
+                                                                                        </p>
+                                                                                    )}
+                                                                                </div>
+                                                                            )
+                                                                        })}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+
+                                                            {/* Feedback */}
+                                                            <div className="rounded-lg border border-[#3c3c3c] bg-[#1e1e1e] p-3">
+                                                                <p className="text-[10px] font-semibold text-[#bdbdbd] uppercase tracking-wider mb-2">Instructor Feedback</p>
+                                                                <p className="text-[13px] text-[#e6e6e6] whitespace-pre-wrap leading-relaxed">
+                                                                    {latestSubmissionDetail?.feedback?.trim() ? latestSubmissionDetail.feedback : '— No feedback provided.'}
+                                                                </p>
+                                                            </div>
+
+                                                            {/* Submission metadata */}
+                                                            <div className="rounded-lg border border-[#3c3c3c] bg-[#1e1e1e] p-3 text-[11px] text-[#858585] space-y-1">
+                                                                <div className="flex justify-between">
+                                                                    <span>Attempt</span>
+                                                                    <span className="text-[#cccccc]">#{latestSubmission?.attempt_number ?? 1}</span>
+                                                                </div>
+                                                                <div className="flex justify-between">
+                                                                    <span>Tests passed</span>
+                                                                    <span className="text-[#cccccc]">{latestSubmission?.tests_passed}/{latestSubmission?.tests_total}</span>
+                                                                </div>
+                                                                {latestSubmission?.is_late && (
+                                                                    <div className="flex justify-between">
+                                                                        <span className="text-[#f44747]">Late submission</span>
+                                                                        <span className="text-[#f44747]">-{Number(latePenalty).toFixed(0)}%</span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </>
+                                                    )
+                                                })()}
+                                            </>
                                         )}
                                     </div>
                                 )}
@@ -950,45 +1700,200 @@ export default function StudentAssignmentPage() {
                                     </div>
                                 )}
 
-                                {rightPanel === 'history' && (
-                                    <div>
-                                        {isLoadingSubs ? (
-                                            <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-[#0e639c]" /></div>
-                                        ) : submissions.length === 0 ? (
-                                            <div className="text-center py-8">
-                                                <History className="w-10 h-10 mx-auto text-[#505050] mb-3" />
-                                                <p className="text-[#858585]">No submissions yet</p>
-                                                <p className="text-[10px] text-[#606060] mt-1">Submit your code to see history</p>
+                                {rightPanel === 'custom' && (
+                                    <div className="space-y-4">
+                                        <p className="text-[11px] text-[#858585]">
+                                            Provide custom input to run your code interactively or as batch runs. You can use stdin text, multiple input files, or both.
+                                        </p>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[10px] text-[#707070] uppercase tracking-wider">Input files used as</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setDatasetInputMode('stdin')}
+                                                className={`px-2 py-0.5 text-[10px] rounded border ${datasetInputMode === 'stdin'
+                                                    ? 'bg-[#0e639c]/20 border-[#0e639c] text-white'
+                                                    : 'border-[#3c3c3c] text-[#858585] hover:bg-[#2a2d2e]'
+                                                    }`}
+                                            >
+                                                Stdin
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setDatasetInputMode('file')}
+                                                className={`px-2 py-0.5 text-[10px] rounded border ${datasetInputMode === 'file'
+                                                    ? 'bg-[#0e639c]/20 border-[#0e639c] text-white'
+                                                    : 'border-[#3c3c3c] text-[#858585] hover:bg-[#2a2d2e]'
+                                                    }`}
+                                            >
+                                                Input file
+                                            </button>
+                                        </div>
+                                        {/* Custom stdin textarea */}
+                                        <div className="space-y-1">
+                                            <p className="text-[10px] text-[#707070] uppercase tracking-wider">Standard input (stdin)</p>
+                                            <textarea
+                                                value={customInput}
+                                                onChange={(e) => setCustomInput(e.target.value)}
+                                                placeholder="Type or paste stdin here. Leave empty to skip stdin."
+                                                className="w-full min-h-[80px] px-3 py-2 bg-[#1e1e1e] border border-[#3c3c3c] rounded text-[#d4d4d4] placeholder-[#505050] text-[11px] resize-y focus:outline-none focus:ring-1 focus:ring-[#0e639c]"
+                                                spellCheck={false}
+                                            />
+                                        </div>
+                                        <input
+                                            ref={datasetFileInputRef}
+                                            type="file"
+                                            multiple
+                                            accept=".txt,.in,.dat,text/*"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                                const fileList = e.target.files
+                                                if (!fileList?.length) return
+                                                const toAdd: { name: string; content: string }[] = []
+                                                let done = 0
+                                                const total = fileList.length
+                                                Array.from(fileList).forEach((file) => {
+                                                    const reader = new FileReader()
+                                                    reader.onload = (ev) => {
+                                                        const content = (ev.target?.result ?? '') as string
+                                                        const name = file.name || `input_${toAdd.length + 1}.txt`
+                                                        toAdd.push({ name, content })
+                                                        done++
+                                                        if (done === total) {
+                                                            setUploadedDatasets((prev) => {
+                                                                const names = new Set(prev.map((d) => d.name))
+                                                                const newOnes = toAdd.filter((d) => !names.has(d.name))
+                                                                newOnes.forEach((d) => names.add(d.name))
+                                                                return [...prev, ...newOnes]
+                                                            })
+                                                        }
+                                                    }
+                                                    reader.readAsText(file)
+                                                })
+                                                e.target.value = ''
+                                            }}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => datasetFileInputRef.current?.click()}
+                                            className="w-full flex items-center justify-center gap-2 py-3 rounded-lg border-2 border-dashed border-[#3c3c3c] text-[#858585] hover:border-[#0e639c] hover:text-[#569cd6] transition-colors text-[12px]"
+                                        >
+                                            <UploadIcon className="w-4 h-4" />
+                                            Upload input file(s)
+                                        </button>
+                                        {uploadedDatasets.length === 0 ? (
+                                            <div className="text-center py-6 rounded-lg bg-[#1e1e1e] border border-[#3c3c3c]">
+                                                <p className="text-[11px] text-[#606060]">No input files yet</p>
+                                                <p className="text-[10px] text-[#505050] mt-1">Upload .txt or similar files to run as custom input</p>
                                             </div>
                                         ) : (
                                             <div className="space-y-2">
-                                                <p className="text-[11px] text-[#858585] mb-3">
-                                                    {submissions.length} submission{submissions.length !== 1 ? 's' : ''}
-                                                    {maxAttempts > 0 && ` · ${attemptsLeft} left`}
-                                                </p>
-                                                {submissions.map((sub, i) => (
-                                                    <div key={sub.id} className={`p-3 rounded border ${i === 0 ? 'border-[#0e639c]/50 bg-[#0e639c]/10' : 'border-[#3c3c3c] bg-[#1e1e1e]'}`}>
-                                                        <div className="flex items-center justify-between">
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="text-[12px] font-medium text-white">#{sub.attempt_number}</span>
-                                                                {i === 0 && <span className="text-[9px] px-1 py-0 bg-[#0e639c] text-white rounded">Latest</span>}
-                                                                {sub.is_late && <span className="text-[9px] px-1 py-0 bg-[#665500] text-[#dcdcaa] rounded">Late</span>}
-                                                            </div>
-                                                            <span className="text-[14px] font-bold text-white">
-                                                                {sub.final_score !== null ? sub.final_score.toFixed(1) : '-'}
-                                                                <span className="text-[10px] text-[#858585] font-normal">/{assignment.max_score}</span>
-                                                            </span>
+                                                {uploadedDatasets.map((ds, idx) => (
+                                                    <div
+                                                        key={idx}
+                                                        className="flex items-center gap-3 p-3 rounded-lg border border-[#3c3c3c] bg-[#1e1e1e] group"
+                                                    >
+                                                        <FileCode className="w-4 h-4 text-[#569cd6] shrink-0" />
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="text-[12px] font-medium text-white truncate">{ds.name}</p>
+                                                            <p className="text-[10px] text-[#858585]">{(ds.content.length / 1024).toFixed(1)} KB</p>
                                                         </div>
-                                                        <p className="text-[10px] text-[#858585] mt-1">
-                                                            {format(new Date(sub.submitted_at || sub.created_at), 'MMM dd, yyyy · hh:mm a')}
-                                                            {sub.tests_total > 0 && ` · ${sub.tests_passed}/${sub.tests_total} tests`}
-                                                        </p>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setUploadedDatasets((prev) => prev.filter((_, i) => i !== idx))}
+                                                            className="p-1.5 rounded hover:bg-[#f44747]/20 text-[#858585] hover:text-[#f44747] opacity-0 group-hover:opacity-100 transition-opacity"
+                                                        >
+                                                            <X className="w-3.5 h-3.5" />
+                                                        </button>
                                                     </div>
                                                 ))}
                                             </div>
                                         )}
+
+                                        <button
+                                            type="button"
+                                            onClick={runCustomInput}
+                                            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-[#0e639c] hover:bg-[#1177bb] text-white text-[12px] font-medium mt-2"
+                                        >
+                                            <Play className="w-3.5 h-3.5" />
+                                            Run Custom Input
+                                        </button>
                                     </div>
                                 )}
+
+                                {rightPanel === 'group' && (
+                                    <div className="space-y-4">
+                                        {!myGroup ? (
+                                            <div className="text-center py-10 space-y-3">
+                                                <div className="w-14 h-14 mx-auto rounded-full bg-[#dcdcaa]/10 border border-[#dcdcaa]/20 flex items-center justify-center">
+                                                    <Users className="w-7 h-7 text-[#dcdcaa]" />
+                                                </div>
+                                                <p className="text-[#cfcfcf] font-semibold text-[14px]">Not in a Group</p>
+                                                <p className="text-[11px] text-[#858585]">This is a group assignment. Your instructor will assign you to a group.</p>
+                                                <div className="rounded-lg border border-[#665500] bg-[#332b00] p-3 text-left mt-2">
+                                                    <p className="text-[11px] font-semibold text-[#dcdcaa]">⚠ Group Required</p>
+                                                    <p className="text-[10px] text-[#cccccc] mt-1">You can still submit individually. Contact your instructor to be added to a group.</p>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <div className="rounded-xl border border-[#3c3c3c] bg-gradient-to-br from-[#1e1e1e] to-[#252526] p-4">
+                                                    <div className="flex items-center gap-3 mb-3">
+                                                        <div className="w-10 h-10 rounded-xl bg-[#0e639c]/20 flex items-center justify-center border border-[#0e639c]/30 shrink-0">
+                                                            <Users className="w-5 h-5 text-[#4fc1ff]" />
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-[14px] font-bold text-white">{myGroup.name}</p>
+                                                            <p className="text-[10px] text-[#858585]">{myGroup.members.length} / {myGroup.max_members} members</p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="h-1 bg-[#333] rounded-full overflow-hidden mb-1">
+                                                        <div className="h-full bg-[#4fc1ff] rounded-full"
+                                                            style={{ width: `${(myGroup.members.length / myGroup.max_members) * 100}%` }} />
+                                                    </div>
+                                                </div>
+
+                                                <div className="rounded-lg border border-[#3c3c3c] overflow-hidden">
+                                                    <div className="px-3 py-2 bg-[#1e1e1e] border-b border-[#3c3c3c]">
+                                                        <span className="text-[10px] font-semibold text-[#bdbdbd] uppercase tracking-wider">Members</span>
+                                                    </div>
+                                                    <div className="divide-y divide-[#3c3c3c]">
+                                                        {myGroup.members.map((member) => (
+                                                            <div key={member.user_id} className="px-3 py-2.5 flex items-center gap-3">
+                                                                <div className="w-8 h-8 rounded-full bg-[#333] flex items-center justify-center shrink-0">
+                                                                    <span className="text-[11px] font-bold text-[#cccccc]">
+                                                                        {member.full_name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <span className="text-[12px] font-medium text-white truncate">{member.full_name}</span>
+                                                                        {member.is_leader && (
+                                                                            <Crown className="w-3 h-3 text-[#dcdcaa] shrink-0" />
+                                                                        )}
+                                                                    </div>
+                                                                    {member.student_id && (
+                                                                        <p className="text-[10px] text-[#858585]">{member.student_id}</p>
+                                                                    )}
+                                                                </div>
+                                                                {member.is_leader && (
+                                                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#dcdcaa]/15 text-[#dcdcaa] border border-[#dcdcaa]/25 shrink-0">Leader</span>
+                                                                )}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                <div className="rounded-lg border border-[#3c3c3c] bg-[#1e1e1e] p-3 text-[11px] text-[#858585] space-y-1.5">
+                                                    <p className="text-[#4fc1ff] font-medium text-[12px]">How group submission works:</p>
+                                                    <p>• Any member can submit on behalf of the group.</p>
+                                                    <p>• The grade applies to all group members equally.</p>
+                                                    <p>• All members are notified when the submission is graded.</p>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+
                             </div>
                         </div>
                     )}
@@ -1042,6 +1947,14 @@ export default function StudentAssignmentPage() {
                             <p className="text-sm text-gray-600 mt-2">
                                 Are you sure you want to submit <strong>{files.length} file{files.length !== 1 ? 's' : ''}</strong> for grading?
                             </p>
+                            {myGroup && (
+                                <div className="mt-2 p-2 rounded-lg bg-blue-50 border border-blue-200 flex items-center gap-2">
+                                    <Users className="w-4 h-4 text-blue-600 shrink-0" />
+                                    <p className="text-xs text-blue-800">
+                                        Submitting for group <strong>{myGroup.name}</strong> — this grade applies to all {myGroup.members.length} members.
+                                    </p>
+                                </div>
+                            )}
                             <div className="mt-4 p-4 rounded-lg bg-amber-50 border border-amber-200">
                                 <p className="text-sm font-medium text-amber-800">
                                     This submission must be your own original work. No AI assistance or plagiarism is allowed.
@@ -1061,13 +1974,23 @@ export default function StudentAssignmentPage() {
                         )}
                         {maxAttempts > 0 && (
                             <p className="text-xs text-gray-500 text-center">
-                                This will use attempt <strong>{submissions.length + 1}</strong> of <strong>{maxAttempts}</strong>.
+                                This will use attempt <strong>{attemptsUsed + 1}</strong> of <strong>{maxAttempts}</strong>.
                             </p>
                         )}
+                        {latestSubmission && (
+                            <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 flex items-start gap-2">
+                                <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                                <p className="text-xs text-blue-800">
+                                    This will <strong>replace</strong> your previous submission (attempt #{latestSubmission.attempt_number}).
+                                </p>
+                            </div>
+                        )}
                         <div className="space-y-2">
-                            <p className="text-sm font-medium text-gray-700">Files to submit:</p>
+                            <p className="text-sm font-medium text-gray-700">
+                                Your files ({files.filter(f => f.origin !== 'utility').length}):
+                            </p>
                             <div className="max-h-32 overflow-y-auto space-y-1 rounded-lg border border-gray-200 p-2">
-                                {files.map(f => (
+                                {files.filter(f => f.origin !== 'utility').map(f => (
                                     <div key={f.name} className="flex items-center justify-between px-2 py-1.5 rounded bg-gray-50 text-sm">
                                         <div className="flex items-center gap-2 min-w-0">
                                             <span>{getFileIcon(f.name)}</span>
@@ -1077,6 +2000,11 @@ export default function StudentAssignmentPage() {
                                     </div>
                                 ))}
                             </div>
+                            {files.filter(f => f.origin === 'utility').length > 0 && (
+                                <p className="text-xs text-gray-400">
+                                    + {files.filter(f => f.origin === 'utility').length} utility file(s) included automatically
+                                </p>
+                            )}
                         </div>
                         <ModalFooter className="gap-3 pt-2">
                             <Button variant="outline" onClick={() => setShowSubmitDialog(false)}>
@@ -1122,12 +2050,12 @@ export default function StudentAssignmentPage() {
                         <div className="text-center space-y-1">
                             <h3 className="text-xl font-bold text-gray-900">Submitted Successfully</h3>
                             <p className="text-sm text-gray-600 max-w-xs">
-                                Your code has been submitted for grading. You'll see your results once grading is complete.
+                                Your code has been submitted for grading. You'll be notified once it's graded.
                             </p>
                         </div>
-                        {maxAttempts > 0 && (
+                        {maxAttempts > 0 && submittedAttemptNum !== null && (
                             <p className="text-xs text-gray-500 bg-gray-100 px-3 py-1.5 rounded-full">
-                                Attempt {submissions.length}/{maxAttempts} used
+                                Attempt {submittedAttemptNum} of {maxAttempts}
                             </p>
                         )}
                         <p className="text-xs text-gray-400">Redirecting to course...</p>
@@ -1137,6 +2065,16 @@ export default function StudentAssignmentPage() {
                     </div>
                 )}
             </Modal>
+
+            {/* Confetti Popup for All Tests Passed */}
+            <ConfettiPopup
+                isOpen={showConfetti}
+                onClose={() => setShowConfetti(false)}
+                title="All Tests Passed!"
+                message={`Congratulations! You passed all ${runResult?.tests_total || 0} test cases.`}
+                description="Your code is working perfectly. Ready to submit?"
+                acknowledgeLabel="Awesome!"
+            />
         </ProtectedRoute>
     )
 }

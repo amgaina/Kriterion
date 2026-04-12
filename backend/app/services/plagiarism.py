@@ -35,37 +35,11 @@ JPLAG_LANGUAGE_MAP = {
     "python": "python3",
     "python3": "python3",
     "java": "java",
-    "c": "c",
-    "cpp": "cpp",
-    "c++": "cpp",
-    "csharp": "csharp",
-    "c#": "csharp",
-    "javascript": "javascript",
-    "js": "javascript",
-    "typescript": "typescript",
-    "ts": "typescript",
-    "go": "go",
-    "kotlin": "kotlin",
-    "scala": "scala",
-    "rust": "rust",
-    "swift": "swift",
-    "r": "rlang",
 }
 
 FILE_EXT_MAP = {
     "python": ".py", "python3": ".py",
     "java": ".java",
-    "c": ".c",
-    "cpp": ".cpp", "c++": ".cpp",
-    "csharp": ".cs", "c#": ".cs",
-    "javascript": ".js", "js": ".js",
-    "typescript": ".ts", "ts": ".ts",
-    "go": ".go",
-    "kotlin": ".kt",
-    "scala": ".scala",
-    "rust": ".rs",
-    "swift": ".swift",
-    "r": ".r",
 }
 
 
@@ -81,11 +55,6 @@ def _jplag_available() -> bool:
 _COMMENT_PATTERNS = {
     "python": [r'#.*$', r'"""[\s\S]*?"""', r"'''[\s\S]*?'''"],
     "java": [r'//.*$', r'/\*[\s\S]*?\*/'],
-    "c": [r'//.*$', r'/\*[\s\S]*?\*/'],
-    "cpp": [r'//.*$', r'/\*[\s\S]*?\*/'],
-    "javascript": [r'//.*$', r'/\*[\s\S]*?\*/'],
-    "typescript": [r'//.*$', r'/\*[\s\S]*?\*/'],
-    "csharp": [r'//.*$', r'/\*[\s\S]*?\*/'],
 }
 _STRING_PAT = re.compile(r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'')
 _WS_PAT = re.compile(r'\s+')

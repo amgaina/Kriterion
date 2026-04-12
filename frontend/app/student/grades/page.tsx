@@ -18,7 +18,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
+import { ScoreBadge } from '@/components/ui/ScoreBadge';
 import { InnerHeaderDesign } from '@/components/InnerHeaderDesign';
+import { getScoreBgColor, getScoreTextColor } from '@/lib/score-utils';
 import {
     Award,
     Search,
@@ -52,22 +54,6 @@ interface Course {
     id: number;
     code: string;
     name: string;
-}
-
-function getScoreColor(pct: number) {
-    if (pct >= 90) return 'text-green-600';
-    if (pct >= 80) return 'text-blue-600';
-    if (pct >= 70) return 'text-amber-600';
-    if (pct >= 60) return 'text-orange-600';
-    return 'text-red-600';
-}
-
-function getScoreBgColor(pct: number) {
-    if (pct >= 90) return 'bg-green-50';
-    if (pct >= 80) return 'bg-blue-50';
-    if (pct >= 70) return 'bg-amber-50';
-    if (pct >= 60) return 'bg-orange-50';
-    return 'bg-red-50';
 }
 
 export default function StudentGradesPage() {
@@ -238,7 +224,7 @@ export default function StudentGradesPage() {
                                 <CardContent className="p-4">
                                     <div className="flex items-center gap-3">
                                         <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${avg > 0 ? getScoreBgColor(avg) : 'bg-gray-50'}`}>
-                                            <BookOpen className={`w-6 h-6 ${avg > 0 ? getScoreColor(avg) : 'text-gray-400'}`} />
+                                            <BookOpen className={`w-6 h-6 ${avg > 0 ? getScoreTextColor(avg) : 'text-gray-400'}`} />
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <p className="font-semibold text-gray-900 truncate">{course.name}</p>
@@ -347,7 +333,7 @@ export default function StudentGradesPage() {
                                                             >
                                                                 <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${isGraded ? getScoreBgColor(pct) : 'bg-gray-50'}`}>
                                                                     {isGraded ? (
-                                                                        <span className={`text-sm font-bold ${getScoreColor(pct)}`}>
+                                                                        <span className={`text-sm font-bold ${getScoreTextColor(pct)}`}>
                                                                             {pct}%
                                                                         </span>
                                                                     ) : (
@@ -366,9 +352,9 @@ export default function StudentGradesPage() {
                                                                 </div>
                                                                 <div className="flex items-center gap-2 flex-shrink-0">
                                                                     {isGraded ? (
-                                                                        <Badge variant={pct >= 80 ? 'success' : pct >= 60 ? 'warning' : 'danger'}>
+                                                                        <ScoreBadge percent={pct}>
                                                                             {sub!.final_score}/{maxScore}
-                                                                        </Badge>
+                                                                        </ScoreBadge>
                                                                     ) : (
                                                                         <Badge variant="outline" className="text-gray-500 border-gray-200">
                                                                             -/{maxScore}

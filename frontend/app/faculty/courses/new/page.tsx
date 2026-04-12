@@ -9,13 +9,16 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
+import { useMutationWithInvalidation } from '@/lib/use-mutation-with-invalidation';
 import apiClient from '@/lib/api-client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Calendar } from '@/components/ui/calendar';
+import { Modal } from '@/components/ui/modal';
 import { CourseLoadingPage, CourseLoadingSpinner } from '@/components/course/CourseLoading';
-import { ArrowLeft, AlertCircle } from 'lucide-react';
+import { ArrowLeft, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 const SEMESTERS = ['Fall', 'Spring', 'Summer', 'Winter'];
 const currentYear = new Date().getFullYear();
@@ -42,6 +45,20 @@ const toDateInput = (s: string | null | undefined): string => {
     return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
 };
 
+const toLocalDateInput = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+const fromDateInput = (value: string): Date | null => {
+    if (!value) return null;
+    const [year, month, day] = value.split('-').map(Number);
+    if (!year || !month || !day) return null;
+    return new Date(year, month - 1, day);
+};
+
 const today = () => new Date().toISOString().slice(0, 10);
 
 const initialForm: FormData = {
@@ -62,16 +79,19 @@ const initialForm: FormData = {
 export default function NewCoursePage() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const queryClient = useQueryClient();
     const editId = searchParams.get('edit') ? parseInt(searchParams.get('edit')!, 10) : null;
     const isEdit = Boolean(editId && !isNaN(editId));
 
     const [form, setForm] = useState<FormData>(initialForm);
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [formLoaded, setFormLoaded] = useState(!isEdit);
+    const [showSuccessModal, setShowSuccessModal] = useState(false);
 
-    const minStartDate = isEdit ? undefined : today();
-    const minEndDate = form.start_date || (isEdit ? undefined : today());
+    const todayDate = fromDateInput(today()) || new Date();
+    const minStartDate = isEdit ? undefined : todayDate;
+    const minEndDate = form.start_date
+        ? fromDateInput(form.start_date) || (isEdit ? undefined : todayDate)
+        : (isEdit ? undefined : todayDate);
 
     const { data: course } = useQuery({
         queryKey: ['course', editId],
@@ -99,7 +119,7 @@ export default function NewCoursePage() {
         }
     }, [isEdit, course]);
 
-    const createMutation = useMutation({
+    const createMutation = useMutationWithInvalidation({
         mutationFn: (data: FormData) => {
             const payload: Record<string, unknown> = {
                 code: data.code.trim().toUpperCase(),
@@ -117,9 +137,9 @@ export default function NewCoursePage() {
             if (data.end_date) payload.end_date = new Date(data.end_date).toISOString();
             return apiClient.createCourse(payload);
         },
+        invalidateGroups: ['allCourses', 'allDashboards'],
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['faculty-courses'] });
-            router.push('/faculty/courses');
+            setShowSuccessModal(true);
         },
         onError: (err: any) => {
             const detail = err?.response?.data?.detail;
@@ -138,7 +158,7 @@ export default function NewCoursePage() {
         },
     });
 
-    const updateMutation = useMutation({
+    const updateMutation = useMutationWithInvalidation({
         mutationFn: (data: FormData) => {
             const payload: Record<string, unknown> = {
                 code: data.code.trim().toUpperCase(),
@@ -159,9 +179,9 @@ export default function NewCoursePage() {
             else payload.end_date = null;
             return apiClient.updateCourse(editId!, payload);
         },
+        invalidateGroups: ['allCourses', 'allDashboards'],
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['faculty-courses'] });
-            router.push('/faculty/courses');
+            setShowSuccessModal(true);
         },
         onError: (err: any) => {
             const detail = err?.response?.data?.detail;
@@ -264,6 +284,40 @@ export default function NewCoursePage() {
             {isEdit && !formLoaded && (
                 <CourseLoadingPage message="Loading course..." />
             )}
+
+            <Modal
+                isOpen={showSuccessModal}
+                onClose={() => {
+                    setShowSuccessModal(false);
+                    router.push('/faculty/courses');
+                }}
+                size="sm"
+            >
+                <div className="flex flex-col items-center text-center gap-4 py-2">
+                    <div className="w-14 h-14 rounded-full bg-green-50 flex items-center justify-center">
+                        <CheckCircle2 className="w-8 h-8 text-green-600" />
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-semibold text-gray-900">
+                            {isEdit ? 'Changes Saved' : 'Course Created'}
+                        </h3>
+                        <p className="text-sm text-gray-500 mt-1">
+                            {isEdit
+                                ? `"${form.name}" has been updated successfully.`
+                                : `"${form.name}" has been created successfully.`}
+                        </p>
+                    </div>
+                    <Button
+                        onClick={() => {
+                            setShowSuccessModal(false);
+                            router.push('/faculty/courses');
+                        }}
+                        className="w-full bg-[#862733] hover:bg-[#a03040]"
+                    >
+                        Go to Courses
+                    </Button>
+                </div>
+            </Modal>
 
             {formLoaded && (
                 <form onSubmit={handleSubmit} className="space-y-6 animate-slide-up">
@@ -376,20 +430,19 @@ export default function NewCoursePage() {
 
                             {/* Dates */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <Input
+                                <Calendar
                                     label="Start Date"
-                                    type="date"
-                                    {...(minStartDate && { min: minStartDate })}
-                                    value={form.start_date}
-                                    onChange={(e) => update('start_date', e.target.value)}
+                                    selectedDate={fromDateInput(form.start_date)}
+                                    onDateChange={(date) => update('start_date', date ? toLocalDateInput(date) : '')}
+                                    minDate={minStartDate}
+                                    maxDate={form.end_date ? (fromDateInput(form.end_date) || undefined) : undefined}
                                     error={errors.start_date}
                                 />
-                                <Input
+                                <Calendar
                                     label="End Date"
-                                    type="date"
-                                    {...(minEndDate && { min: minEndDate })}
-                                    value={form.end_date}
-                                    onChange={(e) => update('end_date', e.target.value)}
+                                    selectedDate={fromDateInput(form.end_date)}
+                                    onDateChange={(date) => update('end_date', date ? toLocalDateInput(date) : '')}
+                                    minDate={minEndDate}
                                     error={errors.end_date}
                                 />
                             </div>

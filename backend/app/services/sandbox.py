@@ -103,39 +103,32 @@ class SandboxExecutor:
         
         elif lang == "java":
             main_class = self._find_java_main_class(code_path)
-            return f"javac *.java && java {main_class} {a}".strip()
-        
-        elif lang == "cpp" or lang == "c++":
-            return f"g++ -std=c++17 -o program *.cpp && ./program {a}".strip()
-        
-        elif lang == "c":
-            return f"gcc -std=c11 -o program *.c && ./program {a}".strip()
-        
-        elif lang == "javascript":
-            js_files = glob.glob(os.path.join(code_path, "*.js"))
-            if not js_files:
-                return "echo 'No .js files found'"
-            entry = os.path.basename(js_files[0])
-            for jf in js_files:
-                if os.path.basename(jf).lower() in ("main.js", "index.js"):
-                    entry = os.path.basename(jf)
-                    break
-            return f"node {entry} {a}".strip()
-        
-        elif lang == "typescript":
-            ts_files = glob.glob(os.path.join(code_path, "*.ts"))
-            if not ts_files:
-                return "echo 'No .ts files found'"
-            entry = os.path.basename(ts_files[0])
-            return f"ts-node {entry} {a}".strip()
-        
-        elif lang in ("csharp", "c#"):
-            cs_files = glob.glob(os.path.join(code_path, "*.cs"))
-            cs_file = os.path.basename(cs_files[0]) if cs_files else "Program.cs"
-            return f"mcs -out:program.exe {cs_file} && mono program.exe {a}".strip()
-        
-        return "echo 'Unsupported language'"
-    
+            # Use full paths for better compatibility across different environments
+            javac_cmd = "javac"
+            java_cmd = "java"
+            
+            # On macOS in development, try to use full paths
+            try:
+                java_home = subprocess.run(
+                    ['/usr/libexec/java_home'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                ).stdout.strip()
+                if java_home:
+                    javac_cmd = f"{java_home}/bin/javac"
+                    java_cmd = f"{java_home}/bin/java"
+            except Exception:
+                pass
+            
+            return f"{javac_cmd} *.java && {java_cmd} {main_class} {a}".strip()
+
+        return "echo 'Unsupported language (only python and java are enabled)'"
+
+    def get_exec_command(self, language: str, code_path: str, command_args: Optional[str] = None) -> str:
+        """Public: return shell command to run code (for interactive execution)."""
+        return self._get_exec_command(language, code_path, command_args)
+
     def _run_in_docker(
         self,
         command: str,
@@ -191,13 +184,30 @@ class SandboxExecutor:
     
     def _run_local(self, command: str, code_path: str, stdin_input: Optional[str] = None) -> Dict[str, Any]:
         try:
+            # Ensure Java is accessible on macOS by setting JAVA_HOME if not already set
+            env = os.environ.copy()
+            if not env.get('JAVA_HOME'):
+                try:
+                    java_home = subprocess.run(
+                        ['/usr/libexec/java_home'],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    ).stdout.strip()
+                    if java_home:
+                        env['JAVA_HOME'] = java_home
+                        env['PATH'] = f"{java_home}/bin:{env.get('PATH', '')}"
+                except Exception:
+                    pass
+            
             process = subprocess.run(
                 command,
                 shell=True,
                 cwd=code_path,
                 input=stdin_input.encode() if stdin_input else None,
                 capture_output=True,
-                timeout=self.timeout
+                timeout=self.timeout,
+                env=env
             )
             return {
                 "stdout": process.stdout.decode('utf-8', errors='replace'),

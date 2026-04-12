@@ -1,3 +1,4 @@
+import threading
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from collections import defaultdict
@@ -11,10 +12,10 @@ from pathlib import Path
 
 from app.api.deps import get_db, get_current_user, require_role
 from app.models import (
-    User, UserRole, Assignment, Course, CourseAssistant, Submission, SubmissionFile, TestResult, RubricScore,
-    Enrollment, EnrollmentStatus, Group, GroupMembership, AuditLog
+    User, UserRole, Assignment, Course, CourseAssistant, Submission, SubmissionFile, TestResult as TestResultORM, RubricScore,
+    Enrollment, EnrollmentStatus, Group, GroupMembership, AuditLog, NotificationType
 )
-from app.models.assignment import Rubric, RubricCategory, RubricItem, TestCase
+from app.models.assignment import Rubric, RubricItem, TestCase
 from app.schemas.submission import (
     SubmissionCreate,
     Submission as SubmissionSchema,
@@ -22,14 +23,27 @@ from app.schemas.submission import (
     SubmissionWithStudent,
     SubmissionDetailWithStudent,
     PlagiarismMatchOut,
+    GroupInSubmission,
+    GroupMemberInSubmission,
 )
 from sqlalchemy.orm import joinedload
 from app.core.config import settings
 from app.core.logging import logger
 from app.services.grading import GradingService
+from app.services.notifications import create_notification, notify_users, get_assistant_ids_for_course
 from app.services.s3_storage import s3_service
+from app.services.notification import notify_student_grade_posted
 
 router = APIRouter()
+
+
+def _is_submission_graded(submission: Submission) -> bool:
+    """Treat submission as graded if it has a score or a graded/completed status."""
+    status_value = str(submission.status or "").lower()
+    return (
+        submission.final_score is not None
+        or status_value in {"completed", "autograded", "graded"}
+    )
 
 
 def _can_grade_for_course(db: Session, user: User, course_id: int) -> bool:
@@ -58,10 +72,23 @@ def list_submissions(
 ):
     """List submissions - students see their own, faculty/assistant see submissions from their courses"""
     query = db.query(Submission)
-    
+
     if current_user.role == UserRole.STUDENT:
-        # Students only see their own submissions
-        query = query.filter(Submission.student_id == current_user.id)
+        # Students see their own submissions + group members' submissions (for group assignments)
+        student_group_ids = [
+            gm.group_id for gm in db.query(GroupMembership).filter(
+                GroupMembership.user_id == current_user.id
+            ).all()
+        ]
+        if student_group_ids:
+            query = query.filter(
+                or_(
+                    Submission.student_id == current_user.id,
+                    Submission.group_id.in_(student_group_ids)
+                )
+            )
+        else:
+            query = query.filter(Submission.student_id == current_user.id)
     elif current_user.role == UserRole.FACULTY:
         # Faculty see submissions from their courses
         course_ids = [c.id for c in db.query(Course).filter(Course.instructor_id == current_user.id).all()]
@@ -97,6 +124,25 @@ def list_submissions(
         query = query.filter(Submission.student_id == student_id)
     
     submissions = query.order_by(desc(Submission.submitted_at)).all()
+
+    # Mask scores for students when grades are not published
+    if current_user.role == UserRole.STUDENT and submissions:
+        assignment_ids = {s.assignment_id for s in submissions}
+        published_set = {
+            row[0] for row in db.query(Assignment.id).filter(
+                Assignment.id.in_(assignment_ids),
+                Assignment.grades_published == True,
+            ).all()
+        }
+        _score_fields = {"test_score", "rubric_score", "raw_score", "final_score", "override_score", "feedback"}
+        masked = []
+        for sub in submissions:
+            schema = SubmissionSchema.model_validate(sub)
+            if sub.assignment_id not in published_set:
+                schema = schema.model_copy(update={f: None for f in _score_fields})
+            masked.append(schema)
+        return masked
+
     return submissions
 
 
@@ -116,12 +162,39 @@ def list_assignment_submissions(
 
     submissions = (
         db.query(Submission)
-        .options(joinedload(Submission.student))
+        .options(
+            joinedload(Submission.student),
+            joinedload(Submission.group).joinedload(Group.memberships).joinedload(GroupMembership.user),
+        )
         .filter(Submission.assignment_id == assignment_id)
         .order_by(desc(Submission.submitted_at))
         .all()
     )
-    return submissions
+
+    # Build response manually to attach group member info
+    result = []
+    for sub in submissions:
+        sub_dict = SubmissionWithStudent.model_validate(sub)
+        if sub.group:
+            members = [
+                GroupMemberInSubmission(
+                    id=m.id,
+                    user_id=m.user_id,
+                    full_name=m.user.full_name if m.user else "",
+                    email=m.user.email if m.user else "",
+                    student_id=m.user.student_id if m.user else None,
+                    is_leader=m.is_leader,
+                )
+                for m in sub.group.memberships
+                if m.user is not None
+            ]
+            sub_dict.group = GroupInSubmission(
+                id=sub.group.id,
+                name=sub.group.name,
+                members=members,
+            )
+        result.append(sub_dict)
+    return result
 
 
 def _get_assignment_ids_for_grader(db: Session, user: User) -> List[int]:
@@ -172,24 +245,29 @@ def get_grading_stats(
     submissions = (
         db.query(Submission)
         .filter(Submission.assignment_id.in_(assignment_ids))
-        .order_by(Submission.assignment_id, Submission.student_id, desc(Submission.submitted_at))
         .all()
     )
 
-    # Group by (assignment_id, student_id), take latest (first after desc sort)
-    latest_by_student: Dict[Tuple[int, int], Submission] = {}
+    # Group by (assignment_id, student_id) and select latest deterministically
+    # using submitted_at, then attempt_number, then id.
+    latest_by_student: Dict[Tuple[int, int], Tuple[Tuple[datetime, int, int], Submission]] = {}
     for s in submissions:
         key = (s.assignment_id, s.student_id)
-        if key not in latest_by_student:
-            latest_by_student[key] = s
+        rank = (
+            s.submitted_at or datetime.min,
+            int(s.attempt_number or 0),
+            int(s.id or 0),
+        )
+        existing = latest_by_student.get(key)
+        if existing is None or rank > existing[0]:
+            latest_by_student[key] = (rank, s)
 
     # Per-assignment counts
     by_assignment: Dict[int, Dict[str, int]] = defaultdict(lambda: {"pending": 0, "graded": 0})
     total_pending = 0
     total_graded = 0
-    for (aid, _), sub in latest_by_student.items():
-        is_completed = str(sub.status or "").lower() == "completed"
-        if is_completed:
+    for (aid, _), (_, sub) in latest_by_student.items():
+        if _is_submission_graded(sub):
             by_assignment[aid]["graded"] += 1
             total_graded += 1
         else:
@@ -217,7 +295,9 @@ def get_submission(
             joinedload(Submission.files),
             joinedload(Submission.test_results),
             joinedload(Submission.plagiarism_matches),
+            joinedload(Submission.rubric_scores).joinedload(RubricScore.item),
             joinedload(Submission.assignment).joinedload(Assignment.course),
+            joinedload(Submission.group).joinedload(Group.memberships).joinedload(GroupMembership.user),
         )
         .filter(Submission.id == submission_id)
         .first()
@@ -244,7 +324,41 @@ def get_submission(
         if not _can_grade_for_course(db, current_user, submission.assignment.course_id):
             raise HTTPException(status_code=403, detail="Access denied")
     
-    return submission
+    result = SubmissionDetailWithStudent.model_validate(submission)
+
+    # Students cannot see scores until faculty publishes grades
+    if current_user.role == UserRole.STUDENT:
+        grades_visible = getattr(submission.assignment, "grades_published", False)
+        if not grades_visible:
+            result = result.model_copy(update={
+                "final_score": None,
+                "raw_score": None,
+                "test_score": None,
+                "rubric_score": None,
+                "override_score": None,
+                "feedback": None,
+            })
+
+    if submission.group:
+        from app.schemas.submission import GroupInSubmission, GroupMemberInSubmission
+        members = [
+            GroupMemberInSubmission(
+                id=m.id,
+                user_id=m.user_id,
+                full_name=m.user.full_name if m.user else "",
+                email=m.user.email if m.user else "",
+                student_id=m.user.student_id if m.user else None,
+                is_leader=m.is_leader,
+            )
+            for m in submission.group.memberships
+            if m.user is not None
+        ]
+        result.group = GroupInSubmission(
+            id=submission.group.id,
+            name=submission.group.name,
+            members=members,
+        )
+    return result
 
 
 @router.post("", response_model=SubmissionSchema, status_code=status.HTTP_201_CREATED)
@@ -275,20 +389,24 @@ async def create_submission(
     if not enrollment:
         raise HTTPException(status_code=403, detail="Not enrolled in this course")
     
+    # Find previous submissions for this student (used for attempt tracking and replacement)
+    previous_submissions = db.query(Submission).filter(
+        and_(
+            Submission.assignment_id == assignment_id,
+            Submission.student_id == current_user.id
+        )
+    ).order_by(Submission.attempt_number.asc()).all()
+
+    prev_attempt_number = previous_submissions[-1].attempt_number if previous_submissions else 0
+    new_attempt_number = prev_attempt_number + 1
+
     # Check max attempts
-    if assignment.max_attempts > 0:
-        attempt_count = db.query(Submission).filter(
-            and_(
-                Submission.assignment_id == assignment_id,
-                Submission.student_id == current_user.id
-            )
-        ).count()
-        if attempt_count >= assignment.max_attempts:
-            raise HTTPException(
-                status_code=403,
-                detail=f"Maximum attempts ({assignment.max_attempts}) reached"
-            )
-    
+    if assignment.max_attempts > 0 and new_attempt_number > assignment.max_attempts:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Maximum attempts ({assignment.max_attempts}) reached"
+        )
+
     # Verify group if provided
     if group_id:
         if not assignment.allow_groups:
@@ -303,16 +421,6 @@ async def create_submission(
         if not group_member:
             raise HTTPException(status_code=403, detail="Not a member of this group")
     
-    # Validate required files
-    if assignment.required_files:
-        uploaded_filenames = [f.filename for f in files]
-        for required_file in assignment.required_files:
-            if required_file not in uploaded_filenames:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Required file missing: {required_file}"
-                )
-
     # Validate allowed file extensions
     allowed_extensions = assignment.allowed_file_extensions
     if allowed_extensions:
@@ -342,14 +450,30 @@ async def create_submission(
             )
         late_penalty = min(days_late * assignment.late_penalty_per_day, 100.0)
     
-    # Get attempt number
-    attempt_number = db.query(Submission).filter(
-        and_(
-            Submission.assignment_id == assignment_id,
-            Submission.student_id == current_user.id
-        )
-    ).count() + 1
-    
+    # Delete old submissions and their physical files (replace model: one submission per student)
+    use_s3 = getattr(settings, 'USE_S3_STORAGE', False)
+    for old_sub in previous_submissions:
+        # Remove physical files
+        if use_s3:
+            for old_file in old_sub.files:
+                try:
+                    s3_service.delete_file(old_file.file_path)
+                except Exception as del_err:
+                    logger.warning(f"Could not delete S3 file {old_file.file_path}: {del_err}")
+        else:
+            old_sub_dir = Path(settings.SUBMISSIONS_DIR) / str(old_sub.id)
+            if old_sub_dir.exists():
+                try:
+                    shutil.rmtree(old_sub_dir)
+                except Exception as del_err:
+                    logger.warning(f"Could not delete local submission dir {old_sub_dir}: {del_err}")
+        db.delete(old_sub)  # cascade deletes SubmissionFile, TestResult, RubricScore
+
+    if previous_submissions:
+        db.flush()  # apply deletes before inserting new submission
+
+    attempt_number = new_attempt_number
+
     # Create submission
     submission = Submission(
         assignment_id=assignment_id,
@@ -401,37 +525,40 @@ async def create_submission(
                     detail=f"File {upload_file.filename} is empty"
                 )
             
-            if settings.USE_S3_STORAGE:
-                # Upload to S3
+            use_s3 = getattr(settings, 'USE_S3_STORAGE', False)
+            if use_s3:
                 from io import BytesIO
                 file_io = BytesIO(file_content)
-                
-                s3_data = s3_service.upload_submission_file(
-                    file_content=file_io,
-                    filename=upload_file.filename,
-                    submission_id=submission.id,
-                    student_id=current_user.id,
-                    assignment_id=assignment_id
-                )
-                
-                # Create file record with S3 data
+                try:
+                    s3_data = s3_service.upload_submission_file(
+                        file_content=file_io,
+                        filename=upload_file.filename,
+                        submission_id=submission.id,
+                        student_id=current_user.id,
+                        assignment_id=assignment_id
+                    )
+                except Exception as s3_err:
+                    logger.error(f"S3 upload failed for {upload_file.filename}: {s3_err}")
+                    db.rollback()
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"S3 storage failed: {str(s3_err)}. Check AWS credentials, bucket '{getattr(settings, 'AWS_S3_BUCKET_NAME', '')}' exists in region '{getattr(settings, 'AWS_REGION', '')}', and IAM has s3:PutObject."
+                    ) from s3_err
                 sub_file = SubmissionFile(
                     submission_id=submission.id,
                     filename=upload_file.filename,
                     original_filename=upload_file.filename,
-                    file_path=s3_data['s3_url'],  # Store S3 URL
-                    file_hash=s3_data['file_hash']
+                    file_path=s3_data['s3_url'],
+                    file_hash=s3_data['file_hash'],
+                    file_size_bytes=file_size
                 )
                 db.add(sub_file)
-                
                 uploaded_files_data.append({
                     'filename': upload_file.filename,
                     's3_url': s3_data['s3_url'],
                     's3_key': s3_data['s3_key']
                 })
-                
                 logger.info(f"File {upload_file.filename} uploaded to S3: {s3_data['s3_url']}")
-                
             else:
                 # Save to local storage
                 submission_dir = Path(settings.SUBMISSIONS_DIR) / str(submission.id)
@@ -452,7 +579,8 @@ async def create_submission(
                     filename=upload_file.filename,
                     original_filename=upload_file.filename,
                     file_path=str(file_path),
-                    file_hash=file_hash
+                    file_hash=file_hash,
+                    file_size_bytes=file_size
                 )
                 db.add(sub_file)
                 
@@ -463,6 +591,9 @@ async def create_submission(
                 
                 logger.info(f"File {upload_file.filename} saved locally: {file_path}")
         
+        except HTTPException:
+            db.rollback()
+            raise
         except Exception as e:
             logger.error(f"Error uploading file {upload_file.filename}: {str(e)}")
             # Clean up partial submission
@@ -480,29 +611,48 @@ async def create_submission(
         status="success"
     )
     db.add(audit_log)
-    
+
+    # Only notify faculty/assistants on the student's FIRST submission for this assignment
+    if new_attempt_number == 1:
+        student_name = current_user.full_name or current_user.email
+        grader_user_ids = set(
+            [assignment.course.instructor_id] + get_assistant_ids_for_course(db, assignment.course_id)
+        )
+        notify_users(
+            db,
+            user_ids=grader_user_ids,
+            notification_type=NotificationType.SUBMISSION_RECEIVED,
+            title="New Submission",
+            message=f"{student_name} submitted to {assignment.title} for {assignment.course.name}.",
+            link=f"/faculty/courses/{assignment.course_id}/assignments/{assignment.id}",
+            course_id=assignment.course_id,
+            assignment_id=assignment.id,
+        )
+
     db.commit()
     db.refresh(submission)
     
     logger.info(f"Submission {submission.id} created by user {current_user.id} for assignment {assignment_id}")
-    
-    try:
-        from app.tasks.grading import grade_submission_task, check_plagiarism_task
-        from celery import chain as celery_chain
-        task_chain = celery_chain(
-            grade_submission_task.si(submission.id),
-            check_plagiarism_task.si(submission.id),
-        )
-        task_chain.apply_async(queue="grading")
-        logger.info(f"Triggered Celery grading + plagiarism for submission {submission.id}")
-    except Exception as e:
-        logger.warning(f"Could not trigger Celery tasks for submission {submission.id}: {str(e)}")
+
+    # Dispatch Celery tasks in background so HTTP response returns immediately
+    # (avoids blocking on slow/unreachable Redis connection)
+    sub_id = submission.id
+
+    def _trigger_grading():
         try:
-            from app.tasks.grading import grade_submission_task
-            grade_submission_task.apply_async(args=[submission.id], queue="grading")
-        except Exception:
-            pass
-    
+            from app.tasks.grading import grade_submission_task, check_plagiarism_task
+            from celery import chain as celery_chain
+            chain = celery_chain(
+                grade_submission_task.si(sub_id),
+                check_plagiarism_task.si(sub_id),
+            )
+            chain.apply_async(queue="grading")
+            logger.info(f"Triggered Celery grading + plagiarism for submission {sub_id}")
+        except Exception as e:
+            logger.warning(f"Could not trigger Celery for submission {sub_id}: {e}")
+
+    threading.Thread(target=_trigger_grading, daemon=True).start()
+
     return submission
 
 
@@ -532,8 +682,11 @@ async def grade_submission(
             description=f"Submission graded: {result.get('status')}"
         )
         db.add(audit)
+
+        db.refresh(submission)
+        # Grade notifications are sent only when faculty publishes grades
         db.commit()
-        
+
         return result
     except Exception as e:
         logger.error(f"Error grading submission {submission_id}: {str(e)}")
@@ -571,6 +724,22 @@ def override_score(
     )
     db.add(audit)
     db.commit()
+    
+    # Send grade posted notification to student
+    try:
+        notify_student_grade_posted(
+            db=db,
+            student_id=submission.student_id,
+            course_code=submission.assignment.course.code,
+            assignment_title=submission.assignment.title,
+            score=new_score,
+            max_score=submission.assignment.max_score,
+            course_id=submission.assignment.course_id,
+            assignment_id=submission.assignment_id,
+        )
+        db.commit()
+    except Exception as notif_err:
+        logger.warning(f"Failed to send grade notification: {str(notif_err)}")
     
     logger.info(f"Score overridden for submission {submission_id} by user {current_user.id}")
     
@@ -648,7 +817,16 @@ def get_file_content(
     elif current_user.role in (UserRole.FACULTY, UserRole.ASSISTANT):
         can_access = _can_grade_for_course(db, current_user, submission.assignment.course_id)
     elif current_user.role == UserRole.STUDENT:
-        can_access = submission.student_id == current_user.id
+        if submission.student_id == current_user.id:
+            can_access = True
+        elif submission.group_id:
+            group_member = db.query(GroupMembership).filter(
+                and_(
+                    GroupMembership.group_id == submission.group_id,
+                    GroupMembership.user_id == current_user.id
+                )
+            ).first()
+            can_access = group_member is not None
 
     if not can_access:
         raise HTTPException(status_code=403, detail="Access denied")
@@ -662,7 +840,9 @@ def get_file_content(
     content = ""
     if settings.USE_S3_STORAGE and file_record.file_path.startswith("http"):
         try:
-            s3_key = file_record.file_path.split(".amazonaws.com/")[-1] if ".amazonaws.com/" in file_record.file_path else file_record.file_path
+            from urllib.parse import unquote
+            raw = file_record.file_path.split(".amazonaws.com/")[-1] if ".amazonaws.com/" in file_record.file_path else file_record.file_path
+            s3_key = unquote(raw.split("?")[0])
             import tempfile as tmpf
             with tmpf.NamedTemporaryFile(delete=False, suffix=file_record.filename) as tmp:
                 s3_service.download_submission_file(s3_key, tmp.name)
@@ -716,8 +896,8 @@ def save_manual_grade(
         try:
             overrides = json_lib.loads(test_overrides_json)
             for ov in overrides:
-                tr = db.query(TestResult).filter(
-                    and_(TestResult.id == ov["id"], TestResult.submission_id == submission_id)
+                tr = db.query(TestResultORM).filter(
+                    and_(TestResultORM.id == ov["id"], TestResultORM.submission_id == submission_id)
                 ).first()
                 if tr:
                     tr.points_awarded = float(ov.get("points_awarded", tr.points_awarded))
@@ -729,7 +909,10 @@ def save_manual_grade(
     if rubric_scores_json:
         try:
             rubric_data = json_lib.loads(rubric_scores_json)
+            rubric_total = 0.0
             for item in rubric_data:
+                score_val = float(item["score"])
+                rubric_total += score_val
                 existing = db.query(RubricScore).filter(
                     and_(
                         RubricScore.submission_id == submission_id,
@@ -745,12 +928,13 @@ def save_manual_grade(
                     db.add(RubricScore(
                         submission_id=submission_id,
                         rubric_item_id=item["rubric_item_id"],
-                        score=float(item["score"]),
+                        score=score_val,
                         max_score=float(item.get("max_score", 0)),
                         comment=item.get("comment"),
                         graded_by=current_user.id,
                         graded_at=datetime.utcnow(),
                     ))
+            submission.rubric_score = rubric_total
         except Exception as e:
             logger.warning(f"Error processing rubric scores: {e}")
 
@@ -772,6 +956,8 @@ def save_manual_grade(
         description=f"Manual grade saved for submission {submission_id}: score={final_score}"
     )
     db.add(audit)
+
+    # Grade notifications are sent only when faculty publishes grades, not on manual grading
     db.commit()
 
     return {"message": "Grade saved successfully", "submission_id": submission_id}

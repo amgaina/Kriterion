@@ -9,13 +9,30 @@ from sqlalchemy import and_, func, desc, case
 
 from app.api.deps import get_db, get_current_user, require_role
 from app.models import (
-    User, UserRole, Course, CourseStatus, Enrollment, EnrollmentStatus,
-    Assignment, AssignmentStatus, DifficultyLevel, TestCase,
-    Submission, SubmissionStatus, TestResult,
-    Rubric, RubricCategory, RubricItem, RubricScore,
-    Group, GroupMembership, Announcement, AuditLog, Language
+    User,
+    UserRole,
+    Course,
+    CourseStatus,
+    Enrollment,
+    EnrollmentStatus,
+    Assignment,
+    AssignmentStatus,
+    TestCase,
+    Submission,
+    SubmissionStatus,
+    TestResult,
+    Rubric,
+    RubricItem,
+    RubricScore,
+    Group,
+    GroupMembership,
+    Announcement,
+    AuditLog,
+    Language,
 )
+from app.schemas.rubric import RubricItem as RubricItemSchema
 from app.core.logging import logger
+from app.services.notification import notify_student_grade_posted
 from pydantic import BaseModel, Field
 
 router = APIRouter()
@@ -66,6 +83,20 @@ class AssignmentAnalytics(BaseModel):
     plagiarism_flags: int
     ai_flags: int
 
+
+@router.get("/rubric-items", response_model=List[RubricItemSchema])
+def list_rubric_items(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.FACULTY, UserRole.ADMIN])),
+):
+    """List all rubric items available for reuse in manual grading."""
+    items = (
+        db.query(RubricItem)
+        .order_by(RubricItem.name.asc(), RubricItem.id.asc())
+        .all()
+    )
+    return items
+
 class SubmissionForGrading(BaseModel):
     id: int
     student_id: int
@@ -89,9 +120,7 @@ class TestCaseCreate(BaseModel):
     description: Optional[str] = None
     input_data: Optional[str] = None
     expected_output: str
-    points: float = 10.0
     is_hidden: bool = False
-    is_sample: bool = False
     ignore_whitespace: bool = False
     use_regex: bool = False
     time_limit_seconds: Optional[int] = None
@@ -161,9 +190,11 @@ class FacultyEvent(BaseModel):
     title: str
     course_name: str
     course_code: str
+    course_id: Optional[int] = None
     event_type: str
     date: str
     detail: Optional[str] = None
+    priority: Optional[str] = None  # low, medium, high
 
 
 @router.get("/upcoming-events", response_model=List[FacultyEvent])
@@ -204,29 +235,44 @@ def get_faculty_upcoming_events(
         detail_text = f"{submitted}/{total_enrolled} submitted"
         if pending > 0:
             detail_text += f" · {pending} pending grading"
+        
+        # Determine priority based on time remaining and pending work
+        days_remaining = (a.due_date - datetime.utcnow()).days if not is_past else 0
+        priority = "low"
+        if pending > 0 and is_past:
+            priority = "high"
+        elif days_remaining <= 1:
+            priority = "high"
+        elif days_remaining <= 3:
+            priority = "medium"
 
         events.append(FacultyEvent(
             id=a.id,
             title=a.title,
             course_name=c.name if c else "Unknown",
             course_code=c.code if c else "N/A",
+            course_id=a.course_id,
             event_type=etype,
             date=a.due_date.strftime("%Y-%m-%d"),
             detail=detail_text,
+            priority=priority,
         ))
 
     # Course end-dates as events
     for c in courses:
         if c.end_date:
             is_completed = c.end_date < datetime.utcnow()
+            days_to_end = (c.end_date - datetime.utcnow()).days if not is_completed else 0
             events.append(FacultyEvent(
                 id=c.id,
                 title=f"{c.code} - {'Completed' if is_completed else 'Course Ends'}",
                 course_name=c.name,
                 course_code=c.code,
+                course_id=c.id,
                 event_type="course_end",
                 date=c.end_date.strftime("%Y-%m-%d"),
                 detail="Completed" if is_completed else "Upcoming end date",
+                priority="medium" if days_to_end <= 7 and not is_completed else "low",
             ))
         if c.start_date:
             events.append(FacultyEvent(
@@ -529,9 +575,7 @@ def get_test_cases(
             "description": tc.description,
             "input_data": tc.input_data,
             "expected_output": tc.expected_output,
-            "points": tc.points,
             "is_hidden": tc.is_hidden,
-            "is_sample": tc.is_sample,
             "order": tc.order
         } for tc in test_cases
     ]
@@ -667,6 +711,75 @@ def grade_submission(
     return {"message": "Submission graded successfully", "score": grade_request.final_score}
 
 
+@router.post("/assignments/{assignment_id}/publish-grades")
+def publish_grades(
+    assignment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.FACULTY])),
+):
+    """Publish grades for an assignment — students will be able to see their scores after this."""
+    assignment = db.query(Assignment).filter(Assignment.id == assignment_id).first()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    if assignment.course.instructor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    if assignment.grades_published:
+        return {"message": "Grades already published"}
+
+    assignment.grades_published = True
+    db.commit()
+
+    # Notify every student who has a graded submission
+    graded_submissions = (
+        db.query(Submission)
+        .filter(
+            Submission.assignment_id == assignment_id,
+            Submission.final_score.isnot(None),
+        )
+        .all()
+    )
+    # One notification per student (take latest)
+    notified: set = set()
+    for sub in graded_submissions:
+        if sub.student_id in notified:
+            continue
+        notified.add(sub.student_id)
+        try:
+            notify_student_grade_posted(
+                db=db,
+                student_id=sub.student_id,
+                course_code=assignment.course.code,
+                assignment_title=assignment.title,
+                score=sub.final_score,
+                max_score=assignment.max_score or 100,
+                course_id=assignment.course_id,
+                assignment_id=assignment_id,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to notify student {sub.student_id} on grade publish: {e}")
+
+    db.commit()
+    return {"message": "Grades published", "students_notified": len(notified)}
+
+
+@router.post("/assignments/{assignment_id}/hide-grades")
+def hide_grades(
+    assignment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.FACULTY])),
+):
+    """Hide grades for an assignment — students will no longer see their scores."""
+    assignment = db.query(Assignment).filter(Assignment.id == assignment_id).first()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    if assignment.course.instructor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    assignment.grades_published = False
+    db.commit()
+    return {"message": "Grades hidden"}
+
+
 @router.post("/submissions/{submission_id}/regrade")
 async def regrade_submission(
     submission_id: int,
@@ -748,6 +861,31 @@ def get_announcements(
     ]
 
 
+# ============== System Students (for enrollment picker) ==============
+
+@router.get("/students")
+def list_system_students(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.FACULTY, UserRole.ADMIN])),
+):
+    """Return all active students in the system so faculty can enroll or add them to groups."""
+    students = (
+        db.query(User)
+        .filter(User.role == UserRole.STUDENT, User.is_active == True)
+        .order_by(User.full_name)
+        .all()
+    )
+    return [
+        {
+            "id": s.id,
+            "email": s.email,
+            "full_name": s.full_name,
+            "student_id": getattr(s, "student_id", None),
+        }
+        for s in students
+    ]
+
+
 # ============== Languages ==============
 
 @router.get("/languages")
@@ -763,7 +901,7 @@ def get_available_languages(
             "id": lang.id,
             "name": lang.name,
             "display_name": lang.display_name,
-            "version": lang.version,
+            "version": getattr(lang, "version", None),
             "file_extension": lang.file_extension
         } for lang in languages
     ]

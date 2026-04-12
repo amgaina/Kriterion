@@ -5,24 +5,23 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
+import { getAssignmentStatusSummaries } from '@/lib/course-report-utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { CourseLoadingPage } from '@/components/course/CourseLoading';
 import {
-    BookOpen,
     Users,
     FileText,
     Calendar,
-    Clock,
-    Plus,
     Loader2,
     AlertCircle,
-    CheckCircle2,
-    ChevronRight,
     ArrowLeft,
-    BarChart3,
-    Target,
+    ChevronRight,
+    Plus,
+    ClipboardCheck,
+    AlertTriangle,
 } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 interface Course {
     id: number;
@@ -44,7 +43,6 @@ interface Assignment {
     id: number;
     title: string;
     description?: string;
-    difficulty?: string;
     due_date?: string;
     is_published: boolean;
     max_score: number;
@@ -53,15 +51,6 @@ interface Assignment {
 const formatDate = (dateString: string) =>
     new Date(dateString).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
-/** Generate gradient from course color hex */
-const courseColorStyle = (hex: string | null | undefined) => {
-    if (!hex || !hex.startsWith('#')) return { background: 'linear-gradient(135deg, #862733 0%, #a03040 100%)' };
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    const darker = `rgb(${Math.max(0, r - 25)}, ${Math.max(0, g - 15)}, ${Math.max(0, b - 15)})`;
-    return { background: `linear-gradient(135deg, ${hex} 0%, ${darker} 100%)` };
-};
 
 export default function CourseOverviewPage() {
     const params = useParams();
@@ -89,11 +78,28 @@ export default function CourseOverviewPage() {
         enabled: !!courseId,
     });
 
+    const { data: courseReport } = useQuery({
+        queryKey: ['course-report', courseId],
+        queryFn: () => apiClient.getCourseReport(courseId),
+        enabled: !!courseId,
+    });
+
     const activeStudents = students.filter((s: { status: string }) => s.status === 'active');
     const publishedCount = assignments.filter((a: Assignment) => a.is_published).length;
-    const upcomingCount = assignments.filter((a: Assignment) => a.due_date && new Date(a.due_date) > new Date()).length;
-    const overdueCount = assignments.filter((a: Assignment) => a.due_date && new Date(a.due_date) < new Date() && !a.is_published).length;
-    const recentAssignments = assignments.slice(0, 5);
+    const statusSummaries = getAssignmentStatusSummaries(courseReport);
+    const needsGradingTotal = statusSummaries.reduce((s, a) => s + a.ungradedCount, 0);
+
+    const recentAssignments = assignments.slice().sort((a, b) => {
+        const ad = a.due_date ? new Date(a.due_date).getTime() : 0;
+        const bd = b.due_date ? new Date(b.due_date).getTime() : 0;
+        return ad - bd;
+    });
+    const gradeValues = activeStudents
+        .map((s: any) => s.current_grade as number | null | undefined)
+        .filter((g): g is number => g != null);
+    const averageGrade = gradeValues.length
+        ? gradeValues.reduce((sum, g) => sum + g, 0) / gradeValues.length
+        : null;
 
     if (courseLoading || !course) {
         return <CourseLoadingPage message="Loading course..." />;
@@ -112,252 +118,229 @@ export default function CourseOverviewPage() {
         );
     }
 
-    const statusBadge =
-        course.status === 'active'
-            ? 'bg-emerald-100 text-emerald-800'
-            : course.status === 'draft'
-                ? 'bg-amber-100 text-amber-800'
-                : 'bg-gray-100 text-gray-700';
-
     const accentColor = course.color || '#862733';
 
-    return (
-        <div className="space-y-6 pb-8">
-            {/* Back */}
-            <Link
-                href="/faculty/courses"
-                className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors"
-            >
-                <ArrowLeft className="w-4 h-4" /> Back to Courses
-            </Link>
+    const totalAssignments = assignments.length;
+    const statCards = [
+        {
+            label: 'Enrolled students',
+            value: activeStudents.length,
+            icon: Users,
+            href: `/faculty/courses/${courseId}/students`,
+        },
+        {
+            label: 'Total assignments',
+            value: totalAssignments,
+            icon: FileText,
+            href: `/faculty/courses/${courseId}/assignments`,
+        },
+        {
+            label: 'Class average',
+            value: averageGrade != null ? `${averageGrade.toFixed(1)}%` : '—',
+            icon: ClipboardCheck,
+        },
+        ...(needsGradingTotal > 0
+            ? [
+                  {
+                      label: 'Needs grading',
+                      value: needsGradingTotal,
+                      icon: AlertTriangle,
+                      href: `/faculty/courses/${courseId}/assignments?filter=needs-grading`,
+                  },
+              ]
+            : []),
+    ];
 
-            {/* ─── Course Header Banner (using course color) ─── */}
-            <div
-                className="rounded-2xl p-6 md:p-8 text-white relative overflow-hidden shadow-lg"
-                style={courseColorStyle(course.color)}
-            >
-                <div className="absolute inset-0 opacity-10 pointer-events-none">
-                    <div className="absolute -right-10 -top-10 w-48 h-48 rounded-full bg-white" />
-                    <div className="absolute -right-5 -bottom-5 w-32 h-32 rounded-full bg-white" />
-                </div>
-                <div className="relative z-10">
-                    <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6">
-                        <div>
-                            <div className="flex items-center gap-3 mb-2">
-                                <div className="w-14 h-14 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-sm">
-                                    <BookOpen className="w-7 h-7" />
+    return (
+        <motion.div
+            className="space-y-6 pb-8"
+            initial="hidden"
+            animate="visible"
+            variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.06, delayChildren: 0.1 } } }}
+        >
+            {/* Stats row — equal-width cards, evenly distributed */}
+            <motion.section className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }} variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.05 } } }}>
+                {statCards.map((stat) => {
+                    const Icon = stat.icon;
+                    const card = (
+                        <Card className="h-full border border-gray-200 shadow-sm hover:shadow-md transition-shadow duration-200">
+                            <CardContent className="p-4 flex items-center gap-3 h-full">
+                                <div
+                                    className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                                    style={{ backgroundColor: `${accentColor}18` }}
+                                >
+                                    <Icon className="w-5 h-5" style={{ color: accentColor }} />
                                 </div>
-                                <div>
-                                    <p className="text-white/90 text-sm font-medium">
-                                        {course.code}
-                                        {course.section ? ` · Section ${course.section}` : ''}
+                                <div className="min-w-0">
+                                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                                        {stat.label}
                                     </p>
-                                    <h1 className="text-2xl md:text-4xl font-bold tracking-tight">{course.name}</h1>
+                                    <p className="text-xl font-semibold text-gray-900 mt-0.5">{stat.value}</p>
                                 </div>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-3 mt-4">
-                                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${statusBadge}`}>
-                                    {course.status.charAt(0).toUpperCase() + course.status.slice(1)}
-                                </span>
-                                <span className="text-white/80 text-sm flex items-center gap-1.5">
-                                    <Calendar className="w-4 h-4" /> {course.semester} {course.year}
-                                </span>
-                                <span className="text-white/80 text-sm flex items-center gap-1.5">
-                                    <Clock className="w-4 h-4" /> Created {formatDate(course.created_at)}
-                                </span>
+                            </CardContent>
+                        </Card>
+                    );
+                    return (
+                        <motion.div
+                            key={stat.label}
+                            className="min-w-0 h-full"
+                            variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0 } }}
+                        >
+                            {stat.href ? <Link href={stat.href} className="block h-full">{card}</Link> : card}
+                        </motion.div>
+                    );
+                })}
+            </motion.section>
+
+            {/* Course info (description + semester) when present */}
+            {(course.description || (course.semester && course.year)) && (
+                <motion.section variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0 } }}>
+                    <Card className="border border-gray-200 shadow-sm">
+                        <CardContent className="p-4">
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-600">
+                                {course.semester && course.year && (
+                                    <span className="flex items-center gap-1.5">
+                                        <Calendar className="w-4 h-4" style={{ color: accentColor }} />
+                                        {course.semester} {course.year}
+                                    </span>
+                                )}
                             </div>
                             {course.description && (
-                                <p className="mt-4 text-white/85 text-sm max-w-2xl leading-relaxed">{course.description}</p>
+                                <p className="mt-3 text-gray-700 leading-relaxed">{course.description}</p>
                             )}
-                        </div>
-                        <Link href={`/faculty/courses/${courseId}/assignments/new`}>
-                            <Button className="bg-white/20 hover:bg-white/30 text-white border border-white/30 gap-2 shadow-md">
-                                <Plus className="w-4 h-4" /> New Assignment
-                            </Button>
-                        </Link>
-                    </div>
-                </div>
-            </div>
+                        </CardContent>
+                    </Card>
+                </motion.section>
+            )}
 
-            {/* ─── Stat Cards (responsive grid) ─── */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Card className="overflow-hidden border-0 shadow-md hover:shadow-lg transition-shadow">
-                    <CardContent className="p-4 md:p-5">
-                        <div className="flex items-center gap-3">
-                            <div
-                                className="w-12 h-12 rounded-xl flex items-center justify-center"
-                                style={{ backgroundColor: `${accentColor}20` }}
-                            >
-                                <Users className="w-6 h-6" style={{ color: accentColor }} />
-                            </div>
-                            <div>
-                                <p className="text-2xl font-bold text-gray-900">{activeStudents.length}</p>
-                                <p className="text-xs text-gray-500">Enrolled Students</p>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card className="overflow-hidden border-0 shadow-md hover:shadow-lg transition-shadow">
-                    <CardContent className="p-4 md:p-5">
-                        <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 rounded-xl bg-violet-100 flex items-center justify-center">
-                                <FileText className="w-6 h-6 text-violet-600" />
-                            </div>
-                            <div>
-                                <p className="text-2xl font-bold text-gray-900">{assignments.length}</p>
-                                <p className="text-xs text-gray-500">Total Assignments</p>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card className="overflow-hidden border-0 shadow-md hover:shadow-lg transition-shadow">
-                    <CardContent className="p-4 md:p-5">
-                        <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center">
-                                <CheckCircle2 className="w-6 h-6 text-emerald-600" />
-                            </div>
-                            <div>
-                                <p className="text-2xl font-bold text-gray-900">{publishedCount}</p>
-                                <p className="text-xs text-gray-500">Published</p>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card className="overflow-hidden border-0 shadow-md hover:shadow-lg transition-shadow">
-                    <CardContent className="p-4 md:p-5">
-                        <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center">
-                                <Target className="w-6 h-6 text-amber-600" />
-                            </div>
-                            <div>
-                                <p className="text-2xl font-bold text-gray-900">{upcomingCount}</p>
-                                <p className="text-xs text-gray-500">Upcoming Due</p>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
-
-            {/* ─── Quick Links & Recent Assignments ─── */}
-            <div className="grid md:grid-cols-3 gap-6">
-                <Card className="md:col-span-2 border-0 shadow-md">
-                    <CardHeader className="pb-3">
-                        <div className="flex items-center justify-between">
-                            <CardTitle className="flex items-center gap-2 text-lg">
-                                <BarChart3 className="w-5 h-5" style={{ color: accentColor }} />
-                                Assignments
-                            </CardTitle>
-                            <Link href={`/faculty/courses/${courseId}/assignments`}>
-                                <Button variant="ghost" size="sm" className="gap-1 text-gray-600 hover:text-gray-900">
-                                    View All <ChevronRight className="w-4 h-4" />
-                                </Button>
-                            </Link>
-                        </div>
-                    </CardHeader>
-                    <CardContent>
-                        {assignmentsLoading ? (
-                            <div className="flex justify-center py-12">
-                                <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
-                            </div>
-                        ) : recentAssignments.length === 0 ? (
-                            <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-xl">
-                                <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                                <p className="text-gray-500 text-sm font-medium">No assignments yet</p>
-                                <p className="text-gray-400 text-xs mt-1">Create your first assignment to get started</p>
-                                <Link href={`/faculty/courses/${courseId}/assignments/new`} className="mt-4 inline-block">
-                                    <Button size="sm" className="gap-2" style={{ backgroundColor: accentColor }}>
-                                        <Plus className="w-4 h-4" /> Create Assignment
-                                    </Button>
-                                </Link>
-                            </div>
-                        ) : (
-                            <div className="space-y-2">
-                                {recentAssignments.map((a: Assignment) => (
-                                    <Link
-                                        key={a.id}
-                                        href={`/faculty/courses/${courseId}/assignments/${a.id}`}
-                                        className="flex items-center justify-between p-3 rounded-xl border border-gray-100 hover:bg-gray-50/80 hover:border-gray-200 transition-all group"
-                                    >
-                                        <div className="flex items-center gap-3 min-w-0">
-                                            <div
-                                                className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${a.is_published ? 'bg-emerald-500' : 'bg-amber-400'
-                                                    }`}
-                                            />
-                                            <div className="min-w-0">
-                                                <p className="font-medium text-gray-900 text-sm truncate group-hover:opacity-80">
-                                                    {a.title}
-                                                </p>
-                                                <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
-                                                    <span>{a.is_published ? 'Published' : 'Draft'}</span>
-                                                    {a.difficulty && (
-                                                        <span className="capitalize text-gray-400">· {a.difficulty}</span>
-                                                    )}
-                                                    <span className="text-gray-400">{a.max_score} pts</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center gap-2 flex-shrink-0">
-                                            {a.due_date && (
-                                                <span className="text-xs text-gray-500 hidden sm:inline">
-                                                    Due {formatDate(a.due_date)}
-                                                </span>
-                                            )}
-                                            <ChevronRight className="w-4 h-4 text-gray-300 group-hover:translate-x-0.5 transition-transform" />
-                                        </div>
+            {/* Assignments list + Quick links */}
+            <section className="grid md:grid-cols-3 gap-6">
+                <motion.div className="md:col-span-2" variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0 } }}>
+                    <Card className="border border-gray-200 shadow-sm h-full flex flex-col">
+                        <CardHeader className="pb-3">
+                            <div className="flex items-center justify-between gap-3">
+                                <CardTitle className="flex items-center gap-2 text-base font-semibold text-gray-900">
+                                    <FileText className="w-4 h-4" style={{ color: accentColor }} />
+                                    Assignments
+                                </CardTitle>
+                                <div className="flex items-center gap-2">
+                                    <Link href={`/faculty/courses/${courseId}/assignments/new`}>
+                                        <Button size="sm" className="gap-1.5 h-8 rounded-full px-3.5" style={{ backgroundColor: accentColor }}>
+                                            <Plus className="w-3.5 h-3.5" /> New
+                                        </Button>
                                     </Link>
-                                ))}
+                                    <Link href={`/faculty/courses/${courseId}/assignments`}>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="gap-1 text-gray-600 hover:text-gray-900 h-8 rounded-full px-3.5"
+                                        >
+                                            View all <ChevronRight className="w-3.5 h-3.5" />
+                                        </Button>
+                                    </Link>
+                                </div>
                             </div>
-                        )}
-                    </CardContent>
-                </Card>
+                        </CardHeader>
+                        <CardContent className="flex-1 min-h-0">
+                            {assignmentsLoading ? (
+                                <div className="flex justify-center py-10">
+                                    <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+                                </div>
+                            ) : recentAssignments.length === 0 ? (
+                                <div className="text-center py-10 border border-dashed border-gray-200 rounded-xl">
+                                    <FileText className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                                    <p className="text-gray-500 text-sm font-medium">No assignments yet</p>
+                                    <p className="text-gray-400 text-xs mt-1">Create your first assignment to get started.</p>
+                                    <Link href={`/faculty/courses/${courseId}/assignments/new`} className="mt-4 inline-block">
+                                        <Button size="sm" className="gap-2" style={{ backgroundColor: accentColor }}>
+                                            <Plus className="w-4 h-4" /> Create assignment
+                                        </Button>
+                                    </Link>
+                                </div>
+                            ) : (
+                                <div className="max-h-72 overflow-y-auto divide-y divide-gray-100 border border-gray-100 rounded-xl">
+                                    {recentAssignments.map((a: Assignment) => {
+                                        const summary = statusSummaries.find((s) => s.assignmentId === a.id);
+                                        const hasNeedsGrading = (summary?.ungradedCount ?? 0) > 0;
+                                        const hasMissing = (summary?.missingCount ?? 0) > 0;
+                                        return (
+                                            <Link
+                                                key={a.id}
+                                                href={`/faculty/courses/${courseId}/assignments/${a.id}`}
+                                                className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors"
+                                            >
+                                                <div className="min-w-0">
+                                                    <p className="font-medium text-sm text-gray-900 truncate">{a.title}</p>
+                                                    <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-500 flex-wrap">
+                                                        <span>{a.is_published ? 'Published' : 'Draft'}</span>
+                                                        <span className="text-gray-400">{a.max_score} pts</span>
+                                                        {a.due_date && (
+                                                            <span className="flex items-center gap-1">
+                                                                <Calendar className="w-3 h-3" /> Due {formatDate(a.due_date)}
+                                                            </span>
+                                                        )}
+                                                        {hasNeedsGrading && (
+                                                            <span className="text-amber-600 font-medium">
+                                                                {summary!.ungradedCount} to grade
+                                                            </span>
+                                                        )}
+                                                        {hasMissing && (
+                                                            <span className="text-red-600 font-medium">
+                                                                {summary!.missingCount} missing
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0" />
+                                            </Link>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                </motion.div>
 
-                {/* Quick actions */}
-                <Card className="border-0 shadow-md">
-                    <CardHeader className="pb-3">
-                        <CardTitle className="text-lg">Quick Actions</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                        <Link href={`/faculty/courses/${courseId}/assignments/new`} className="block">
-                            <div className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:bg-gray-50/80 hover:border-gray-200 transition-all">
-                                <div className="w-10 h-10 rounded-lg bg-violet-100 flex items-center justify-center">
-                                    <Plus className="w-5 h-5 text-violet-600" />
+                <motion.div variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0 } }}>
+                    <Card className="border border-gray-200 shadow-sm">
+                        <CardHeader className="pb-3">
+                            <CardTitle className="text-base font-semibold text-gray-900">Quick links</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            <Link href={`/faculty/courses/${courseId}/students`} className="block">
+                                <div className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors">
+                                    <div
+                                        className="w-9 h-9 rounded-lg flex items-center justify-center"
+                                        style={{ backgroundColor: `${accentColor}18` }}
+                                    >
+                                        <Users className="w-5 h-5" style={{ color: accentColor }} />
+                                    </div>
+                                    <div>
+                                        <p className="font-medium text-sm text-gray-900">Manage students</p>
+                                        <p className="text-xs text-gray-500">{activeStudents.length} active</p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <p className="font-medium text-gray-900 text-sm">New Assignment</p>
-                                    <p className="text-xs text-gray-500">Create a new assignment</p>
+                            </Link>
+                            <Link href={`/faculty/courses/${courseId}/assignments`} className="block">
+                                <div className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors">
+                                    <div
+                                        className="w-9 h-9 rounded-lg flex items-center justify-center"
+                                        style={{ backgroundColor: `${accentColor}18` }}
+                                    >
+                                        <FileText className="w-5 h-5" style={{ color: accentColor }} />
+                                    </div>
+                                    <div>
+                                        <p className="font-medium text-sm text-gray-900">All assignments</p>
+                                        <p className="text-xs text-gray-500">
+                                            {assignments.length} total · {publishedCount} published
+                                        </p>
+                                    </div>
                                 </div>
-                            </div>
-                        </Link>
-                        <Link href={`/faculty/courses/${courseId}/students`} className="block">
-                            <div className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:bg-gray-50/80 hover:border-gray-200 transition-all">
-                                <div
-                                    className="w-10 h-10 rounded-lg flex items-center justify-center"
-                                    style={{ backgroundColor: `${accentColor}20` }}
-                                >
-                                    <Users className="w-5 h-5" style={{ color: accentColor }} />
-                                </div>
-                                <div>
-                                    <p className="font-medium text-gray-900 text-sm">Manage Students</p>
-                                    <p className="text-xs text-gray-500">{activeStudents.length} enrolled</p>
-                                </div>
-                                <ChevronRight className="w-4 h-4 text-gray-300 ml-auto" />
-                            </div>
-                        </Link>
-                        <Link href={`/faculty/courses/${courseId}/assignments`} className="block">
-                            <div className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:bg-gray-50/80 hover:border-gray-200 transition-all">
-                                <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
-                                    <FileText className="w-5 h-5 text-emerald-600" />
-                                </div>
-                                <div>
-                                    <p className="font-medium text-gray-900 text-sm">All Assignments</p>
-                                    <p className="text-xs text-gray-500">{assignments.length} total</p>
-                                </div>
-                                <ChevronRight className="w-4 h-4 text-gray-300 ml-auto" />
-                            </div>
-                        </Link>
-                    </CardContent>
-                </Card>
-            </div>
-        </div>
+                            </Link>
+                        </CardContent>
+                    </Card>
+                </motion.div>
+            </section>
+        </motion.div>
     );
 }

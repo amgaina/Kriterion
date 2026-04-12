@@ -15,7 +15,6 @@
  */
 
 import { useState, useMemo } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
@@ -25,6 +24,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
+import { AcknowledgementPopup } from '@/components/ui/acknowledgement-popup';
 import { CourseLoadingSkeleton } from '@/components/course/CourseLoading';
 import { EnrollStudentModal } from '@/components/course/EnrollStudentModal';
 import { BulkEnrollModal } from '@/components/course/BulkEnrollModal';
@@ -34,8 +34,6 @@ import {
     Plus,
     Search,
     AlertCircle,
-    AlertTriangle,
-    CheckCircle2,
     GraduationCap,
 } from 'lucide-react';
 
@@ -129,7 +127,28 @@ export default function FacultyCoursesPage() {
     const [statusFilter, setStatusFilter] = useState<CourseStatus | 'all'>('all');
     const [enrollModal, setEnrollModal] = useState<{ open: boolean; course?: Course }>({ open: false });
     const [bulkEnrollModal, setBulkEnrollModal] = useState<{ open: boolean; course?: Course }>({ open: false });
-    const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'warning'; message: string } | null>(null);
+    const [notification, setNotification] = useState<{
+        open: boolean;
+        type: 'success' | 'error' | 'warning';
+        title: string;
+        message: string;
+    }>({
+        open: false,
+        type: 'success',
+        title: 'Success',
+        message: '',
+    });
+    const [bulkWarningModal, setBulkWarningModal] = useState<{
+        open: boolean;
+        enrolled: number;
+        notFound: string[];
+        alreadyEnrolled: string[];
+    }>({
+        open: false,
+        enrolled: 0,
+        notFound: [],
+        alreadyEnrolled: [],
+    });
 
     // ========== Data Fetching ==========
     const {
@@ -151,8 +170,12 @@ export default function FacultyCoursesPage() {
     // ========== Helper Functions ==========
 
     const showNotification = (type: 'success' | 'error' | 'warning', message: string) => {
-        setNotification({ type, message });
-        setTimeout(() => setNotification(null), 5000);
+        setNotification({
+            open: true,
+            type,
+            title: type === 'success' ? 'Success' : type === 'warning' ? 'Warning' : 'Error',
+            message,
+        });
     };
 
     const navigateToCourse = (courseId: number) => {
@@ -189,41 +212,6 @@ export default function FacultyCoursesPage() {
     return (
         <>
             <div className="space-y-6 pb-8">
-
-                {/* ==================== Notification ==================== */}
-                <AnimatePresence mode="wait">
-                {notification && (
-                    <motion.div
-                        key="notification"
-                        initial={{ opacity: 0, y: -8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -8 }}
-                        transition={{ duration: 0.2, ease: 'easeOut' }}
-                        className={`relative w-full rounded-lg border p-4 flex items-start gap-3 ${
-                        notification.type === 'success'
-                            ? 'bg-green-50 border-green-200 text-green-800'
-                            : 'bg-red-50 border-red-200 text-red-800'
-                    }`}>
-                        {notification.type === 'success' ? (
-                            <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-                        ) : notification.type === 'warning' ? (
-                            <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                        ) : (
-                            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                        )}
-                        <div className="flex-1">
-                            <p className="font-semibold text-sm">
-                                {notification.type === 'success' ? 'Success' : notification.type === 'warning' ? 'Warning' : 'Error'}
-                            </p>
-                            <p className="text-sm mt-0.5">{notification.message}</p>
-                        </div>
-                        <button onClick={() => setNotification(null)} className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded hover:bg-black/5">
-                            <span className="sr-only">Dismiss</span>
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                        </button>
-                    </motion.div>
-                )}
-                </AnimatePresence>
 
                 {/* ==================== Page Header ==================== */}
                 <InnerHeaderDesign
@@ -390,17 +378,23 @@ export default function FacultyCoursesPage() {
                     courseInfo={{ code: bulkEnrollModal.course.code, name: bulkEnrollModal.course.name }}
                     invalidateKeys={[[...QUERY_KEYS.facultyCourses]]}
                     onSuccess={(data) => {
-                        const parts: string[] = [];
-                        if (data.enrolled > 0) parts.push(`Enrolled ${data.enrolled}`);
                         const hasNotFound = data.not_found && data.not_found.length > 0;
                         if (hasNotFound) {
-                            parts.push(`${data.not_found!.length} not in system`);
+                            setBulkWarningModal({
+                                open: true,
+                                enrolled: data.enrolled || 0,
+                                notFound: data.not_found || [],
+                                alreadyEnrolled: data.already_enrolled || [],
+                            });
+                            return;
                         }
+                        const parts: string[] = [];
+                        if (data.enrolled > 0) parts.push(`Enrolled ${data.enrolled}`);
                         if (data.already_enrolled && data.already_enrolled.length > 0) {
                             parts.push(`${data.already_enrolled.length} already enrolled`);
                         }
                         const message = parts.length > 0 ? parts.join('. ') : 'No students enrolled.';
-                        const type = hasNotFound ? 'warning' : (data.enrolled > 0 ? 'success' : 'error');
+                        const type = data.enrolled > 0 ? 'success' : 'error';
                         showNotification(type, message);
                     }}
                     onError={(err: any) => {
@@ -408,6 +402,70 @@ export default function FacultyCoursesPage() {
                     }}
                 />
             )}
+
+            <Modal
+                isOpen={bulkWarningModal.open}
+                onClose={() => setBulkWarningModal((prev) => ({ ...prev, open: false }))}
+                title="Bulk Enroll Warning"
+                description="Some email addresses could not be enrolled and require your acknowledgment."
+                size="lg"
+            >
+                <div className="space-y-4">
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                        <p className="text-sm text-amber-900 font-medium">
+                            We could not complete enrollment for all submitted students.
+                        </p>
+                        <ul className="mt-2 text-sm text-amber-800 space-y-1 list-disc pl-5">
+                            <li>{bulkWarningModal.notFound.length} email(s) are not in the system.</li>
+                            <li>{bulkWarningModal.alreadyEnrolled.length} email(s) were already enrolled.</li>
+                            <li>{bulkWarningModal.enrolled} student(s) were enrolled successfully.</li>
+                        </ul>
+                    </div>
+
+                    {bulkWarningModal.notFound.length > 0 && (
+                        <div>
+                            <p className="text-sm font-semibold text-gray-900 mb-2">Not found in system</p>
+                            <div className="max-h-36 overflow-auto rounded-lg border border-gray-200 bg-gray-50 p-3">
+                                <ul className="text-sm text-gray-700 space-y-1">
+                                    {bulkWarningModal.notFound.map((email) => (
+                                        <li key={email}>{email}</li>
+                                    ))}
+                                </ul>
+                            </div>
+                        </div>
+                    )}
+
+                    {bulkWarningModal.alreadyEnrolled.length > 0 && (
+                        <div>
+                            <p className="text-sm font-semibold text-gray-900 mb-2">Already enrolled</p>
+                            <div className="max-h-28 overflow-auto rounded-lg border border-gray-200 bg-gray-50 p-3">
+                                <ul className="text-sm text-gray-700 space-y-1">
+                                    {bulkWarningModal.alreadyEnrolled.map((email) => (
+                                        <li key={email}>{email}</li>
+                                    ))}
+                                </ul>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="flex justify-end pt-2 border-t border-gray-100">
+                        <Button
+                            onClick={() => setBulkWarningModal((prev) => ({ ...prev, open: false }))}
+                            className="bg-[#862733] hover:bg-[#a03040] text-white"
+                        >
+                            I Understand
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
+            <AcknowledgementPopup
+                isOpen={notification.open}
+                onClose={() => setNotification((prev) => ({ ...prev, open: false }))}
+                type={notification.type}
+                title={notification.title}
+                message={notification.message}
+            />
 
         </>
     );

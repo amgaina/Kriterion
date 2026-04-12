@@ -7,8 +7,11 @@ from sqlalchemy import func
 from pydantic import BaseModel, EmailStr
 
 from app.api.deps import get_db, get_current_user, require_roles
-from app.models import User, UserRole, Course, CourseStatus, CourseAssistant, Enrollment, EnrollmentStatus, Assignment, TestCase, AuditLog
+from app.models import User, UserRole, Course, CourseStatus, CourseAssistant, Enrollment, EnrollmentStatus, Assignment, TestCase, AuditLog, Group, GroupMembership
+from app.models import NotificationType
 from app.services.email import send_student_add_request_to_admin, send_bulk_student_add_request_to_admin
+from app.services.notifications import create_notification, notify_users, get_active_student_ids_for_course, get_assistant_ids_for_course
+from app.services.notification import notify_faculty_course_assigned
 from app.schemas.course import Course as CourseSchema, CourseCreate, CourseUpdate, Enrollment as EnrollmentSchema
 from app.schemas.assignment import Assignment as AssignmentSchema
 
@@ -122,8 +125,19 @@ def create_course(
         description=f"Course {course.code} created"
     )
     db.add(audit)
+
+    # Notify faculty when admin assigns them as instructor
+    if current_user.role == UserRole.ADMIN and instructor_id != current_user.id:
+        notify_faculty_course_assigned(
+            db=db,
+            faculty_id=instructor_id,
+            course_id=course.id,
+            course_code=course.code,
+            course_name=course.name,
+        )
+
     db.commit()
-    
+
     return course
 
 
@@ -198,7 +212,7 @@ def get_course(
     db: Session = Depends(get_db)
 ):
     """Get course details"""
-    course = db.query(Course).filter(Course.id == course_id).first()
+    course = db.query(Course).options(joinedload(Course.instructor)).filter(Course.id == course_id).first()
     if not course:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -237,14 +251,11 @@ def get_course(
     students_count = db.query(Enrollment).filter(
         Enrollment.course_id == course_id,
         Enrollment.status == EnrollmentStatus.ACTIVE
-    ).count()
+    ).with_entities(func.count(Enrollment.id)).scalar() or 0
     
     assignments_count = db.query(Assignment).filter(
         Assignment.course_id == course_id
-    ).count()
-
-    # Fetch instructor
-    instructor = db.query(User).filter(User.id == course.instructor_id).first()
+    ).with_entities(func.count(Assignment.id)).scalar() or 0
     
     # Build response
     return CourseWithStats(
@@ -256,8 +267,8 @@ def get_course(
         semester=course.semester,
         year=course.year,
         instructor_id=course.instructor_id,
-        instructor_name=instructor.full_name if instructor else None,
-        instructor_email=instructor.email if instructor else None,
+        instructor_name=course.instructor.full_name if course.instructor else None,
+        instructor_email=course.instructor.email if course.instructor else None,
         is_active=course.is_active,
         status=course.status.value if hasattr(course.status, 'value') else str(course.status),
         students_count=students_count,
@@ -289,6 +300,8 @@ def update_course(
             detail="Not authorized to update this course"
         )
     
+    old_status = course.status.value if hasattr(course.status, "value") else str(course.status)
+
     # Update fields
     update_data = course_update.dict(exclude_unset=True)
     for field, value in update_data.items():
@@ -296,6 +309,19 @@ def update_course(
     
     db.commit()
     db.refresh(course)
+
+    new_status = course.status.value if hasattr(course.status, "value") else str(course.status)
+    if old_status != "archived" and new_status == "archived":
+        recipient_ids = set(get_active_student_ids_for_course(db, course.id) + get_assistant_ids_for_course(db, course.id))
+        if recipient_ids:
+            notify_users(
+                db,
+                user_ids=recipient_ids,
+                notification_type=NotificationType.ASSIGNMENT_DUE,
+                title=f"Course archived: {course.code}",
+                message=f"{course.code} - {course.name} has been archived. Contact your instructor if you need access details.",
+                course_id=course.id,
+            )
     
     # Audit log
     audit = AuditLog(
@@ -380,6 +406,14 @@ def enroll_student(
         else:
             # Reactivate enrollment
             existing.status = EnrollmentStatus.ACTIVE
+            create_notification(
+                db,
+                user_id=student.id,
+                notification_type=NotificationType.ASSIGNMENT_NEW,
+                title=f"Enrolled in {course.code}",
+                message=f"You were enrolled in {course.code} - {course.name}.",
+                course_id=course.id,
+            )
             db.commit()
             return existing
     
@@ -400,6 +434,14 @@ def enroll_student(
         description=f"Student {student.email} enrolled in {course.code}"
     )
     db.add(audit)
+    create_notification(
+        db,
+        user_id=student.id,
+        notification_type=NotificationType.ASSIGNMENT_NEW,
+        title=f"Enrolled in {course.code}",
+        message=f"You were enrolled in {course.code} - {course.name}.",
+        course_id=course.id,
+    )
     db.commit()
     
     return enrollment
@@ -491,6 +533,14 @@ def add_course_assistant(
         description=f"Assistant {assistant.email} added to course {course.code}"
     )
     db.add(audit)
+    create_notification(
+        db,
+        user_id=assistant.id,
+        notification_type=NotificationType.ASSIGNMENT_NEW,
+        title=f"Assigned as assistant: {course.code}",
+        message=f"You were assigned as a grading assistant for {course.code} - {course.name}.",
+        course_id=course.id,
+    )
     db.commit()
     
     return {"message": "Assistant added successfully", "assistant_id": assistant.id}
@@ -538,6 +588,15 @@ def remove_course_assistant(
         description=f"Assistant {assistant.email if assistant else assistant_id} removed from course {course.code}"
     )
     db.add(audit)
+    if assistant:
+        create_notification(
+            db,
+            user_id=assistant.id,
+            notification_type=NotificationType.ASSIGNMENT_DUE,
+            title=f"Assistant role removed: {course.code}",
+            message=f"You were removed as a grading assistant from {course.code}.",
+            course_id=course.id,
+        )
     db.commit()
     
     return {"message": "Assistant removed successfully"}
@@ -610,6 +669,14 @@ def enroll_student_by_email(
             )
         else:
             existing.status = EnrollmentStatus.ACTIVE
+            create_notification(
+                db,
+                user_id=student.id,
+                notification_type=NotificationType.ASSIGNMENT_NEW,
+                title=f"Enrolled in {course.code}",
+                message=f"You were enrolled in {course.code} - {course.name}.",
+                course_id=course.id,
+            )
             db.commit()
             return {"message": "Student re-enrolled successfully", "student_id": student.id}
     
@@ -629,6 +696,14 @@ def enroll_student_by_email(
         description=f"Student {student.email} enrolled in {course.code}"
     )
     db.add(audit)
+    create_notification(
+        db,
+        user_id=student.id,
+        notification_type=NotificationType.ASSIGNMENT_NEW,
+        title=f"Enrolled in {course.code}",
+        message=f"You were enrolled in {course.code} - {course.name}.",
+        course_id=course.id,
+    )
     db.commit()
     
     return {"message": "Student enrolled successfully", "student_id": student.id}
@@ -661,6 +736,7 @@ def bulk_enroll_students(
     errors = []
     not_found: List[str] = []
     already_enrolled_list: List[str] = []
+    notified_student_ids: List[int] = []
 
     for email in request.emails:
         email_clean = email.strip().lower()
@@ -691,6 +767,7 @@ def bulk_enroll_students(
                 else:
                     existing.status = EnrollmentStatus.ACTIVE
                     enrolled += 1
+                    notified_student_ids.append(student.id)
                     continue
 
             # Create enrollment
@@ -701,6 +778,7 @@ def bulk_enroll_students(
             )
             db.add(enrollment)
             enrolled += 1
+            notified_student_ids.append(student.id)
 
         except Exception as e:
             failed += 1
@@ -725,6 +803,15 @@ def bulk_enroll_students(
         description=f"Bulk enrolled {enrolled} students in {course.code}"
     )
     db.add(audit)
+    if notified_student_ids:
+        notify_users(
+            db,
+            user_ids=notified_student_ids,
+            notification_type=NotificationType.ASSIGNMENT_NEW,
+            title=f"Enrolled in {course.code}",
+            message=f"You were added to {course.code} - {course.name}.",
+            course_id=course.id,
+        )
     db.commit()
 
     return BulkEnrollResponse(
@@ -783,7 +870,8 @@ def get_course_assignments(
     course_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    include_unpublished: bool = False
+    include_unpublished: bool = False,
+    status_filter: Optional[str] = Query(None, alias="status"),
 ):
     """Get all assignments for a course with test cases eager-loaded"""
     course = db.query(Course).filter(Course.id == course_id).first()
@@ -830,15 +918,15 @@ def get_course_assignments(
     # Students only see published assignments
     if current_user.role == UserRole.STUDENT or not include_unpublished:
         query = query.filter(Assignment.is_published == True)
-    elif status and status != "all":
+    elif status_filter and status_filter != "all":
         now = datetime.utcnow()
-        if status == "published":
+        if status_filter == "published":
             query = query.filter(
                 and_(Assignment.is_published == True, or_(Assignment.due_date.is_(None), Assignment.due_date >= now))
             )
-        elif status == "draft":
+        elif status_filter == "draft":
             query = query.filter(Assignment.is_published == False)
-        elif status == "closed":
+        elif status_filter == "closed":
             query = query.filter(and_(Assignment.is_published == True, Assignment.due_date < now))
 
     assignments = query.order_by(Assignment.due_date).all()
@@ -893,3 +981,259 @@ def unenroll_student(
     db.commit()
     
     return {"message": "Student unenrolled successfully"}
+
+
+# ============== Group Management ==============
+
+class GroupCreate(BaseModel):
+    name: str
+    max_members: int = 4
+
+
+class GroupMemberRequest(BaseModel):
+    user_id: int
+
+
+class GroupMemberResponse(BaseModel):
+    id: int
+    user_id: int
+    full_name: str
+    email: str
+    student_id: Optional[str] = None
+    is_leader: bool
+
+
+class GroupResponse(BaseModel):
+    id: int
+    name: str
+    max_members: int
+    created_at: str
+    members: List[GroupMemberResponse]
+
+    class Config:
+        from_attributes = True
+
+
+def _authorize_course_faculty(course_id: int, current_user: User, db: Session):
+    course = db.query(Course).filter(Course.id == course_id).first()
+    if not course:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
+    if current_user.role == UserRole.FACULTY and course.instructor_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to manage this course")
+    return course
+
+
+@router.get("/{course_id}/groups/my")
+def get_my_group(
+    course_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get the current user's group in this course (returns null if not in a group)."""
+    membership = (
+        db.query(GroupMembership)
+        .options(
+            joinedload(GroupMembership.group).joinedload(Group.memberships).joinedload(GroupMembership.user)
+        )
+        .join(Group)
+        .filter(Group.course_id == course_id, GroupMembership.user_id == current_user.id)
+        .first()
+    )
+    if not membership:
+        return None
+    group = membership.group
+    members = [
+        GroupMemberResponse(
+            id=m.id,
+            user_id=m.user_id,
+            full_name=m.user.full_name if m.user else "",
+            email=m.user.email if m.user else "",
+            student_id=m.user.student_id if m.user else None,
+            is_leader=m.is_leader,
+        )
+        for m in group.memberships
+        if m.user is not None
+    ]
+    return GroupResponse(
+        id=group.id,
+        name=group.name,
+        max_members=group.max_members,
+        created_at=group.created_at.isoformat(),
+        members=members,
+    )
+
+
+@router.get("/{course_id}/groups", response_model=List[GroupResponse])
+def get_course_groups(
+    course_id: int,
+    current_user: User = Depends(require_roles(UserRole.FACULTY, UserRole.ADMIN)),
+    db: Session = Depends(get_db),
+):
+    """List all groups for a course."""
+    _authorize_course_faculty(course_id, current_user, db)
+    groups = (
+        db.query(Group)
+        .options(joinedload(Group.memberships).joinedload(GroupMembership.user))
+        .filter(Group.course_id == course_id)
+        .order_by(Group.created_at)
+        .all()
+    )
+    result = []
+    for group in groups:
+        members = [
+            GroupMemberResponse(
+                id=m.id,
+                user_id=m.user_id,
+                full_name=m.user.full_name if m.user else "",
+                email=m.user.email if m.user else "",
+                student_id=m.user.student_id if m.user else None,
+                is_leader=m.is_leader,
+            )
+            for m in group.memberships
+            if m.user is not None
+        ]
+        result.append(
+            GroupResponse(
+                id=group.id,
+                name=group.name,
+                max_members=group.max_members,
+                created_at=group.created_at.isoformat(),
+                members=members,
+            )
+        )
+    return result
+
+
+@router.post("/{course_id}/groups", response_model=GroupResponse, status_code=status.HTTP_201_CREATED)
+def create_course_group(
+    course_id: int,
+    group_in: GroupCreate,
+    current_user: User = Depends(require_roles(UserRole.FACULTY, UserRole.ADMIN)),
+    db: Session = Depends(get_db),
+):
+    """Create a new group in a course."""
+    _authorize_course_faculty(course_id, current_user, db)
+    if not group_in.name.strip():
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Group name cannot be empty")
+    if group_in.max_members < 1:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Max members must be at least 1")
+    group = Group(
+        course_id=course_id,
+        name=group_in.name.strip(),
+        max_members=group_in.max_members,
+    )
+    db.add(group)
+    db.commit()
+    db.refresh(group)
+    return GroupResponse(
+        id=group.id,
+        name=group.name,
+        max_members=group.max_members,
+        created_at=group.created_at.isoformat(),
+        members=[],
+    )
+
+
+@router.delete("/{course_id}/groups/{group_id}")
+def delete_course_group(
+    course_id: int,
+    group_id: int,
+    current_user: User = Depends(require_roles(UserRole.FACULTY, UserRole.ADMIN)),
+    db: Session = Depends(get_db),
+):
+    """Delete a group."""
+    _authorize_course_faculty(course_id, current_user, db)
+    group = db.query(Group).filter(Group.id == group_id, Group.course_id == course_id).first()
+    if not group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+    db.delete(group)
+    db.commit()
+    return {"message": "Group deleted successfully"}
+
+
+@router.post("/{course_id}/groups/{group_id}/members", response_model=GroupMemberResponse, status_code=status.HTTP_201_CREATED)
+def add_group_member(
+    course_id: int,
+    group_id: int,
+    member_req: GroupMemberRequest,
+    current_user: User = Depends(require_roles(UserRole.FACULTY, UserRole.ADMIN)),
+    db: Session = Depends(get_db),
+):
+    """Add a student to a group."""
+    _authorize_course_faculty(course_id, current_user, db)
+    group = db.query(Group).filter(Group.id == group_id, Group.course_id == course_id).first()
+    if not group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+
+    # Verify the student is enrolled in the course
+    enrollment = db.query(Enrollment).filter(
+        Enrollment.student_id == member_req.user_id,
+        Enrollment.course_id == course_id,
+        Enrollment.status == EnrollmentStatus.ACTIVE,
+    ).first()
+    if not enrollment:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Student is not enrolled in this course")
+
+    # Check if already in ANY group in this course
+    existing = db.query(GroupMembership).join(Group).filter(
+        Group.course_id == course_id,
+        GroupMembership.user_id == member_req.user_id,
+    ).first()
+    if existing:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Student is already a member of a group in this course")
+
+    # Check max_members
+    current_count = db.query(GroupMembership).filter(GroupMembership.group_id == group_id).count()
+    if current_count >= group.max_members:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Group is at maximum capacity")
+
+    is_first = current_count == 0
+    membership = GroupMembership(group_id=group_id, user_id=member_req.user_id, is_leader=is_first)
+    db.add(membership)
+    db.commit()
+    db.refresh(membership)
+
+    user = db.query(User).filter(User.id == member_req.user_id).first()
+    return GroupMemberResponse(
+        id=membership.id,
+        user_id=membership.user_id,
+        full_name=user.full_name if user else "",
+        email=user.email if user else "",
+        student_id=user.student_id if user else None,
+        is_leader=membership.is_leader,
+    )
+
+
+@router.delete("/{course_id}/groups/{group_id}/members/{user_id}")
+def remove_group_member(
+    course_id: int,
+    group_id: int,
+    user_id: int,
+    current_user: User = Depends(require_roles(UserRole.FACULTY, UserRole.ADMIN)),
+    db: Session = Depends(get_db),
+):
+    """Remove a student from a group."""
+    _authorize_course_faculty(course_id, current_user, db)
+    group = db.query(Group).filter(Group.id == group_id, Group.course_id == course_id).first()
+    if not group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+
+    membership = db.query(GroupMembership).filter(
+        GroupMembership.group_id == group_id,
+        GroupMembership.user_id == user_id,
+    ).first()
+    if not membership:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not in this group")
+
+    was_leader = membership.is_leader
+    db.delete(membership)
+    db.flush()
+
+    # If the removed member was the leader, assign a new leader
+    if was_leader:
+        next_member = db.query(GroupMembership).filter(GroupMembership.group_id == group_id).first()
+        if next_member:
+            next_member.is_leader = True
+
+    db.commit()
+    return {"message": "Member removed from group"}

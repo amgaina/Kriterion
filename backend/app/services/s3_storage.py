@@ -2,12 +2,14 @@
 AWS S3 Storage Service - Handle file uploads to S3
 """
 import boto3
-from botocore.exceptions import ClientError
+from botocore.config import Config
+from botocore.exceptions import ClientError, NoCredentialsError
 from typing import Optional, BinaryIO
 import hashlib
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import quote
 
 from app.core.config import settings
 from app.core.logging import logger
@@ -15,16 +17,41 @@ from app.core.logging import logger
 
 class S3StorageService:
     """Service for managing file uploads to AWS S3"""
-    
+
     def __init__(self):
-        """Initialize S3 client"""
-        self.s3_client = boto3.client(
-            's3',
-            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-            region_name=settings.AWS_REGION
-        )
-        self.bucket_name = settings.AWS_S3_BUCKET_NAME
+        self._s3_client = None
+        self._bucket_name = None
+
+    @property
+    def s3_client(self):
+        """Lazy-initialize S3 client (ensures config is loaded)"""
+        if self._s3_client is None:
+            key = getattr(settings, 'AWS_ACCESS_KEY_ID', '') or ''
+            secret = getattr(settings, 'AWS_SECRET_ACCESS_KEY', '') or ''
+            region = getattr(settings, 'AWS_REGION', 'us-east-1') or 'us-east-1'
+            if not key or not secret:
+                raise Exception(
+                    "AWS credentials not configured. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in .env"
+                )
+            self._s3_client = boto3.client(
+                's3',
+                aws_access_key_id=key.strip(),
+                aws_secret_access_key=secret.strip(),
+                region_name=region.strip(),
+                config=Config(
+                    retries={'max_attempts': 3, 'mode': 'standard'},
+                    signature_version='s3v4'
+                )
+            )
+        return self._s3_client
+
+    @property
+    def bucket_name(self) -> str:
+        if self._bucket_name is None:
+            self._bucket_name = (getattr(settings, 'AWS_S3_BUCKET_NAME', '') or 'kriterion-submissions').strip()
+            if not self._bucket_name:
+                raise Exception("AWS_S3_BUCKET_NAME is not set in .env")
+        return self._bucket_name
     
     def upload_submission_file(
         self,
@@ -75,8 +102,9 @@ class S3StorageService:
                 }
             )
             
-            # Generate S3 URL
-            s3_url = f"https://{self.bucket_name}.s3.{settings.AWS_REGION}.amazonaws.com/{s3_key}"
+            # Generate S3 URL (quote key for special chars in filenames)
+            region = getattr(settings, 'AWS_REGION', 'us-east-1') or 'us-east-1'
+            s3_url = f"https://{self.bucket_name}.s3.{region}.amazonaws.com/{quote(s3_key, safe='/')}"
             
             logger.info(f"File uploaded to S3: {s3_key}")
             
@@ -86,10 +114,68 @@ class S3StorageService:
                 'file_hash': file_hash
             }
             
+        except NoCredentialsError as e:
+            logger.error(f"S3 credentials missing: {e}")
+            raise Exception(
+                "AWS credentials not found. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in .env"
+            ) from e
         except ClientError as e:
-            logger.error(f"S3 upload failed: {str(e)}")
-            raise Exception(f"Failed to upload file to S3: {str(e)}")
+            code = e.response.get('Error', {}).get('Code', 'Unknown')
+            msg = e.response.get('Error', {}).get('Message', str(e))
+            logger.error(f"S3 upload failed [{code}]: {msg}")
+            raise Exception(f"S3 upload failed ({code}): {msg}") from e
     
+    def upload_test_file(
+        self,
+        assignment_id: int,
+        test_case_id: int,
+        file_content: bytes,
+        filename: str,
+        role: str = "input",
+    ) -> str:
+        """
+        Upload a test case input or expected-output file to S3.
+        role: 'input' or 'expected'
+        Returns S3 key.
+        """
+        try:
+            s3_key = f"test-cases/{assignment_id}/{test_case_id}/{role}/{filename}"
+            self.s3_client.put_object(
+                Bucket=self.bucket_name,
+                Key=s3_key,
+                Body=file_content,
+                ContentType=self._get_content_type(Path(filename).suffix),
+                Metadata={
+                    "assignment_id": str(assignment_id),
+                    "test_case_id": str(test_case_id),
+                    "role": role,
+                },
+            )
+            logger.info(f"Test file uploaded to S3: {s3_key}")
+            return s3_key
+        except NoCredentialsError as e:
+            logger.error(f"S3 credentials missing: {e}")
+            raise Exception(
+                "AWS credentials not found. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in .env"
+            ) from e
+        except ClientError as e:
+            code = e.response.get("Error", {}).get("Code", "Unknown")
+            msg = e.response.get("Error", {}).get("Message", str(e))
+            logger.error(f"S3 upload failed [{code}]: {msg}")
+            raise Exception(f"S3 upload failed ({code}): {msg}") from e
+
+    def get_object_content(self, s3_key: str, encoding: str = "utf-8") -> str:
+        """
+        Get object body as string. Uses utf-8 by default; replace on decode errors.
+        """
+        try:
+            response = self.s3_client.get_object(Bucket=self.bucket_name, Key=s3_key)
+            body = response["Body"].read()
+            return body.decode(encoding, errors="replace")
+        except ClientError as e:
+            logger.error(f"S3 get_object failed: {str(e)}")
+            raise Exception(f"Failed to read file from S3: {str(e)}") from e
+
     def download_submission_file(self, s3_key: str, local_path: str) -> str:
         """
         Download a file from S3 to local path
@@ -206,16 +292,6 @@ class S3StorageService:
         content_types = {
             '.py': 'text/x-python',
             '.java': 'text/x-java',
-            '.js': 'application/javascript',
-            '.ts': 'application/typescript',
-            '.cpp': 'text/x-c++src',
-            '.c': 'text/x-csrc',
-            '.h': 'text/x-chdr',
-            '.hpp': 'text/x-c++hdr',
-            '.txt': 'text/plain',
-            '.md': 'text/markdown',
-            '.pdf': 'application/pdf',
-            '.zip': 'application/zip',
         }
         return content_types.get(file_extension.lower(), 'application/octet-stream')
 

@@ -86,7 +86,6 @@ export type ResetPasswordFormData = z.infer<typeof resetPasswordSchema>;
 // Assignment creation validation schema (complete)
 export const assignmentCreateSchema = z.object({
     // Required fields
-    course_id: z.coerce.number().int().positive('Course ID is required'),
     title: z.string().min(1, 'Title is required'),
     language_id: z.coerce.number().int().positive('Language is required'),
     description: z.string().min(1, 'Description is required'),
@@ -96,8 +95,6 @@ export const assignmentCreateSchema = z.object({
         .refine((v: any) => !Number.isNaN(Date.parse(v)), {
             message: 'Invalid date/time',
         }),
-    starter_code: z.string().optional().or(z.literal('')),
-    solution_code: z.string().optional().or(z.literal('')),
     
     // Optional fields with defaults
     instructions: z.string().optional().or(z.literal('')),
@@ -131,6 +128,10 @@ export const assignmentCreateSchema = z.object({
     test_weight: z.coerce.number().min(0).max(100).default(70),
     rubric_weight: z.coerce.number().min(0).max(100).default(30),
     
+    // Rubric settings (for weighted rubric)
+    rubric_min_points: z.coerce.number().min(0).default(0),
+    rubric_max_points: z.coerce.number().min(0.5).default(10),
+    
     // Publishing
     is_published: z.coerce.boolean().default(false),
 })
@@ -138,9 +139,13 @@ export const assignmentCreateSchema = z.object({
     message: 'Passing score cannot exceed max score',
     path: ['passing_score'],
 })
-.refine((data: any) => Math.abs((data.test_weight ?? 0) + (data.rubric_weight ?? 0) - 100) < 0.01, {
+.refine((data: any) => data.test_weight + data.rubric_weight === 100, {
     message: 'Test weight and manual weight must sum to 100%',
     path: ['rubric_weight'],
+})
+.refine((data: any) => data.rubric_max_points > data.rubric_min_points, {
+    message: 'Rubric max points must be greater than min points',
+    path: ['rubric_max_points'],
 });
 
 export type AssignmentCreateForm = z.infer<typeof assignmentCreateSchema>;

@@ -3,7 +3,7 @@ Course Models - Course, Enrollment, Groups, and Announcements
 """
 from datetime import datetime
 from enum import Enum as PyEnum
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Text, Enum, Float
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Text, Enum, Float, Index
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -35,7 +35,7 @@ class Course(Base):
     year = Column(Integer, nullable=False)
     
     # Instructor
-    instructor_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    instructor_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     
     # Status
     status = Column(Enum(CourseStatus), default=CourseStatus.ACTIVE)
@@ -99,6 +99,10 @@ class Enrollment(Base):
     # Relationships
     student = relationship("User", back_populates="enrollments", foreign_keys=[student_id])
     course = relationship("Course", back_populates="enrollments")
+
+    __table_args__ = (
+        Index('ix_enrollments_course_id_status', 'course_id', 'status'),
+    )
     
     def __repr__(self):
         return f"<Enrollment student={self.student_id} course={self.course_id}>"

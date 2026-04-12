@@ -6,9 +6,6 @@ import ScrollReveal from "./ScrollReveal";
 const LANGS = [
   { name: "Python", ext: ".py", color: "#3572A5" },
   { name: "Java", ext: ".java", color: "#B07219" },
-  { name: "C++", ext: ".cpp", color: "#F34B7D" },
-  { name: "C#", ext: ".cs", color: "#178600" },
-  { name: "JavaScript", ext: ".js", color: "#F1E05A" },
 ];
 
 export default function LanguagesSection() {
@@ -18,7 +15,7 @@ export default function LanguagesSection() {
         <ScrollReveal>
           <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary/50 mb-3 block">Languages</span>
           <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight mb-4">
-            Five languages. One sandbox.
+            Two languages. One sandbox.
           </h2>
           <p className="text-gray-500 max-w-md mx-auto text-sm sm:text-base mb-14">
             Each language compiles and executes inside a Docker container with configurable time and memory limits.

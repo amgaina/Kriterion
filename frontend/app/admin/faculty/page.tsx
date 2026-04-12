@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { AdminLayout } from '@/components/layouts/AdminLayout';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/lib/api-client';
 import { DataTable } from '@/components/ui/data-table';
@@ -53,10 +52,6 @@ export default function FacultyPage() {
     const [languagePermissions, setLanguagePermissions] = useState({
         python: true,
         java: true,
-        javascript: false,
-        cpp: false,
-        c: false,
-        csharp: false,
     });
 
     const { data: users = [], isLoading } = useQuery({
@@ -159,7 +154,6 @@ export default function FacultyPage() {
 
     return (
         <ProtectedRoute allowedRoles={['ADMIN']}>
-            <AdminLayout>
                 <div className="space-y-6">
                     {/* Header */}
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -265,30 +259,6 @@ export default function FacultyPage() {
                                 label="Java"
                                 description="Java 11+ programming language"
                             />
-                            <Switch
-                                checked={languagePermissions.javascript}
-                                onChange={(checked) => setLanguagePermissions(prev => ({ ...prev, javascript: checked }))}
-                                label="JavaScript"
-                                description="Node.js JavaScript runtime"
-                            />
-                            <Switch
-                                checked={languagePermissions.cpp}
-                                onChange={(checked) => setLanguagePermissions(prev => ({ ...prev, cpp: checked }))}
-                                label="C++"
-                                description="C++17 programming language"
-                            />
-                            <Switch
-                                checked={languagePermissions.c}
-                                onChange={(checked) => setLanguagePermissions(prev => ({ ...prev, c: checked }))}
-                                label="C"
-                                description="C programming language"
-                            />
-                            <Switch
-                                checked={languagePermissions.csharp}
-                                onChange={(checked) => setLanguagePermissions(prev => ({ ...prev, csharp: checked }))}
-                                label="C#"
-                                description=".NET C# programming language"
-                            />
                         </div>
                     </div>
                     <ModalFooter>
@@ -338,7 +308,6 @@ export default function FacultyPage() {
                         </Button>
                     </ModalFooter>
                 </Modal>
-            </AdminLayout>
         </ProtectedRoute>
     );
 }

@@ -13,7 +13,7 @@ const FEATURES = [
   {
     icon: <Code2 className="w-5 h-5" />,
     title: "Multi-Language",
-    desc: "Python, Java, C++, C#, and JavaScript with per-language compilation and runtime handling.",
+    desc: "Python and Java with per-language compilation and runtime handling.",
     color: "bg-violet-50 text-violet-600 border-violet-100",
   },
   {

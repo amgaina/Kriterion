@@ -16,12 +16,12 @@ class Language(Base):
     id = Column(Integer, primary_key=True, index=True)
     
     # Basic info
-    name = Column(String(50), unique=True, nullable=False)  # python, java, cpp
-    display_name = Column(String(100), nullable=False)  # Python, Java, C++
+    name = Column(String(50), unique=True, nullable=False)  # python, java
+    display_name = Column(String(100), nullable=False)  # Python, Java
     #version = Column(String(20), nullable=True)  # 3.11, 17, 11
     
     # File info
-    file_extension = Column(String(10), nullable=False)  # .py, .java, .cpp
+    file_extension = Column(String(10), nullable=False)  # .py, .java
     
     # Execution commands
     compile_command = Column(Text, nullable=True)  # For compiled languages
@@ -47,7 +47,8 @@ class Language(Base):
                                        cascade="all, delete-orphan")
     
     def __repr__(self):
-        return f"<Language {self.display_name} ({self.version})>"
+        version = getattr(self, "version", None)
+        return f"<Language {self.display_name}" + (f" {version}" if version else "") + ">"
 
 
 class FacultyLanguagePermission(Base):
@@ -75,7 +76,7 @@ class FacultyLanguagePermission(Base):
         return f"<FacultyLanguagePermission faculty={self.faculty_id} language={self.language_id}>"
 
 
-# Default languages to seed
+# Default languages to seed – Python and Java only
 DEFAULT_LANGUAGES = [
     {
         "name": "python",
@@ -88,7 +89,7 @@ DEFAULT_LANGUAGES = [
         "default_timeout_seconds": 30,
         "default_memory_mb": 256,
         "monaco_language": "python",
-        "is_active": True
+        "is_active": True,
     },
     {
         "name": "java",
@@ -101,45 +102,6 @@ DEFAULT_LANGUAGES = [
         "default_timeout_seconds": 30,
         "default_memory_mb": 512,
         "monaco_language": "java",
-        "is_active": True
-    },
-    {
-        "name": "cpp",
-        "display_name": "C++",
-        "version": "17",
-        "file_extension": ".cpp",
-        "compile_command": "g++ -std=c++17 -o {output} {filename}",
-        "run_command": "./{output}",
-        "docker_image": "gcc:latest",
-        "default_timeout_seconds": 30,
-        "default_memory_mb": 256,
-        "monaco_language": "cpp",
-        "is_active": True
-    },
-    {
-        "name": "c",
-        "display_name": "C",
-        "version": "11",
-        "file_extension": ".c",
-        "compile_command": "gcc -std=c11 -o {output} {filename}",
-        "run_command": "./{output}",
-        "docker_image": "gcc:latest",
-        "default_timeout_seconds": 30,
-        "default_memory_mb": 256,
-        "monaco_language": "c",
-        "is_active": True
-    },
-    {
-        "name": "javascript",
-        "display_name": "JavaScript",
-        "version": "ES2022",
-        "file_extension": ".js",
-        "compile_command": None,
-        "run_command": "node {filename}",
-        "docker_image": "node:20-slim",
-        "default_timeout_seconds": 30,
-        "default_memory_mb": 256,
-        "monaco_language": "javascript",
-        "is_active": True
+        "is_active": True,
     },
 ]

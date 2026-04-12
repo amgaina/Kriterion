@@ -40,7 +40,7 @@ Congratulations! Your complete, production-grade automated grading system is rea
 
 - Sandbox execution engine (isolated Docker containers)
 - Autograding service with test runners
-- Support for Python, Java, C++, C, JavaScript, TypeScript
+- Support for Python and Java
 
 ✅ **Security Features**
 
@@ -400,10 +400,9 @@ Before deploying to production:
 
 - Python 3.11+
 - Java 17
-- C++ (g++)
+- (Removed: C++; only Python and Java are supported)
 - C (gcc)
-- JavaScript (Node.js)
-- TypeScript (ts-node)
+- (Removed: other languages; only Python and Java are supported)
 
 ## 🔄 Next Steps & Enhancements
 

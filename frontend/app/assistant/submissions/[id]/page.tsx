@@ -8,7 +8,7 @@ import apiClient from '@/lib/api-client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Alert } from '@/components/ui/alert';
+import { AcknowledgementPopup } from '@/components/ui/acknowledgement-popup';
 import { ArrowLeft, Save, User } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -37,7 +37,6 @@ export default function AssistantSubmissionDetailPage() {
             queryClient.invalidateQueries({ queryKey: ['submission', id] });
             queryClient.invalidateQueries({ queryKey: ['assistant-grading-submissions'] });
             setSuccessMessage('Grade saved successfully!');
-            setTimeout(() => setSuccessMessage(''), 3000);
         },
     });
 
@@ -72,12 +71,6 @@ export default function AssistantSubmissionDetailPage() {
 
     return (
         <div className="space-y-6">
-            {successMessage && (
-                <Alert type="success" title="Success">
-                    {successMessage}
-                </Alert>
-            )}
-
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <Link href="/assistant/dashboard">
                     <Button variant="ghost" size="sm">
@@ -168,6 +161,14 @@ export default function AssistantSubmissionDetailPage() {
                     </CardContent>
                 </Card>
             </div>
+
+            <AcknowledgementPopup
+                isOpen={!!successMessage}
+                onClose={() => setSuccessMessage('')}
+                type="success"
+                title="Success"
+                message={successMessage}
+            />
         </div>
     );
 }

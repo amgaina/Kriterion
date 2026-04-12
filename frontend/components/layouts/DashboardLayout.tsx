@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth, UserRole } from '@/contexts/AuthContext';
+import { NotificationButton } from '@/components/notifications/NotificationButton';
 
 interface NavItem {
     label: string;
@@ -14,6 +15,8 @@ interface NavItem {
 
 interface DashboardLayoutProps {
     children: React.ReactNode;
+    /** When true, hide the top nav bar (e.g. full-screen assignment or grading workspace). */
+    hideTopNav?: boolean;
 }
 
 // Icons as components
@@ -128,7 +131,6 @@ const getNavItems = (role: UserRole): NavItem[] => {
         { label: 'Courses', href: `${baseUrl}/courses`, icon: <BookIcon /> },
         { label: 'Languages', href: `${baseUrl}/languages`, icon: <SettingsIcon /> },
         { label: 'Security', href: `${baseUrl}/security`, icon: <AuditIcon /> },
-        { label: 'Reports', href: `${baseUrl}/reports`, icon: <ReportIcon /> },
         { label: 'Settings', href: `${baseUrl}/settings`, icon: <SettingsIcon /> },
     ];
 };
@@ -178,12 +180,13 @@ const getTopNavItems = (role: UserRole) => {
         { label: 'Dashboard', href: '/admin/dashboard' },
         { label: 'Users', href: '/admin/users' },
         { label: 'Courses', href: '/admin/courses' },
-        { label: 'Reports', href: '/admin/reports' },
+        { label: 'Languages', href: '/admin/languages' },
+        { label: 'Security', href: '/admin/security' },
         { label: 'Settings', href: '/admin/settings' },
     ];
 };
 
-export function DashboardLayout({ children }: DashboardLayoutProps) {
+export function DashboardLayout({ children, hideTopNav = false }: DashboardLayoutProps) {
     const { user, logout } = useAuth();
     const pathname = usePathname();
     const router = useRouter();
@@ -199,6 +202,12 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         if (isNavigating) return;
 
         if (closeSidebar) setSidebarOpen(false);
+
+        // If clicking the exact same route, just ensure content is visible
+        if (pathname === href) {
+            setContentVisible(true);
+            return;
+        }
 
         // Respect reduced motion user preference
         if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -219,13 +228,16 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
     if (!user) return null;
 
-    const navItems = getNavItems(user.role);
-    const topNavItems = getTopNavItems(user.role);
-    const isAdmin = user.role === 'ADMIN';
+    const currentUser = user;
+    const navItems = getNavItems(currentUser.role);
+    const topNavItems = getTopNavItems(currentUser.role);
+    const isAdmin = currentUser.role === 'ADMIN';
+    const showSidebar = false;
+    const showAdminTopNav = isAdmin && pathname.startsWith('/admin');
 
     // For students, remove the primary learning nav from the sidebar since we show it in the top nav
     // Also remove 'Help' and 'Settings' from the sidebar and surface them in the profile menu
-    const sidebarItems = user.role === 'STUDENT'
+    const sidebarItems: NavItem[] = currentUser.role === 'STUDENT'
         ? navItems.filter(i => !['Dashboard', 'My Courses', 'Assignments', 'Grades', 'Progress', 'Schedule', 'Help', 'Settings'].includes(i.label))
         : navItems;
 
@@ -259,7 +271,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     return (
         <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
             {/* Sidebar (used only for admin; students and faculty use top nav only) */}
-            {user.role === 'ADMIN' && (
+            {showSidebar && (
                 <>
                     {/* Mobile sidebar backdrop */}
                     {sidebarOpen && (
@@ -276,7 +288,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                     >
                         {/* Logo Section */}
                         <div className="flex h-16 items-center justify-between border-b border-gray-200 px-4">
-                            <Link href={`/${user.role.toLowerCase()}/dashboard`} className="flex items-center gap-3">
+                            <Link href={`/${currentUser.role.toLowerCase()}/dashboard`} className="flex items-center gap-3">
                                 <div className="h-10 w-10 overflow-hidden rounded-lg bg-[#862733] flex items-center justify-center">
                                     <Image
                                         src="/logo.png"
@@ -300,18 +312,18 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                         <div className="border-b border-gray-200 p-4">
                             <div className="flex items-center gap-3">
                                 <div className="h-10 w-10 rounded-full bg-[#862733] flex items-center justify-center text-white font-semibold">
-                                    {user.full_name?.charAt(0).toUpperCase() || 'U'}
+                                    {currentUser.full_name?.charAt(0).toUpperCase() || 'U'}
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <p className="truncate text-sm font-semibold text-gray-900">
-                                        {user.full_name}
+                                        {currentUser.full_name}
                                     </p>
-                                    <p className="truncate text-xs text-gray-500">{user.email}</p>
+                                    <p className="truncate text-xs text-gray-500">{currentUser.email}</p>
                                 </div>
                             </div>
                             <div className="mt-3">
-                                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getRoleBadgeColor(user.role)}`}>
-                                    {user.role}
+                                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getRoleBadgeColor(currentUser.role)}`}>
+                                    {currentUser.role}
                                 </span>
                             </div>
                         </div>
@@ -358,36 +370,120 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             )}
 
             {/* Main Content */}
-            <div className={`flex-1 flex flex-col min-h-0 overflow-hidden ${isAdmin ? 'lg:pl-72' : ''}`}>
-                {/* Top Header */}
-                <header className="flex-shrink-0 z-30 bg-white border-b border-gray-200 shadow-sm">
-                    <div className="px-3 sm:px-4 lg:px-6 h-14 sm:h-16 flex items-center justify-between gap-2 min-w-0">
-                        {/* Left side */}
-                        {isAdmin ? (
-                            <button
-                                onClick={() => setSidebarOpen(true)}
-                                className="rounded-md p-2 text-gray-500 hover:bg-gray-100 lg:hidden"
-                            >
-                                <MenuIcon />
-                            </button>
-                        ) : (
-                            <Link href={`/${user.role.toLowerCase()}/dashboard`} className="flex items-center gap-2 sm:gap-3 min-w-0 flex-shrink-0">
-                                <div className="h-9 w-9 sm:h-10 sm:w-10 overflow-hidden rounded-lg bg-[#862733] flex items-center justify-center flex-shrink-0">
-                                    <Image
-                                        src="/logo.png"
-                                        alt="Kriterion"
-                                        width={28}
-                                        height={28}
-                                        className="object-contain w-5 h-5 sm:w-7 sm:h-7"
-                                    />
-                                </div>
-                                <span className="text-base sm:text-xl font-bold text-gray-900 truncate">Kriterion</span>
-                            </Link>
-                        )}
+            <div className={`flex-1 flex flex-col min-h-0 overflow-hidden ${isAdmin && false ? 'lg:pl-72' : ''}`}>
+                {/* Top Header - hidden in full-screen workspace (e.g. student assignment, faculty grading) */}
+                {!hideTopNav ? (
+                    <header className="flex-shrink-0 z-30 bg-white border-b border-gray-200 shadow-sm">
+                        <div className="px-3 sm:px-4 lg:px-6 h-14 sm:h-16 flex items-center justify-between gap-2 min-w-0">
+                            {/* Left side */}
+                            {isAdmin && false ? (
+                                <button
+                                    onClick={() => setSidebarOpen(true)}
+                                    className="rounded-md p-2 text-gray-500 hover:bg-gray-100 lg:hidden"
+                                >
+                                    <MenuIcon />
+                                </button>
+                            ) : (
+                                <Link href={`/${user.role.toLowerCase()}/dashboard`} className="flex items-center gap-2 sm:gap-3 min-w-0 flex-shrink-0">
+                                    <div className="h-9 w-9 sm:h-10 sm:w-10 overflow-hidden rounded-lg bg-[#862733] flex items-center justify-center flex-shrink-0">
+                                        <Image
+                                            src="/logo.png"
+                                            alt="Kriterion"
+                                            width={28}
+                                            height={28}
+                                            className="object-contain w-5 h-5 sm:w-7 sm:h-7"
+                                        />
+                                    </div>
+                                    <span className="text-base sm:text-xl font-bold text-gray-900 truncate">Kriterion</span>
+                                </Link>
+                            )}
 
-                        {/* Center - Navigation (desktop) */}
-                        <nav className="hidden md:flex items-center flex-1 min-w-0 justify-center">
-                            <div className="flex w-full max-w-xl mx-auto">
+                            {/* Center - Navigation (desktop) */}
+                            <nav className="hidden md:flex items-center flex-1 min-w-0 justify-center">
+                                <div className="flex w-full max-w-xl mx-auto">
+                                    {topNavItems.map((item) => {
+                                        const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+                                        return (
+                                            <Link
+                                                key={item.href}
+                                                href={item.href}
+                                                onClick={(e) => handleNavClick(e, item.href)}
+                                                className={`flex-1 flex items-center justify-center py-2 px-4 rounded-md text-sm font-medium transition-colors ${isActive
+                                                        ? 'text-[#862733] bg-[#862733]/10 font-semibold'
+                                                        : 'text-gray-700 hover:text-[#862733] hover:bg-gray-50'
+                                                    }`}
+                                            >
+                                                {item.label}
+                                            </Link>
+                                        );
+                                    })}
+                                </div>
+                            </nav>
+
+                            {/* Right side */}
+                            <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
+                                <NotificationButton role={user.role} />
+
+                                <div className="relative" ref={userMenuRef}>
+                                    <button
+                                        onClick={() => setUserMenuOpen(!userMenuOpen)}
+                                        className="flex items-center gap-3 rounded-lg p-2 hover:bg-gray-100 transition-colors"
+                                    >
+                                        <div className="flex-1 text-right hidden sm:block min-w-0 max-w-[140px] md:max-w-none">
+                                            <p className="text-sm font-semibold text-gray-900 truncate">{user.full_name}</p>
+                                            <p className="text-xs text-gray-500 truncate hidden sm:block">{user.email}</p>
+                                        </div>
+                                        <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-[#862733] flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
+                                            {user.full_name?.charAt(0).toUpperCase() || 'U'}
+                                        </div>
+                                    </button>
+
+                                    {userMenuOpen && (
+                                        <div className="absolute right-0 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-lg border border-gray-200 bg-white shadow-lg z-50">
+                                            <div className="p-4 text-center border-b border-gray-200">
+                                                <div className="h-16 w-16 mx-auto mb-3 rounded-full bg-[#862733] flex items-center justify-center text-white text-2xl font-semibold">
+                                                    {user.full_name?.charAt(0).toUpperCase() || 'U'}
+                                                </div>
+                                                <p className="text-sm font-semibold text-gray-900">{user.full_name}</p>
+                                                <p className="text-xs text-gray-500 mt-1 break-words">{user.email}</p>
+                                                <span className="inline-block mt-3 px-3 py-1 bg-[#862733] text-white text-xs font-medium rounded-full">
+                                                    {user.role === 'FACULTY' ? 'Faculty' : user.role === 'STUDENT' ? 'Student' : user.role === 'ASSISTANT' ? 'Grading Assistant' : 'Admin'}
+                                                </span>
+                                            </div>
+
+                                            <div className="p-2 space-y-1">
+                                                <Link
+                                                    href={`/${user.role.toLowerCase()}/settings`}
+                                                    className="flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                                                    onClick={() => setUserMenuOpen(false)}
+                                                >
+                                                    <SettingsIcon />
+                                                    Settings
+                                                </Link>
+                                            </div>
+
+                                            <div className="border-t border-gray-200 p-2">
+                                                <button
+                                                    onClick={() => {
+                                                        setShowLogoutConfirm(true);
+                                                    }}
+                                                    className="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-medium text-red-700 hover:bg-red-50 transition-colors"
+                                                >
+                                                    <LogoutIcon />
+                                                    Sign Out
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="md:hidden border-t border-gray-200 bg-gray-50/80">
+                            <nav
+                                className="grid gap-2 px-3 py-2.5"
+                                style={{ gridTemplateColumns: `repeat(${topNavItems.length}, minmax(0, 1fr))` }}
+                            >
                                 {topNavItems.map((item) => {
                                     const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
                                     return (
@@ -395,119 +491,19 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                                             key={item.href}
                                             href={item.href}
                                             onClick={(e) => handleNavClick(e, item.href)}
-                                            className={`flex-1 flex items-center justify-center py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-                                                isActive
-                                                    ? 'text-[#862733] bg-[#862733]/10 font-semibold'
-                                                    : 'text-gray-700 hover:text-[#862733] hover:bg-gray-50'
-                                            }`}
+                                            className={`flex items-center justify-center py-2.5 px-3 rounded-lg text-xs sm:text-sm font-medium transition-all min-h-[40px] ${isActive
+                                                    ? 'text-white bg-[#862733] shadow-sm'
+                                                    : 'text-gray-600 hover:text-[#862733] hover:bg-white'
+                                                }`}
                                         >
                                             {item.label}
                                         </Link>
                                     );
                                 })}
-                            </div>
-                        </nav>
-
-                        {/* Right side */}
-                        <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
-                            <button className="relative rounded-full p-1.5 sm:p-2 text-gray-500 hover:bg-gray-100 transition-colors" aria-label="Notifications">
-                                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                                </svg>
-                                <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500" />
-                            </button>
-
-                            <div className="relative" ref={userMenuRef}>
-                                <button
-                                    onClick={() => setUserMenuOpen(!userMenuOpen)}
-                                    className="flex items-center gap-3 rounded-lg p-2 hover:bg-gray-100 transition-colors"
-                                >
-                                    <div className="flex-1 text-right hidden sm:block min-w-0 max-w-[140px] md:max-w-none">
-                                        <p className="text-sm font-semibold text-gray-900 truncate">{user.full_name}</p>
-                                        <p className="text-xs text-gray-500 truncate hidden sm:block">{user.email}</p>
-                                    </div>
-                                    <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-[#862733] flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
-                                        {user.full_name?.charAt(0).toUpperCase() || 'U'}
-                                    </div>
-                                </button>
-
-                                {userMenuOpen && (
-                                    <div className="absolute right-0 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-lg border border-gray-200 bg-white shadow-lg z-50">
-                                        <div className="p-4 text-center border-b border-gray-200">
-                                            <div className="h-16 w-16 mx-auto mb-3 rounded-full bg-[#862733] flex items-center justify-center text-white text-2xl font-semibold">
-                                                {user.full_name?.charAt(0).toUpperCase() || 'U'}
-                                            </div>
-                                            <p className="text-sm font-semibold text-gray-900">{user.full_name}</p>
-                                            <p className="text-xs text-gray-500 mt-1 break-words">{user.email}</p>
-                                            <span className="inline-block mt-3 px-3 py-1 bg-[#862733] text-white text-xs font-medium rounded-full">
-                                                {user.role === 'FACULTY' ? 'Faculty' : user.role === 'STUDENT' ? 'Student' : user.role === 'ASSISTANT' ? 'Grading Assistant' : 'Admin'}
-                                            </span>
-                                        </div>
-
-                                        <div className="p-2 space-y-1">
-                                            <Link
-                                                href={`/${user.role.toLowerCase()}/settings`}
-                                                className="flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                                                onClick={() => setUserMenuOpen(false)}
-                                            >
-                                                <SettingsIcon />
-                                                Settings
-                                            </Link>
-
-                                            {user.role === 'STUDENT' && (
-                                                <Link
-                                                    href={`/${user.role.toLowerCase()}/help`}
-                                                    className="flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                                                    onClick={() => setUserMenuOpen(false)}
-                                                >
-                                                    <SubmissionIcon />
-                                                    Help
-                                                </Link>
-                                            )}
-                                        </div>
-
-                                        <div className="border-t border-gray-200 p-2">
-                                            <button
-                                                onClick={() => {
-                                                    setShowLogoutConfirm(true);
-                                                }}
-                                                className="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-medium text-red-700 hover:bg-red-50 transition-colors"
-                                            >
-                                                <LogoutIcon />
-                                                Sign Out
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
+                            </nav>
                         </div>
-                    </div>
-
-                    <div className="md:hidden border-t border-gray-200 bg-gray-50/80">
-                        <nav
-                            className="grid gap-2 px-3 py-2.5"
-                            style={{ gridTemplateColumns: `repeat(${topNavItems.length}, minmax(0, 1fr))` }}
-                        >
-                            {topNavItems.map((item) => {
-                                const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
-                                return (
-                                    <Link
-                                        key={item.href}
-                                        href={item.href}
-                                        onClick={(e) => handleNavClick(e, item.href)}
-                                        className={`flex items-center justify-center py-2.5 px-3 rounded-lg text-xs sm:text-sm font-medium transition-all min-h-[40px] ${
-                                            isActive
-                                                ? 'text-white bg-[#862733] shadow-sm'
-                                                : 'text-gray-600 hover:text-[#862733] hover:bg-white'
-                                        }`}
-                                    >
-                                        {item.label}
-                                    </Link>
-                                );
-                            })}
-                        </nav>
-                    </div>
-                </header>
+                    </header>
+                ) : null}
 
                 {/* Logout Confirmation Modal */}
                 {showLogoutConfirm && (
@@ -519,13 +515,13 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                                     {user.full_name?.charAt(0).toUpperCase() || 'S'}
                                 </div>
                             </div>
-                            
+
                             {/* Title */}
                             <h2 className="text-center text-xl font-semibold text-gray-900 mb-3">Sign out?</h2>
-                            
+
                             {/* Description */}
                             <p className="text-center text-sm text-gray-600 mb-8">You'll be signed out of your account.</p>
-                            
+
                             {/* Buttons */}
                             <div className="flex gap-3 justify-center">
                                 <button

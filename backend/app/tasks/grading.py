@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 from app.core.celery_app import celery_app
 from app.core.database import SessionLocal
 from app.core.logging import logger
-from app.models import Submission, Assignment
+from app.models import Submission, Assignment, User
 from app.services.grading import GradingService
+from app.services.notification import notify_student_grade_posted
 import asyncio
 
 
@@ -67,6 +68,8 @@ def grade_submission_task(self, submission_id: int):
         loop.close()
         
         logger.info(f"Graded submission {submission_id}: {result.get('status')}")
+        
+        # Grade notifications are sent only when faculty publishes grades, not on auto-grade
         
         return result
         

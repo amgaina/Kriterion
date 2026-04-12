@@ -77,6 +77,14 @@ class ApiClient {
         return localStorage.getItem('access_token');
     }
 
+    /** WebSocket URL for interactive run (process blocks on input; send stdin line-by-line). */
+    getInteractiveRunWebSocketUrl(assignmentId: number): string {
+        const base = API_BASE_URL.replace(/^http/, 'ws');
+        const token = this.getAccessToken();
+        const q = token ? `?token=${encodeURIComponent(token)}` : '';
+        return `${base}/assignments/${assignmentId}/run/interactive${q}`;
+    }
+
     private getRefreshToken(): string | null {
         if (typeof window === 'undefined') return null;
         return localStorage.getItem('refresh_token');
@@ -193,6 +201,52 @@ class ApiClient {
         return response.data;
     }
 
+    async getCourseGroups(courseId: number) {
+        const response = await this.client.get(`/courses/${courseId}/groups`);
+        return response.data as Array<{
+            id: number;
+            name: string;
+            max_members: number;
+            created_at: string;
+            members: Array<{ id: number; user_id: number; full_name: string; email: string; student_id: string | null; is_leader: boolean }>;
+        }>;
+    }
+
+    async getMyGroup(courseId: number): Promise<{
+        id: number;
+        name: string;
+        max_members: number;
+        created_at: string;
+        members: Array<{ id: number; user_id: number; full_name: string; email: string; student_id: string | null; is_leader: boolean }>;
+    } | null> {
+        try {
+            const response = await this.client.get(`/courses/${courseId}/groups/my`);
+            return response.data;
+        } catch {
+            return null;
+        }
+    }
+
+    async createCourseGroup(courseId: number, data: { name: string; max_members: number }) {
+        const response = await this.client.post(`/courses/${courseId}/groups`, data);
+        return response.data;
+    }
+
+    async deleteCourseGroup(courseId: number, groupId: number) {
+        const response = await this.client.delete(`/courses/${courseId}/groups/${groupId}`);
+        return response.data;
+    }
+
+    async addGroupMember(courseId: number, groupId: number, userId: number) {
+        const response = await this.client.post(`/courses/${courseId}/groups/${groupId}/members`, { user_id: userId });
+        return response.data;
+    }
+
+    async removeGroupMember(courseId: number, groupId: number, userId: number) {
+        const response = await this.client.delete(`/courses/${courseId}/groups/${groupId}/members/${userId}`);
+        return response.data;
+    }
+
     async getCourseAssistants(courseId: number) {
         const response = await this.client.get(`/courses/${courseId}/assistants`);
         return response.data;
@@ -222,6 +276,15 @@ class ApiClient {
 
     async getAssignmentSupplementaryFiles(assignmentId: number) {
         const response = await this.client.get(`/assignments/${assignmentId}/supplementary-files`);
+        return response.data as { filename: string; download_url: string; size: number }[];
+    }
+
+    async addAssignmentSupplementaryFiles(assignmentId: number, files: File[]) {
+        const formData = new FormData();
+        files.forEach((file) => formData.append('files', file));
+        const response = await this.client.post(`/assignments/${assignmentId}/supplementary-files`, formData, {
+            headers: { 'Content-Type': undefined as unknown as string },
+        });
         return response.data as { filename: string; download_url: string; size: number }[];
     }
 
@@ -263,6 +326,16 @@ class ApiClient {
         return response.data;
     }
 
+    async publishGrades(assignmentId: number) {
+        const response = await this.client.post(`/faculty/assignments/${assignmentId}/publish-grades`);
+        return response.data;
+    }
+
+    async hideGrades(assignmentId: number) {
+        const response = await this.client.post(`/faculty/assignments/${assignmentId}/hide-grades`);
+        return response.data;
+    }
+
     // Submission endpoints
     async getSubmissions(assignmentId?: number, studentId?: number) {
         const params: any = {};
@@ -299,8 +372,13 @@ class ApiClient {
         if (groupId) formData.append('group_id', groupId.toString());
         files.forEach((file) => formData.append('files', file));
 
+        // Must NOT send Content-Type for FormData - axios/browser sets multipart/form-data with boundary
         const response = await this.client.post('/submissions', formData, {
-            headers: { 'Content-Type': undefined as unknown as string },
+            headers: { 'Content-Type': undefined } as Record<string, string | undefined>,
+            transformRequest: [(data, headers) => {
+                if (data instanceof FormData && headers) delete headers['Content-Type'];
+                return data;
+            }],
         });
         return response.data;
     }
@@ -370,10 +448,25 @@ class ApiClient {
         return response.data;
     }
 
-    async runCode(assignmentId: number, files: { name: string; content: string }[], testCaseIds?: number[]) {
-        const payload: any = { files };
-        if (testCaseIds && testCaseIds.length > 0) {
-            payload.test_case_ids = testCaseIds;
+    async runCode(
+        assignmentId: number,
+        files: { name: string; content: string }[],
+        options?: { stdin?: string; testCaseIds?: number[]; inputFile?: { name: string; content: string } }
+    ) {
+        const payload: {
+            files: { name: string; content: string }[];
+            test_case_ids?: number[];
+            stdin?: string;
+            input_file?: { name: string; content: string };
+        } = { files };
+        if (options?.testCaseIds && options.testCaseIds.length > 0) {
+            payload.test_case_ids = options.testCaseIds;
+        }
+        if (options?.stdin != null && options.stdin !== '') {
+            payload.stdin = options.stdin;
+        }
+        if (options?.inputFile?.name?.trim() && options.inputFile.content !== undefined) {
+            payload.input_file = { name: options.inputFile.name.trim(), content: options.inputFile.content };
         }
         const response = await this.client.post(`/assignments/${assignmentId}/run`, payload);
         return response.data;
@@ -395,13 +488,14 @@ class ApiClient {
         const assignments = await this.getAssignments();
         return (assignments || [])
             .filter((a: { is_published?: boolean; due_date?: string }) => a.is_published !== false && a.due_date)
-            .map((a: { id: number; title: string; due_date: string; course?: { code?: string; name?: string } }) => ({
+            .map((a: { id: number; title: string; due_date: string; course_id?: number; course?: { id?: number; code?: string; name?: string } }) => ({
                 id: a.id,
                 title: a.title,
                 date: (a.due_date || '').slice(0, 10),
                 event_type: 'deadline',
                 course_code: a.course?.code,
                 course_name: a.course?.name,
+                course_id: a.course_id || a.course?.id,
             }));
     }
 
@@ -412,6 +506,16 @@ class ApiClient {
 
     async getFacultyLanguages() {
         const response = await this.client.get('/faculty/languages');
+        return response.data;
+    }
+
+    async getFacultyStudents() {
+        const response = await this.client.get('/faculty/students');
+        return response.data;
+    }
+
+    async getRubricItems() {
+        const response = await this.client.get('/faculty/rubric-items');
         return response.data;
     }
 
@@ -443,6 +547,21 @@ class ApiClient {
             responseType: 'blob',
         });
         return response.data;
+    }
+
+    async exportCourseReport(courseId: number, selectedStudentIds?: number[], selectedAssignmentIds?: number[]) {
+        const params: Record<string, string> = {};
+        if (selectedStudentIds && selectedStudentIds.length > 0) {
+            params.student_ids = selectedStudentIds.join(',');
+        }
+        if (selectedAssignmentIds && selectedAssignmentIds.length > 0) {
+            params.assignment_ids = selectedAssignmentIds.join(',');
+        }
+        const response = await this.client.get(`/reports/course/${courseId}/export`, {
+            params,
+            responseType: 'blob',
+        });
+        return response.data as Blob;
     }
 
     // Admin endpoints
@@ -495,14 +614,24 @@ class ApiClient {
         return response.data;
     }
 
+    async getSystemHealth() {
+        const response = await this.client.get('/admin/system-health');
+        return response.data;
+    }
+
     async createUser(data: any) {
         const response = await this.client.post('/admin/users', data);
         return response.data;
     }
 
+    async bulkImportStudents(students: Array<{ email: string; full_name?: string; student_id?: string }>) {
+        const response = await this.client.post('/admin/students/bulk-import', { students });
+        return response.data;
+    }
+
     // Language endpoints
-    async getLanguages() {
-        const response = await this.client.get('/languages');
+    async getLanguages(activeOnly = true) {
+        const response = await this.client.get('/languages/', { params: { active_only: activeOnly } });
         return response.data;
     }
 
@@ -512,7 +641,7 @@ class ApiClient {
     }
 
     async createLanguage(data: any) {
-        const response = await this.client.post('/languages', data);
+        const response = await this.client.post('/languages/', data);
         return response.data;
     }
 
@@ -551,6 +680,74 @@ class ApiClient {
 
     async updateNotificationSettings(data: Record<string, boolean>) {
         const response = await this.client.put('/settings/notifications/settings', data);
+        return response.data;
+    }
+
+    async getNotifications(unreadOnly: boolean, limit?: number): Promise<Array<{
+        id: number;
+        user_id: number;
+        type: string;
+        title: string;
+        message: string;
+        link?: string | null;
+        course_id?: number | null;
+        assignment_id?: number | null;
+        submission_id?: number | null;
+        is_read: boolean;
+        read_at?: string | null;
+        created_at: string;
+    }>>;
+    async getNotifications(skip?: number, limit?: number): Promise<Array<{
+        id: number;
+        user_id: number;
+        type: string;
+        title: string;
+        message: string;
+        link?: string | null;
+        course_id?: number | null;
+        assignment_id?: number | null;
+        submission_id?: number | null;
+        is_read: boolean;
+        read_at?: string | null;
+        created_at: string;
+    }>>;
+    async getNotifications(arg1: boolean | number = false, arg2?: number) {
+        const params = typeof arg1 === 'boolean'
+            ? {
+                unread_only: arg1,
+                limit: arg2 ?? 20,
+            }
+            : {
+                skip: arg1,
+                limit: arg2 ?? 50,
+            };
+
+        const response = await this.client.get('/notifications', {
+            params,
+        });
+        return response.data as Array<{
+            id: number;
+            user_id: number;
+            type: string;
+            title: string;
+            message: string;
+            link?: string | null;
+            course_id?: number | null;
+            assignment_id?: number | null;
+            submission_id?: number | null;
+            is_read: boolean;
+            read_at?: string | null;
+            created_at: string;
+        }>;
+    }
+
+    async markNotificationRead(notificationId: number) {
+        const response = await this.client.put(`/notifications/${notificationId}/read`);
+        return response.data;
+    }
+
+    async markAllNotificationsRead() {
+        const response = await this.client.put('/notifications/read-all');
         return response.data;
     }
 
@@ -599,6 +796,23 @@ class ApiClient {
         const response = await this.client.put(`/submissions/plagiarism-matches/${matchId}/review`, formData, {
             headers: { 'Content-Type': undefined as unknown as string },
         });
+        return response.data;
+    }
+
+    async getUnreadNotificationCount() {
+        const response = await this.client.get('/notifications/unread/count');
+        return response.data;
+    }
+
+    async markNotificationAsRead(notificationId: number, isRead: boolean = true) {
+        const response = await this.client.patch(`/notifications/${notificationId}`, {
+            is_read: isRead
+        });
+        return response.data;
+    }
+
+    async markAllNotificationsAsRead() {
+        const response = await this.client.post('/notifications/mark-all-as-read');
         return response.data;
     }
 

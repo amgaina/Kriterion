@@ -3,21 +3,12 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth, UserRole } from '@/contexts/AuthContext';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 interface ProtectedRouteProps {
     children: React.ReactNode;
     allowedRoles?: UserRole[];
 }
-
-// Loading spinner component
-const LoadingSpinner = () => (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-[#862733] border-t-transparent"></div>
-            <p className="mt-4 text-sm text-gray-600">Loading...</p>
-        </div>
-    </div>
-);
 
 // Redirect helper function
 const getDashboardPath = (role: UserRole): string => {

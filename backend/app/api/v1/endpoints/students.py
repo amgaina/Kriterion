@@ -246,9 +246,11 @@ def get_student_assignments(
     for assignment in assignments:
         submission = submissions.get(assignment.id)
         
+        grades_visible = getattr(assignment, "grades_published", False)
+
         # Determine status
         if submission:
-            if submission.final_score is not None:
+            if submission.final_score is not None and grades_visible:
                 assign_status = "graded"
             else:
                 assign_status = "submitted"
@@ -256,11 +258,11 @@ def get_student_assignments(
             assign_status = "late"
         else:
             assign_status = "pending"
-        
+
         # Apply filter
         if status_filter and assign_status != status_filter:
             continue
-        
+
         result.append(AssignmentOverview(
             id=assignment.id,
             title=assignment.title,
@@ -268,7 +270,7 @@ def get_student_assignments(
             course_name=assignment.course.name,
             due_date=assignment.due_date,
             status=assign_status,
-            score=submission.final_score if submission else None,
+            score=submission.final_score if submission and grades_visible else None,
             max_score=assignment.max_score or 100
         ))
     
